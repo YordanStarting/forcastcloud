@@ -1,0 +1,27 @@
+from django.urls import path
+from . import views
+from django.conf import settings
+from django.contrib.staticfiles.urls import static
+
+urlpatterns = [
+    path('', views.inicio, name='inicio'),
+    path('nosotros/', views.nosotros, name='nosotros'),
+    path('clientesweb/', views.clientesweb, name='clientesweb'),
+    path('crearcliente/', views.crearcliente, name='crearcliente'),
+    path('editarcliente/', views.editarcliente, name='editarcliente'),
+    path('eliminarcliente/<int:id>/', views.eliminarcliente, name='eliminarcliente'),
+    path('clientesweb/editar/<int:id>/', views.editarcliente, name='editarcliente'),
+    path('editartablas/', views.editartablas, name='editartablas'),
+
+    # VISTA DE PEDIDOS
+    path('crearpedido/', views.crear_pedido, name='crearpedido'),
+    path('pedidos/editar/<int:id>/', views.editarpedido, name='editarpedido'),
+    path('pedidos/eliminar/<int:id>/', views.eliminarpedido, name='eliminarpedido'),
+
+
+    path('pedidos/realizado/<int:id>/', views.marcar_pedido_realizado, name='marcar_realizado'),
+    path('pedidos/historial/', views.historial, name='historial'),
+
+    
+ 
+    ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

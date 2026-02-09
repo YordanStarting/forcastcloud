@@ -1,0 +1,18 @@
+<form action="" enctype="multipart/form-data" method="post">
+
+    {% csrf_token %}
+    {% for campo in formulario %}
+    <div class="form-group">
+        <label for="{{ campo.name }}">{{ campo.label }}:</label>
+        <input type="{{ campo.field.widget.input_type }}" 
+        class="form-control y-2" for="{{ campo.name }}" 
+        name="{{ campo.name }}" 
+        value="{{ campo.value | default_if_none:'' }}">
+    </div>
+    <div class="col-12 help-text"> {{campo.errors}} </div>
+    {% endfor %}
+    <input type="submit" class="btn btn-primary y2" value="Enviar">
+    <a name="" id="" class="btn btn-danger" href="{% url 'clientesweb' %}" role="button">Cancelar</a>
+
+
+</form>

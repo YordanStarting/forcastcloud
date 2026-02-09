@@ -1,0 +1,86 @@
+
+  /* Estilos naturales y minimalistas */
+  .bg-soft {
+    background-color: #f8f9fa !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+  }
+  
+  .natural-brand {
+    font-family: 'Montserrat', sans-serif;
+    font-weight: 400;
+    color: #2c3e50 !important;
+    letter-spacing: 0.5px;
+  }
+  
+  .natural-brand:hover {
+    color: #27ae60 !important;
+  }
+  
+  .natural-toggler {
+    border-color: rgba(0, 0, 0, 0.1);
+  }
+  
+  .natural-link {
+    color: #34495e !important;
+    font-weight: 400;
+    padding: 8px 12px;
+    margin: 0 2px;
+    border-radius: 4px;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+  }
+  
+  .nav-icon {
+    margin-right: 8px;
+    width: 20px;
+    display: inline-flex;
+    justify-content: center;
+  }
+  
+  .nav-text {
+    display: inline-block;
+  }
+  
+  .natural-link:hover {
+    color: #27ae60 !important;
+    background-color: rgba(39, 174, 96, 0.05);
+  }
+  
+  .nav-item.active .natural-link {
+    color: #27ae60 !important;
+    font-weight: 500;
+    background-color: rgba(39, 174, 96, 0.08);
+  }
+  
+  .btn-natural {
+    background-color: transparent;
+    color: #2c3e50;
+    border: 1px solid rgba(44, 62, 80, 0.2);
+    padding: 6px 15px;
+    border-radius: 20px;
+    font-weight: 400;
+    transition: all 0.3s ease;
+    display: flex;
+    align-items: center;
+  }
+  
+  .btn-natural:hover {
+    background-color: rgba(39, 174, 96, 0.1);
+    color: #27ae60;
+    border-color: rgba(39, 174, 96, 0.3);
+  }
+  
+  .container {
+    max-width: 1140px;
+  }
+  
+  /* Efectos sutiles */
+  .navbar {
+    box-shadow: 0 2px 15px rgba(0, 0, 0, 0.03);
+    padding: 12px 0;
+  }
+  
+  .fa-leaf {
+    color: #27ae60;
+  }

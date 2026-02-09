@@ -1,0 +1,80 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Agregar Nuevo Cliente
+{% endblock %}
+
+{% block contenido %}
+
+<div class="container-fluid">
+    <form method="post">
+        {% csrf_token %}
+
+        <div class="form-row">
+
+            <div class="form-group col-md-12">
+                <label>Proveedor</label>
+                <select name="proveedor" class="form-control" required>
+                    <option value="">Escoger</option>
+                    {% for proveedor in proveedores %}
+                    <option value="{{ proveedor.id }}">
+                        {{ proveedor.nombre }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group col-md-12">
+                <label>Comercial</label>
+                <select name="comercial" class="form-control" required>
+                    <option value="">Escoger</option>
+                    {% for user in comerciales %}
+                    <option value="{{ user.id }}">
+                        {{ user.username }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Tipo de Huevo</label>
+                <select name="tipo_huevo" class="form-control" required>
+                    <option value="">Escoger</option>
+                    {% for value, label in TIPO_HUEVO_CHOICES %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Presentación</label>
+                <select name="presentacion" class="form-control" required>
+                    <option value="">Escoger</option>
+                    {% for value, label in PRESENTACION_CHOICES %}
+                    <option value="{{ value }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Cantidad</label>
+                <input type="number" name="cantidad" class="form-control" required>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Fecha de Entrega</label>
+                <input type="date" name="fecha_entrega" class="form-control" required>
+            </div>
+
+            <div class="form-group col-md-12">
+                <label>Observaciones</label>
+                <textarea name="observaciones" class="form-control" rows="3"></textarea>
+            </div>
+            <input type="submit" class="btn btn-primary y2" value="Enviar">
+        </div>
+
+        
+    </form>
+
+</div>
+{% endblock %}

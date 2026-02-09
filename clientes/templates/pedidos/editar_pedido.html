@@ -1,0 +1,109 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Agregar Nuevo Cliente
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid"> </div>
+<form method="post">
+    {% csrf_token %}
+
+    <div class="form-row">
+        <div class="form-group col-md-12">
+            <label>Proveedor</label>
+            <select name="proveedor" class="form-control">
+                {% for proveedor in proveedores %}
+                <option value="{{ proveedor.id }}" {% if pedido.proveedor_id==proveedor.id %}selected{% endif %}>
+                    {{ proveedor.nombre }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group col-md-12">
+            <label>Comercial</label>
+            <select name="comercial" class="form-control">
+                {% for user in comerciales %}
+                <option value="{{ user.id }}" {% if pedido.comercial_id==user.id %}selected{% endif %}>
+                    {{ user.username }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group col-md-6">
+            <label>Tipo de Huevo</label>
+            <select name="tipo_huevo" class="form-control">
+                {% for value, label in TIPO_HUEVO_CHOICES %}
+                <option value="{{ value }}" {% if pedido.tipo_huevo==value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group col-md-6">
+            <label>Presentación</label>
+            <select name="presentacion" class="form-control">
+                {% for value, label in PRESENTACION_CHOICES %}
+                <option value="{{ value }}" {% if pedido.presentacion==value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="form-group col-md-6">
+            <label>Cantidad</label>
+            <input type="number" name="cantidad" class="form-control" value="{{ pedido.cantidad }}">
+        </div>
+
+        <div class="form-group col-md-6">
+            <label>Fecha de Entrega</label>
+            <input type="date" name="fecha_entrega" class="form-control"
+                value="{{ pedido.fecha_entrega|date:'Y-m-d' }}">
+        </div>
+
+        <div class="form-group col-md-12">
+            <label>Observaciones</label>
+            <textarea name="observaciones" class="form-control">{{ pedido.observaciones }}</textarea>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Actualizar</button>
+    </div>
+</form>
+<a name="" id="" class="btn btn-danger" href="{% url 'inicio' %}" role="button">Cancelar</a>
+
+</div>
+
+<a class="btn btn-info" href="{% url 'editarpedido' pedido.id %}" role="button">
+    Editar
+</a>
+
+/ <a class="btn btn-danger" href="{% url 'eliminarpedido' pedido.id %}">
+    Borrar
+</a>
+<h1>HOLA</h1>
+<div class="card mt-4" style="width: 22rem;">
+    <div class="card-body">
+        <h5 class="card-title">SUMAS TOTALES DE PEDIDOS PENDIENTES</h5>
+
+        <p class="card-text">
+            🥚 Huevo líquido total:
+            <strong>{{ total_liquido }} kg</strong>
+        </p>
+
+        <p class="card-text">
+            🧪 Mezcla en polvo total:
+            <strong>{{ total_mezcla }} kg</strong>
+        </p>
+
+        <p class="card-text">
+            🟡 Yema total:
+            <strong>{{ total_yema }} kg</strong>
+        </p>
+    </div>
+</div>
+
+{% endblock %}

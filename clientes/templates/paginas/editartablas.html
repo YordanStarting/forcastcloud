@@ -1,0 +1,103 @@
+{% extends 'base.html' %}
+{% block titulo %}
+Editar Pedido
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+
+    <!-- Page Heading -->
+    <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES</h1>
+
+
+    <!-- DataTales Example -->
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS SEMANALES</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover table-borderless align-middle" id="dataTable" width="100%"
+                    cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>PRESENTACIÓN</th>
+                            <th>COMPAÑIA</th>
+                            <th>HELU/HEPU</th>
+                            <th>YELU/YEPU</th>
+                            <th>CLLU/ALBP</th>
+                            <th>MEPU</th>
+                            <td>FECHA/CREACION</td>
+                            <td>FECHA/VENCIMIENTO</td>
+                        </tr>
+                    </thead>
+                    <tfoot>
+                        <tr>
+                            <th>TOTAL</th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <th></th>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    </tfoot>
+                    <tbody>
+                        {% for pedido in pedidos %}
+                        <tr>
+                            <td>{{ pedido.presentacion }}</td>
+                            <td>{{ pedido.proveedor.nombre }}</td>
+                            <td>
+                                {% if pedido.tipo_huevo == "HELU" %}
+                                {{ pedido.cantidad }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if pedido.tipo_huevo == "YELU" %}
+                                {{ pedido.cantidad }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if pedido.tipo_huevo == "CLLU" %}
+                                {{ pedido.cantidad }}
+                                {% endif %}
+                            </td>
+                            <td>
+                                {% if pedido.tipo_huevo == "MEPU" %}
+                                {{ pedido.cantidad }}
+                                {% endif %}
+                            </td>
+                            <td>{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
+                            <td>{{ pedido.fecha_entrega|date:"d/m/Y" }}</td>
+                            <td>
+                                <a href="{% url 'marcar_realizado' pedido.id %}" class="btn btn-success btn-sm">
+                                    ✔
+                                </a>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <p class="card-text">
+                        🥚 Huevo líquido total:
+                        <strong>{{ total_liquido }} kg</strong>
+                    </p>
+
+                    <p class="card-text">
+                        🧪 Mezcla en polvo total:
+                        <strong>{{ total_mezcla }} kg</strong>
+                    </p>
+
+                    <p class="card-text">
+                        🟡 Yema total:
+                        <strong>{{ total_yema }} kg</strong>
+                    </p>
+
+                </table>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+{% endblock %}

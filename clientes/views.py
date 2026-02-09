@@ -1,0 +1,265 @@
+from datetime import date
+from django.shortcuts import get_object_or_404, render, redirect
+from django.http import HttpResponse, JsonResponse
+from .models import Cliente, EntregaPedido, Notificacion, Pedido, Proveedor
+from .forms import ClienteForm, PedidoForm
+from django.db.models import Sum
+from django.db.models.functions import TruncDate
+from django.contrib.auth.models import User
+from .utils import enviar_correo_pedido
+
+from datetime import date
+
+def inicio(request):
+    pedidos_qs = Pedido.objects.select_related('proveedor')
+    pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
+    ultimos_pedidos = (
+        pedidos_qs
+        .select_related('proveedor')
+        .filter(estado='PENDIENTE')
+        .order_by('-fecha_creacion')[:3]
+    )
+
+    pedidos = (
+        pedidos_qs
+        .select_related('proveedor')
+        .filter(estado='PENDIENTE')
+        .order_by('fecha_entrega')
+    )
+
+    pedidos_pendientes = pedidos.count()
+    proveedores = Proveedor.objects.filter(activo=True)
+
+    resumen = (
+        pedidos_qs
+        .annotate(fecha=TruncDate('fecha_creacion'))
+        .values('fecha')
+        .annotate(total=Sum('cantidad'))
+        .order_by('fecha')
+    )
+
+    chart_labels = [r['fecha'].strftime('%d/%m/%Y') for r in resumen]
+    chart_data = [r['total'] for r in resumen]
+
+    return render(request, 'paginas/inicio.html', {
+        'ultimos_pedidos': ultimos_pedidos,
+        'pedidos': pedidos,
+        'pedidos_pendientes': pedidos_pendientes,
+        'chart_labels': chart_labels,
+        'chart_data': chart_data,
+        'proveedores': proveedores,
+        **filtros
+    })
+
+    
+
+
+def nosotros(request):
+    return render(request, 'paginas/nosotros.html')
+# vista logica del forscast.
+def clientesweb(request):
+    Clientes = Cliente.objects.all()
+    print(Clientes)
+    return render(request, 'clientesweb/index.html',{'Clientes': Clientes})
+# vista logica del forscast.
+def crearcliente(request):
+    formulario = ClienteForm(request.POST or None, request.FILES or None)
+    if formulario.is_valid():
+        formulario.save()
+        formulario = ClienteForm()
+        return redirect('clientesweb')
+    return render(request, 'clientesweb/crear.html', {'formulario': formulario})
+# vista logica del forscast.
+def editarcliente(request, id):
+    cliente = Cliente.objects.get(id=id)
+    formulario = ClienteForm(request.POST or None, request.FILES or None, instance=cliente)
+
+    if request.method == 'POST':
+        if formulario.is_valid():
+            formulario.save()
+            return redirect('clientesweb')
+
+    return render(request, 'clientesweb/editar.html', {'formulario': formulario})
+
+def eliminarcliente(request, id):
+    cliente = Cliente.objects.get(id=id)
+    cliente.delete()
+    return redirect('clientesweb')
+
+
+def verproveedores(request):
+    return render(request, 'usuarios/perfil.html')
+
+def form(request): 
+    return render(request, 'clientesweb/form.html')
+
+#VISTA DE PEDIDOS
+def crear_pedido(request):
+
+    proveedores = Proveedor.objects.filter(activo=True)
+    comerciales = User.objects.all()
+
+    if request.method == 'POST':
+        pedido = Pedido.objects.create(
+            proveedor_id=request.POST.get('proveedor'),
+            comercial_id=request.POST.get('comercial'),
+            tipo_huevo=request.POST.get('tipo_huevo'),
+            presentacion=request.POST.get('presentacion'),
+            cantidad=request.POST.get('cantidad'),
+            fecha_entrega=request.POST.get('fecha_entrega'),
+            observaciones=request.POST.get('observaciones'),
+        )
+
+        Notificacion.objects.create(
+            usuario=pedido.comercial,
+            mensaje=f"📦 Nuevo pedido creado por {pedido.comercial.username}"
+        )
+
+        return redirect('inicio')
+
+    context = {
+        'proveedores': proveedores,
+        'comerciales': comerciales,
+        'TIPO_HUEVO_CHOICES': Pedido.TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': Pedido.PRESENTACION_CHOICES,
+    }
+
+    return render(request, 'pedidos/crear_pedido.html', context)
+
+
+def editarpedido(request, id):
+
+    pedido = get_object_or_404(Pedido, id=id)
+
+    proveedores = Proveedor.objects.filter(activo=True)
+    comerciales = User.objects.all()
+
+    if request.method == 'POST':
+        pedido.proveedor_id = request.POST.get('proveedor')
+        pedido.comercial_id = request.POST.get('comercial')
+        pedido.tipo_huevo = request.POST.get('tipo_huevo')
+        pedido.presentacion = request.POST.get('presentacion')
+        pedido.cantidad = request.POST.get('cantidad')
+        pedido.fecha_entrega = request.POST.get('fecha_entrega')
+        pedido.observaciones = request.POST.get('observaciones')
+        pedido.save()
+
+        return redirect('inicio')
+
+    context = {
+        'pedido': pedido,
+        'proveedores': proveedores,
+        'comerciales': comerciales,
+        'TIPO_HUEVO_CHOICES': Pedido.TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': Pedido.PRESENTACION_CHOICES,
+    }
+
+    return render(request, 'pedidos/editar_pedido.html', context)
+
+def eliminarpedido(request, id):
+    Pedido.objects.filter(id=id).delete()
+    return redirect('inicio')
+
+def editartablas(request):
+    pedidos_qs = Pedido.objects.select_related('proveedor').filter(estado='PENDIENTE')
+
+    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+
+    proveedores = Proveedor.objects.filter(activo=True)
+
+     # ✅ SUMAS CORRECTAS (sin duplicar)
+    total_liquido = pedidos.filter(
+        tipo_huevo__in=['HELU', 'CLLU']
+    ).aggregate(total=Sum('cantidad'))['total'] or 0
+
+    total_yema = pedidos.filter(
+        tipo_huevo='YELU'
+    ).aggregate(total=Sum('cantidad'))['total'] or 0
+
+    total_mezcla = pedidos.filter(
+        tipo_huevo='MEPU'
+    ).aggregate(total=Sum('cantidad'))['total'] or 0
+
+    return render(request, 'paginas/editartablas.html', {
+        'pedidos': pedidos,
+        'proveedores': proveedores,
+        'total_liquido': total_liquido,
+        'total_mezcla': total_mezcla,
+        'total_yema': total_yema,
+        **filtros
+    })
+
+
+def historial(request):
+    pedidos_qs = Pedido.objects.select_related('proveedor').filter(estado='REALIZADO')
+
+    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+
+    proveedores = Proveedor.objects.filter(activo=True)
+
+    return render(request, 'pedidos/historial.html', {
+        'pedidos': pedidos,
+        'proveedores': proveedores,
+        **filtros
+    })
+
+def marcar_pedido_realizado(request, id):
+    pedido = get_object_or_404(Pedido, id=id)
+    pedido.estado = 'REALIZADO'
+    pedido.save()
+    return redirect('editartablas')
+
+
+def filtrar_pedidos(request, qs):
+    filtros = {}
+
+    if proveedor := request.GET.get('proveedor'):
+        qs = qs.filter(proveedor_id=proveedor)
+        filtros['proveedor_id'] = proveedor
+
+    if desde := request.GET.get('fecha_desde'):
+        qs = qs.filter(fecha_entrega__gte=desde)
+        filtros['fecha_desde'] = desde
+
+    if hasta := request.GET.get('fecha_hasta'):
+        qs = qs.filter(fecha_entrega__lte=hasta)
+        filtros['fecha_hasta'] = hasta
+
+    return qs, filtros
+
+
+def entregas_calendario(request):
+    entregas = EntregaPedido.objects.filter(estado='PENDIENTE')
+
+    eventos = [
+        {
+            "title": f"{e.pedido.proveedor.nombre} - {e.cantidad}kg",
+            "start": e.fecha_entrega
+        }
+        for e in entregas
+    ]
+
+    return JsonResponse(eventos, safe=False)
+
+def crear_pedido_semanal(request):
+    if request.method == 'POST':
+        pedido = Pedido.objects.create(
+            proveedor_id=request.POST['proveedor'],
+            comercial_id=request.POST['comercial'],
+            tipo_huevo=request.POST['tipo_huevo'],
+            presentacion=request.POST['presentacion'],
+            cantidad_total=request.POST['cantidad_total'],
+            semana=request.POST['semana'],
+        )
+
+        fechas = request.POST.getlist('fecha_entrega[]')
+        cantidades = request.POST.getlist('cantidad[]')
+
+        for fecha, cantidad in zip(fechas, cantidades):
+            EntregaPedido.objects.create(
+                pedido=pedido,
+                fecha_entrega=fecha,
+                cantidad=cantidad
+            )
+
+        return redirect('inicio')

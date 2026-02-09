@@ -1,0 +1,45 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Lista de Clientes
+{% endblock %}
+
+{% block contenido %}
+<div class="card">
+    <div class="card-header"><a name="" id="" class="btn btn-success" href=""
+            role="button">Agregar nuevo Usuario</a>
+    </div>
+    <div class="card-body">
+        <h4 class="card-title">USUARIOS REGISTRADOS</h4>
+        <div class="table-responsive">
+            <table class="table table">
+                <thead>
+                    <tr>
+                        <th scope="col">Nombre</th>
+                        <th scope="col">Apellido</th>
+                        <th scope="col">Correo</th>
+                        <th scope="col">Ciudad</th>
+                        <th scope="col">Rol</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for Proveedor in Proveedor %}
+                    <tr class="">
+                        <td>{{ Proveedor.nombre }}</td>
+                        <td>{{ Proveedor.email }}</td>
+                        <td>{{ Proveedor.activo }}</td>
+                        <td><a name="" id="" class="btn btn-info" href="{% url 'editarcliente' Proveedor.nombre %}"
+                                role="button">Editar</a>
+                            / <a name="" id="" class="btn btn-danger" href="{% url 'eliminarcliente' Proveedor.nombre %}" role="button">Borrar</a></td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+
+        
+
+    </div>
+ 
+
+{% endblock %}
