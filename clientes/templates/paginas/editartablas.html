@@ -23,18 +23,17 @@ Editar Pedido
                         <tr>
                             <th>PRESENTACIÓN</th>
                             <th>COMPAÑIA</th>
-                            <th>HELU/HEPU</th>
-                            <th>YELU/YEPU</th>
-                            <th>CLLU/ALBP</th>
-                            <th>MEPU</th>
+                            <th>TIPO DE HUEVO</th>
+                            <th>CANTIDAD TOTAL (KG)</th>
+                            <th>SEMANA</th>
+                            <th>ENTREGAS</th>
                             <td>FECHA/CREACION</td>
-                            <td>FECHA/VENCIMIENTO</td>
+                            <td>ACCIONES</td>
                         </tr>
                     </thead>
                     <tfoot>
                         <tr>
                             <th>TOTAL</th>
-                            <th></th>
                             <th></th>
                             <th></th>
                             <th></th>
@@ -46,30 +45,25 @@ Editar Pedido
                     <tbody>
                         {% for pedido in pedidos %}
                         <tr>
-                            <td>{{ pedido.presentacion }}</td>
+                            <td>{{ pedido.get_presentacion_display }}</td>
                             <td>{{ pedido.proveedor.nombre }}</td>
+                            <td>{{ pedido.get_tipo_huevo_display }}</td>
+                            <td>{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
+                            <td>{{ pedido.semana|date:"d/m/Y" }}</td>
                             <td>
-                                {% if pedido.tipo_huevo == "HELU" %}
-                                {{ pedido.cantidad }}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if pedido.tipo_huevo == "YELU" %}
-                                {{ pedido.cantidad }}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if pedido.tipo_huevo == "CLLU" %}
-                                {{ pedido.cantidad }}
-                                {% endif %}
-                            </td>
-                            <td>
-                                {% if pedido.tipo_huevo == "MEPU" %}
-                                {{ pedido.cantidad }}
+                                {% if pedido.entregas.all %}
+                                <ul class="mb-0 pl-3">
+                                    {% for entrega in pedido.entregas.all %}
+                                    <li>{{ entrega.fecha_entrega|date:"d/m/Y" }} · {{ entrega.cantidad }} kg</li>
+                                    {% endfor %}
+                                </ul>
+                                {% elif pedido.fecha_entrega %}
+                                {{ pedido.fecha_entrega|date:"d/m/Y" }} · {{ pedido.cantidad }} kg
+                                {% else %}
+                                —
                                 {% endif %}
                             </td>
                             <td>{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
-                            <td>{{ pedido.fecha_entrega|date:"d/m/Y" }}</td>
                             <td>
                                 <a href="{% url 'marcar_realizado' pedido.id %}" class="btn btn-success btn-sm">
                                     ✔
@@ -78,22 +72,23 @@ Editar Pedido
                         </tr>
                         {% endfor %}
                     </tbody>
-                    <p class="card-text">
+                </table>
+                <div class="mt-3">
+                    <p class="card-text mb-1">
                         🥚 Huevo líquido total:
                         <strong>{{ total_liquido }} kg</strong>
                     </p>
 
-                    <p class="card-text">
+                    <p class="card-text mb-1">
                         🧪 Mezcla en polvo total:
                         <strong>{{ total_mezcla }} kg</strong>
                     </p>
 
-                    <p class="card-text">
+                    <p class="card-text mb-0">
                         🟡 Yema total:
                         <strong>{{ total_yema }} kg</strong>
                     </p>
-
-                </table>
+                </div>
             </div>
         </div>
     </div>
