@@ -139,6 +139,9 @@ EMAIL_HOST_USER = 'certificadosovopacific@gmail.com'
 EMAIL_HOST_PASSWORD = 'mhvv cjtm zxup pnpa'
 DEFAULT_FROM_EMAIL = 'Sistema de Pedidos <certificadosovopacific@gmail.com>'
 
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'inicio'
+LOGOUT_REDIRECT_URL = 'login'
 
 TEMPLATES[0]['OPTIONS']['context_processors'] += [
     'clientes.context_processors.notificaciones',

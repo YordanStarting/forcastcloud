@@ -1,5 +1,5 @@
 from django import forms
-from .models import Cliente, Pedido
+from .models import Cliente, Pedido, Proveedor
 
 class ClienteForm(forms.ModelForm):
     class Meta:
@@ -14,10 +14,23 @@ class PedidoForm(forms.ModelForm):
             'comercial',
             'tipo_huevo',
             'presentacion',
-            'cantidad',  # ✅ Ahora este campo existe
-            'fecha_entrega',  # ✅ Ahora este campo existe
+            'cantidad_total',
+            'semana',
             'observaciones',
         ]
         widgets = {
-            'fecha_entrega': forms.DateInput(attrs={'type': 'date'}),
+            'semana': forms.DateInput(attrs={'type': 'date'}),
         }
+
+
+class ProveedorForm(forms.ModelForm):
+    class Meta:
+        model = Proveedor
+        fields = [
+            'nombre',
+            'nit',
+            'contacto',
+            'telefono',
+            'email',
+            'activo',
+        ]

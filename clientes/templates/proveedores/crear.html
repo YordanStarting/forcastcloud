@@ -1,0 +1,50 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Crear proveedor
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Nuevo proveedor</h6>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                <div class="form-row">
+                    <div class="form-group col-md-6">
+                        <label for="{{ form.nombre.id_for_label }}">Nombre</label>
+                        {{ form.nombre }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="{{ form.nit.id_for_label }}">NIT</label>
+                        {{ form.nit }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="{{ form.contacto.id_for_label }}">Contacto</label>
+                        {{ form.contacto }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="{{ form.telefono.id_for_label }}">Teléfono</label>
+                        {{ form.telefono }}
+                    </div>
+                    <div class="form-group col-md-6">
+                        <label for="{{ form.email.id_for_label }}">Email</label>
+                        {{ form.email }}
+                    </div>
+                    <div class="form-group col-md-6 d-flex align-items-center">
+                        <div class="form-check mt-3">
+                            {{ form.activo }}
+                            <label class="form-check-label" for="{{ form.activo.id_for_label }}">Activo</label>
+                        </div>
+                    </div>
+                </div>
+                <button type="submit" class="btn btn-primary">Guardar</button>
+                <a class="btn btn-secondary" href="{% url 'proveedores' %}">Cancelar</a>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

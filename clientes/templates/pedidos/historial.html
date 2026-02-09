@@ -33,19 +33,33 @@
                                             <th>PRESENTACIÓN</th>
                                             <th>COMPAÑIA</th>
                                             <th>TIPO DE HUEVO</th>
-                                            <th>CANTIDAD</th>
+                                            <th>CANTIDAD TOTAL (KG)</th>
+                                            <th>SEMANA</th>
+                                            <th>ENTREGAS</th>
                                             <th>FECHA CREACIÓN</th>
-                                            <th>FECHA ENTREGA</th>
                                         </tr>
                                     </thead>
                                     {% for pedido in pedidos %}
                                     <tr>
-                                        <td>{{ pedido.presentacion }}</td>
+                                        <td>{{ pedido.get_presentacion_display }}</td>
                                         <td>{{ pedido.proveedor.nombre }}</td>
                                         <td>{{ pedido.get_tipo_huevo_display }}</td>
-                                        <td>{{ pedido.cantidad }}</td>
+                                        <td>{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
+                                        <td>{{ pedido.semana|date:"d/m/Y" }}</td>
+                                        <td>
+                                            {% if pedido.entregas.all %}
+                                            <ul class="mb-0 pl-3">
+                                                {% for entrega in pedido.entregas.all %}
+                                                <li>{{ entrega.fecha_entrega|date:"d/m/Y" }} · {{ entrega.cantidad }} kg</li>
+                                                {% endfor %}
+                                            </ul>
+                                            {% elif pedido.fecha_entrega %}
+                                            {{ pedido.fecha_entrega|date:"d/m/Y" }} · {{ pedido.cantidad }} kg
+                                            {% else %}
+                                            —
+                                            {% endif %}
+                                        </td>
                                         <td>{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
-                                        <td>{{ pedido.fecha_entrega|date:"d/m/Y" }}</td>
                                     </tr>
                                     {% endfor %}
                                 </table>

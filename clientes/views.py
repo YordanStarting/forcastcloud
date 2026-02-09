@@ -1,17 +1,85 @@
 from datetime import date
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import HttpResponse, JsonResponse
-from .models import Cliente, EntregaPedido, Notificacion, Pedido, Proveedor
-from .forms import ClienteForm, PedidoForm
-from django.db.models import Sum
+from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from .models import (
+    Cliente,
+    EntregaPedido,
+    Notificacion,
+    Pedido,
+    Proveedor,
+    PerfilUsuario,
+    TIPO_HUEVO_CHOICES,
+    PRESENTACION_CHOICES,
+)
+from .forms import ClienteForm, PedidoForm, ProveedorForm
+from django.db.models import Sum, Case, When, IntegerField
 from django.db.models.functions import TruncDate
 from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import login, logout
+from django.contrib.auth.forms import AuthenticationForm
 from .utils import enviar_correo_pedido
 
-from datetime import date
+def _cantidad_pedido_expr():
+    return Case(
+        When(cantidad_total__gt=0, then='cantidad_total'),
+        default='cantidad',
+        output_field=IntegerField(),
+    )
 
+
+def _obtener_entregas_desde_request(request):
+    fechas = request.POST.getlist('fecha_entrega[]')
+    cantidades = request.POST.getlist('cantidad[]')
+    entregas = []
+    for fecha, cantidad in zip(fechas, cantidades):
+        if not fecha or not cantidad:
+            continue
+        try:
+            cantidad_int = int(cantidad)
+        except (TypeError, ValueError):
+            continue
+        if cantidad_int <= 0:
+            continue
+        entregas.append((fecha, cantidad_int))
+    return entregas
+
+
+def _obtener_rol_usuario(user):
+    if not user.is_authenticated:
+        return None
+    if user.is_superuser:
+        return 'admin'
+    perfil = PerfilUsuario.objects.filter(usuario=user).first()
+    return perfil.rol if perfil else None
+
+
+def _usuario_puede_gestionar_proveedores(user):
+    return _obtener_rol_usuario(user) in {'admin', 'comercial'}
+
+
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('inicio')
+    form = AuthenticationForm(request, data=request.POST or None)
+    form.fields['username'].widget.attrs.update({'class': 'form-control'})
+    form.fields['password'].widget.attrs.update({'class': 'form-control'})
+    if request.method == 'POST' and form.is_valid():
+        login(request, form.get_user())
+        next_url = request.POST.get('next') or request.GET.get('next') or 'inicio'
+        return redirect(next_url)
+    next_url = request.GET.get('next', '')
+    return render(request, 'usuarios/login.html', {'form': form, 'next': next_url})
+
+
+def logout_view(request):
+    logout(request)
+    return redirect('login')
+
+
+@login_required
 def inicio(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor')
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
     ultimos_pedidos = (
         pedidos_qs
@@ -24,7 +92,7 @@ def inicio(request):
         pedidos_qs
         .select_related('proveedor')
         .filter(estado='PENDIENTE')
-        .order_by('fecha_entrega')
+        .order_by('semana', 'fecha_entrega')
     )
 
     pedidos_pendientes = pedidos.count()
@@ -34,7 +102,7 @@ def inicio(request):
         pedidos_qs
         .annotate(fecha=TruncDate('fecha_creacion'))
         .values('fecha')
-        .annotate(total=Sum('cantidad'))
+        .annotate(total=Sum(_cantidad_pedido_expr()))
         .order_by('fecha')
     )
 
@@ -54,14 +122,17 @@ def inicio(request):
     
 
 
+@login_required
 def nosotros(request):
     return render(request, 'paginas/nosotros.html')
 # vista logica del forscast.
+@login_required
 def clientesweb(request):
     Clientes = Cliente.objects.all()
     print(Clientes)
     return render(request, 'clientesweb/index.html',{'Clientes': Clientes})
 # vista logica del forscast.
+@login_required
 def crearcliente(request):
     formulario = ClienteForm(request.POST or None, request.FILES or None)
     if formulario.is_valid():
@@ -70,6 +141,7 @@ def crearcliente(request):
         return redirect('clientesweb')
     return render(request, 'clientesweb/crear.html', {'formulario': formulario})
 # vista logica del forscast.
+@login_required
 def editarcliente(request, id):
     cliente = Cliente.objects.get(id=id)
     formulario = ClienteForm(request.POST or None, request.FILES or None, instance=cliente)
@@ -81,34 +153,78 @@ def editarcliente(request, id):
 
     return render(request, 'clientesweb/editar.html', {'formulario': formulario})
 
+@login_required
 def eliminarcliente(request, id):
     cliente = Cliente.objects.get(id=id)
     cliente.delete()
     return redirect('clientesweb')
 
 
+@login_required
 def verproveedores(request):
-    return render(request, 'usuarios/perfil.html')
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para ver proveedores.")
+    proveedores = Proveedor.objects.all().order_by('nombre')
+    return render(request, 'proveedores/lista.html', {'proveedores': proveedores})
 
+
+@login_required
+def crearproveedor(request):
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para crear proveedores.")
+    form = ProveedorForm(request.POST or None)
+    for field in form.fields.values():
+        if field.widget.input_type != 'checkbox':
+            field.widget.attrs.update({'class': 'form-control'})
+    form.fields['activo'].widget.attrs.update({'class': 'form-check-input'})
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('proveedores')
+    return render(request, 'proveedores/crear.html', {'form': form})
+
+@login_required
 def form(request): 
     return render(request, 'clientesweb/form.html')
 
 #VISTA DE PEDIDOS
+@login_required
 def crear_pedido(request):
 
     proveedores = Proveedor.objects.filter(activo=True)
     comerciales = User.objects.all()
 
     if request.method == 'POST':
+        entregas = _obtener_entregas_desde_request(request)
+        cantidad_total = request.POST.get('cantidad_total')
+        try:
+            cantidad_total_int = int(cantidad_total)
+        except (TypeError, ValueError):
+            cantidad_total_int = 0
+        if cantidad_total_int <= 0:
+            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+
+        fecha_principal = None
+        if entregas:
+            fecha_principal = max(fecha for fecha, _ in entregas)
+
         pedido = Pedido.objects.create(
             proveedor_id=request.POST.get('proveedor'),
             comercial_id=request.POST.get('comercial'),
             tipo_huevo=request.POST.get('tipo_huevo'),
             presentacion=request.POST.get('presentacion'),
-            cantidad=request.POST.get('cantidad'),
-            fecha_entrega=request.POST.get('fecha_entrega'),
+            cantidad=cantidad_total_int,
+            fecha_entrega=fecha_principal,
+            cantidad_total=cantidad_total_int,
+            semana=request.POST.get('semana') or None,
             observaciones=request.POST.get('observaciones'),
         )
+
+        for fecha, cantidad in entregas:
+            EntregaPedido.objects.create(
+                pedido=pedido,
+                fecha_entrega=fecha,
+                cantidad=cantidad
+            )
 
         Notificacion.objects.create(
             usuario=pedido.comercial,
@@ -120,13 +236,15 @@ def crear_pedido(request):
     context = {
         'proveedores': proveedores,
         'comerciales': comerciales,
-        'TIPO_HUEVO_CHOICES': Pedido.TIPO_HUEVO_CHOICES,
-        'PRESENTACION_CHOICES': Pedido.PRESENTACION_CHOICES,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        'entregas': [],
     }
 
     return render(request, 'pedidos/crear_pedido.html', context)
 
 
+@login_required
 def editarpedido(request, id):
 
     pedido = get_object_or_404(Pedido, id=id)
@@ -135,14 +253,37 @@ def editarpedido(request, id):
     comerciales = User.objects.all()
 
     if request.method == 'POST':
+        entregas = _obtener_entregas_desde_request(request)
+        cantidad_total = request.POST.get('cantidad_total')
+        try:
+            cantidad_total_int = int(cantidad_total)
+        except (TypeError, ValueError):
+            cantidad_total_int = 0
+        if cantidad_total_int <= 0:
+            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+
+        fecha_principal = None
+        if entregas:
+            fecha_principal = max(fecha for fecha, _ in entregas)
+
         pedido.proveedor_id = request.POST.get('proveedor')
         pedido.comercial_id = request.POST.get('comercial')
         pedido.tipo_huevo = request.POST.get('tipo_huevo')
         pedido.presentacion = request.POST.get('presentacion')
-        pedido.cantidad = request.POST.get('cantidad')
-        pedido.fecha_entrega = request.POST.get('fecha_entrega')
+        pedido.cantidad = cantidad_total_int
+        pedido.fecha_entrega = fecha_principal
+        pedido.cantidad_total = cantidad_total_int
+        pedido.semana = request.POST.get('semana') or None
         pedido.observaciones = request.POST.get('observaciones')
         pedido.save()
+
+        pedido.entregas.all().delete()
+        for fecha, cantidad in entregas:
+            EntregaPedido.objects.create(
+                pedido=pedido,
+                fecha_entrega=fecha,
+                cantidad=cantidad
+            )
 
         return redirect('inicio')
 
@@ -150,18 +291,21 @@ def editarpedido(request, id):
         'pedido': pedido,
         'proveedores': proveedores,
         'comerciales': comerciales,
-        'TIPO_HUEVO_CHOICES': Pedido.TIPO_HUEVO_CHOICES,
-        'PRESENTACION_CHOICES': Pedido.PRESENTACION_CHOICES,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        'entregas': pedido.entregas.all().order_by('fecha_entrega'),
     }
 
     return render(request, 'pedidos/editar_pedido.html', context)
 
+@login_required
 def eliminarpedido(request, id):
     Pedido.objects.filter(id=id).delete()
     return redirect('inicio')
 
+@login_required
 def editartablas(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').filter(estado='PENDIENTE')
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='PENDIENTE')
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
@@ -170,15 +314,15 @@ def editartablas(request):
      # ✅ SUMAS CORRECTAS (sin duplicar)
     total_liquido = pedidos.filter(
         tipo_huevo__in=['HELU', 'CLLU']
-    ).aggregate(total=Sum('cantidad'))['total'] or 0
+    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
 
     total_yema = pedidos.filter(
         tipo_huevo='YELU'
-    ).aggregate(total=Sum('cantidad'))['total'] or 0
+    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
 
     total_mezcla = pedidos.filter(
         tipo_huevo='MEPU'
-    ).aggregate(total=Sum('cantidad'))['total'] or 0
+    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
 
     return render(request, 'paginas/editartablas.html', {
         'pedidos': pedidos,
@@ -190,8 +334,9 @@ def editartablas(request):
     })
 
 
+@login_required
 def historial(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').filter(estado='REALIZADO')
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='REALIZADO')
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
@@ -203,6 +348,7 @@ def historial(request):
         **filtros
     })
 
+@login_required
 def marcar_pedido_realizado(request, id):
     pedido = get_object_or_404(Pedido, id=id)
     pedido.estado = 'REALIZADO'
@@ -228,6 +374,7 @@ def filtrar_pedidos(request, qs):
     return qs, filtros
 
 
+@login_required
 def entregas_calendario(request):
     entregas = EntregaPedido.objects.filter(estado='PENDIENTE')
 
@@ -241,21 +388,33 @@ def entregas_calendario(request):
 
     return JsonResponse(eventos, safe=False)
 
+@login_required
 def crear_pedido_semanal(request):
     if request.method == 'POST':
+        entregas = _obtener_entregas_desde_request(request)
+        cantidad_total = request.POST.get('cantidad_total')
+        try:
+            cantidad_total_int = int(cantidad_total)
+        except (TypeError, ValueError):
+            cantidad_total_int = 0
+        if cantidad_total_int <= 0:
+            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+
+        fecha_principal = None
+        if entregas:
+            fecha_principal = max(fecha for fecha, _ in entregas)
+
         pedido = Pedido.objects.create(
             proveedor_id=request.POST['proveedor'],
             comercial_id=request.POST['comercial'],
             tipo_huevo=request.POST['tipo_huevo'],
             presentacion=request.POST['presentacion'],
-            cantidad_total=request.POST['cantidad_total'],
+            cantidad=cantidad_total_int,
+            fecha_entrega=fecha_principal,
+            cantidad_total=cantidad_total_int,
             semana=request.POST['semana'],
         )
-
-        fechas = request.POST.getlist('fecha_entrega[]')
-        cantidades = request.POST.getlist('cantidad[]')
-
-        for fecha, cantidad in zip(fechas, cantidades):
+        for fecha, cantidad in entregas:
             EntregaPedido.objects.create(
                 pedido=pedido,
                 fecha_entrega=fecha,
