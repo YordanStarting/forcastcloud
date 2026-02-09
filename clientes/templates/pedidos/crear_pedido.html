@@ -1,7 +1,7 @@
 {% extends 'base.html' %}
 
 {% block titulo %}
-Agregar Nuevo Cliente
+Crear pedido semanal
 {% endblock %}
 
 {% block contenido %}
@@ -57,13 +57,36 @@ Agregar Nuevo Cliente
             </div>
 
             <div class="form-group col-md-6">
-                <label>Cantidad</label>
-                <input type="number" name="cantidad" class="form-control" required>
+                <label>Semana (lunes)</label>
+                <input type="date" name="semana" class="form-control" required>
             </div>
 
             <div class="form-group col-md-6">
-                <label>Fecha de Entrega</label>
-                <input type="date" name="fecha_entrega" class="form-control" required>
+                <label>Cantidad total (kg)</label>
+                <input type="number" name="cantidad_total" class="form-control" min="1" required>
+            </div>
+
+            <div class="form-group col-md-12">
+                <label>Entregas programadas</label>
+                <div id="entregas-container">
+                    <div class="form-row entrega-row mb-2">
+                        <div class="col-md-6">
+                            <input type="date" name="fecha_entrega[]" class="form-control" required>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
+                        </div>
+                        <div class="col-md-1 d-flex align-items-center">
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                        </div>
+                    </div>
+                </div>
+                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="add-entrega">
+                    + Agregar entrega
+                </button>
+                <small class="form-text text-muted mt-2">
+                    Total programado: <strong><span id="total-entregas">0</span> kg</strong>
+                </small>
             </div>
 
             <div class="form-group col-md-12">
@@ -73,7 +96,53 @@ Agregar Nuevo Cliente
             <input type="submit" class="btn btn-primary y2" value="Enviar">
         </div>
 
-        
+        <script>
+            (function () {
+                const container = document.getElementById('entregas-container');
+                const addButton = document.getElementById('add-entrega');
+                const totalSpan = document.getElementById('total-entregas');
+
+                const updateTotal = () => {
+                    const cantidades = Array.from(container.querySelectorAll('.cantidad-entrega'));
+                    const total = cantidades.reduce((sum, input) => {
+                        const value = parseInt(input.value || '0', 10);
+                        return sum + (isNaN(value) ? 0 : value);
+                    }, 0);
+                    totalSpan.textContent = total;
+                };
+
+                const attachRowHandlers = (row) => {
+                    const removeButton = row.querySelector('.remove-entrega');
+                    removeButton.addEventListener('click', () => {
+                        row.remove();
+                        updateTotal();
+                    });
+                    const cantidadInput = row.querySelector('.cantidad-entrega');
+                    cantidadInput.addEventListener('input', updateTotal);
+                };
+
+                addButton.addEventListener('click', () => {
+                    const row = document.createElement('div');
+                    row.className = 'form-row entrega-row mb-2';
+                    row.innerHTML = `
+                        <div class="col-md-6">
+                            <input type="date" name="fecha_entrega[]" class="form-control" required>
+                        </div>
+                        <div class="col-md-5">
+                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
+                        </div>
+                        <div class="col-md-1 d-flex align-items-center">
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                        </div>
+                    `;
+                    container.appendChild(row);
+                    attachRowHandlers(row);
+                });
+
+                container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
+                updateTotal();
+            })();
+        </script>
     </form>
 
 </div>
