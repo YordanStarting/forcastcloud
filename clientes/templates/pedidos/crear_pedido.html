@@ -1,4 +1,4 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
 
 {% block titulo %}
 Crear pedido semanal
@@ -10,6 +10,12 @@ Crear pedido semanal
     <form method="post">
         {% csrf_token %}
 
+        {% if error_message %}
+        <div class="alert alert-danger">
+            {{ error_message }}
+        </div>
+        {% endif %}
+
         <div class="form-row">
 
             <div class="form-group col-md-12">
@@ -17,7 +23,8 @@ Crear pedido semanal
                 <select name="proveedor" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}">
+                    <option value="{{ proveedor.id }}"
+                        {% if form_data.proveedor == proveedor.id|stringformat:"s" %}selected{% endif %}>
                         {{ proveedor.nombre }}
                     </option>
                     {% endfor %}
@@ -29,7 +36,8 @@ Crear pedido semanal
                 <select name="comercial" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for user in comerciales %}
-                    <option value="{{ user.id }}">
+                    <option value="{{ user.id }}"
+                        {% if form_data.comercial == user.id|stringformat:"s" %}selected{% endif %}>
                         {{ user.username }}
                     </option>
                     {% endfor %}
@@ -41,7 +49,9 @@ Crear pedido semanal
                 <select name="tipo_huevo" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for value, label in TIPO_HUEVO_CHOICES %}
-                    <option value="{{ value }}">{{ label }}</option>
+                    <option value="{{ value }}" {% if form_data.tipo_huevo == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
                     {% endfor %}
                 </select>
             </div>
@@ -51,24 +61,45 @@ Crear pedido semanal
                 <select name="presentacion" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for value, label in PRESENTACION_CHOICES %}
-                    <option value="{{ value }}">{{ label }}</option>
+                    <option value="{{ value }}" {% if form_data.presentacion == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
                     {% endfor %}
                 </select>
             </div>
 
             <div class="form-group col-md-6">
                 <label>Semana (lunes)</label>
-                <input type="date" name="semana" class="form-control" required>
+                <input type="date" name="semana" class="form-control" required
+                    value="{{ form_data.semana|default:'' }}">
             </div>
 
             <div class="form-group col-md-6">
                 <label>Cantidad total (kg)</label>
-                <input type="number" name="cantidad_total" class="form-control" min="1" required>
+                <input type="number" name="cantidad_total" class="form-control" min="1" required
+                    value="{{ form_data.cantidad_total|default:'' }}">
             </div>
 
             <div class="form-group col-md-12">
                 <label>Entregas programadas</label>
                 <div id="entregas-container">
+                    {% if entregas %}
+                    {% for entrega in entregas %}
+                    <div class="form-row entrega-row mb-2">
+                        <div class="col-md-6">
+                            <input type="date" name="fecha_entrega[]" class="form-control" required
+                                value="{{ entrega.fecha }}">
+                        </div>
+                        <div class="col-md-5">
+                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required
+                                value="{{ entrega.cantidad }}">
+                        </div>
+                        <div class="col-md-1 d-flex align-items-center">
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">&times;</button>
+                        </div>
+                    </div>
+                    {% endfor %}
+                    {% else %}
                     <div class="form-row entrega-row mb-2">
                         <div class="col-md-6">
                             <input type="date" name="fecha_entrega[]" class="form-control" required>
@@ -77,21 +108,23 @@ Crear pedido semanal
                             <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
                         </div>
                         <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">&times;</button>
                         </div>
                     </div>
+                    {% endif %}
                 </div>
                 <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="add-entrega">
                     + Agregar entrega
                 </button>
                 <small class="form-text text-muted mt-2">
-                    Total programado: <strong><span id="total-entregas">0</span> kg</strong>
+                    Total programado: <strong><span id="total-entregas">{{ total_entregas|default:0 }}</span> kg</strong>
                 </small>
+                <small id="entregas-error" class="form-text text-danger mt-1 d-none"></small>
             </div>
 
             <div class="form-group col-md-12">
                 <label>Observaciones</label>
-                <textarea name="observaciones" class="form-control" rows="3"></textarea>
+                <textarea name="observaciones" class="form-control" rows="3">{{ form_data.observaciones|default:'' }}</textarea>
             </div>
             <input type="submit" class="btn btn-primary y2" value="Enviar">
         </div>
@@ -101,6 +134,31 @@ Crear pedido semanal
                 const container = document.getElementById('entregas-container');
                 const addButton = document.getElementById('add-entrega');
                 const totalSpan = document.getElementById('total-entregas');
+                const totalInput = document.querySelector('input[name="cantidad_total"]');
+                const errorSpan = document.getElementById('entregas-error');
+                const submitButton = document.querySelector('input[type="submit"]');
+
+                const validateTotals = (totalEntregas) => {
+                    const totalPedido = parseInt(totalInput.value || '0', 10);
+                    if (!totalPedido) {
+                        errorSpan.classList.add('d-none');
+                        submitButton.disabled = false;
+                        return;
+                    }
+
+                    if (totalEntregas !== totalPedido) {
+                        const diferencia = totalPedido - totalEntregas;
+                        const mensaje = diferencia > 0
+                            ? `Faltan ${diferencia} kg por programar.`
+                            : `Sobran ${Math.abs(diferencia)} kg programados.`;
+                        errorSpan.textContent = `Las entregas deben sumar ${totalPedido} kg. ${mensaje}`;
+                        errorSpan.classList.remove('d-none');
+                        submitButton.disabled = true;
+                    } else {
+                        errorSpan.classList.add('d-none');
+                        submitButton.disabled = false;
+                    }
+                };
 
                 const updateTotal = () => {
                     const cantidades = Array.from(container.querySelectorAll('.cantidad-entrega'));
@@ -109,6 +167,7 @@ Crear pedido semanal
                         return sum + (isNaN(value) ? 0 : value);
                     }, 0);
                     totalSpan.textContent = total;
+                    validateTotals(total);
                 };
 
                 const attachRowHandlers = (row) => {
@@ -132,7 +191,7 @@ Crear pedido semanal
                             <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
                         </div>
                         <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">&times;</button>
                         </div>
                     `;
                     container.appendChild(row);
@@ -140,6 +199,7 @@ Crear pedido semanal
                 });
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
+                totalInput.addEventListener('input', updateTotal);
                 updateTotal();
             })();
         </script>

@@ -2,6 +2,10 @@
 
 {% block titulo %}
 Inicio
+
+
+
+
 {% endblock %}
 
 {% block contenido %}
@@ -243,27 +247,10 @@ Inicio
                                             </div>
                                             <div class="modal-body">
                                                 <p class="small text-muted mb-2">
-                                                    {{ pedido.proveedor.nombre }} ?? {{ pedido.get_tipo_huevo_display }}
+                                                    {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
                                                 </p>
-                                                <div class="table-responsive">
-                                                    <table class="table table-sm mb-0">
-                                                        <thead>
-                                                            <tr>
-                                                                <th>Fecha</th>
-                                                                <th>Cantidad</th>
-                                                            </tr>
-                                                        </thead>
-                                                        <tbody>
-                                                            {% for entrega in entregas %}
-                                                            <tr>
-                                                                <td>{{ entrega.fecha_entrega|date:"d/m/Y" }}</td>
-                                                                <td>{{ entrega.cantidad }} kg</td>
-                                                            </tr>
-                                                            {% endfor %}
-                                                        </tbody>
-                                                    </table>
-                                                </div>
-                                            </div>
+                                                <div class="delivery-calendar" data-entregas='[{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'></div>
+                                                                                            </div>
                                             <div class="modal-footer">
                                                 <button type="button" class="btn btn-secondary"
                                                     data-dismiss="modal">Cerrar</button>
@@ -273,12 +260,12 @@ Inicio
                                 </div>
                                 {% elif entregas_count == 1 %}
                                 {% for entrega in entregas %}
-                                {{ entrega.fecha_entrega|date:"d/m/Y" }} ?? {{ entrega.cantidad }} kg
+                                {{ entrega.fecha_entrega|date:"d/m/Y" }} &middot; {{ entrega.cantidad }} kg
                                 {% endfor %}
                                 {% elif pedido.fecha_entrega %}
-                                {{ pedido.fecha_entrega|date:"d/m/Y" }} ?? {{ pedido.cantidad }} kg
+                                {{ pedido.fecha_entrega|date:"d/m/Y" }} &middot; {{ pedido.cantidad }} kg
                                 {% else %}
-                                ???
+                                -
                                 {% endif %}
                                 {% endwith %}
                                 {% endwith %}
@@ -295,4 +282,294 @@ Inicio
 
     </div>
 
-    {% endblock %}
+    <style id="delivery-calendar-styles">
+        .delivery-calendar {
+            margin-top: 0.5rem;
+        }
+
+        .delivery-calendar .calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
+
+        .delivery-calendar .calendar-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
+
+        .delivery-calendar .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.25rem;
+        }
+
+        .delivery-calendar .day-name {
+            text-transform: uppercase;
+            font-size: 0.65rem;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        .delivery-calendar .day {
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            border-radius: 6px;
+            padding: 0.35rem 0;
+            font-size: 0.75rem;
+            cursor: pointer;
+            position: relative;
+            text-align: center;
+        }
+
+        .delivery-calendar .day.is-muted {
+            color: #cbd5e1;
+            cursor: default;
+        }
+
+        .delivery-calendar .day.has-delivery {
+            border-color: #93c5fd;
+            background: #eff6ff;
+            font-weight: 600;
+        }
+
+        .delivery-calendar .day.has-delivery::after {
+            content: "";
+            width: 6px;
+            height: 6px;
+            background: #2563eb;
+            border-radius: 50%;
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .delivery-calendar .day.is-selected {
+            outline: 2px solid #2563eb;
+            outline-offset: 1px;
+        }
+    </style>
+
+<script id="delivery-calendar-script">
+        (function () {
+            function pad(value) {
+                return value < 10 ? "0" + value : "" + value;
+            }
+
+            function parseDate(value) {
+                var parts = value.split("-");
+                return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            }
+
+            function formatDateLabel(value) {
+                var date = parseDate(value);
+                return pad(date.getDate()) + "/" + pad(date.getMonth() + 1) + "/" + date.getFullYear();
+            }
+
+            function monthKey(date) {
+                return date.getFullYear() * 12 + date.getMonth();
+            }
+
+            function monthLabel(date) {
+                var months = [
+                    "Enero",
+                    "Febrero",
+                    "Marzo",
+                    "Abril",
+                    "Mayo",
+                    "Junio",
+                    "Julio",
+                    "Agosto",
+                    "Septiembre",
+                    "Octubre",
+                    "Noviembre",
+                    "Diciembre"
+                ];
+                return months[date.getMonth()] + " " + date.getFullYear();
+            }
+
+            function monthPrefix(date) {
+                return date.getFullYear() + "-" + pad(date.getMonth() + 1);
+            }
+
+            function buildCalendar(container) {
+                var deliveries = [];
+                try {
+                    deliveries = JSON.parse(container.dataset.entregas || "[]");
+                } catch (e) {
+                    deliveries = [];
+                }
+
+                if (!deliveries.length) {
+                    container.innerHTML = '<p class="text-muted small mb-0">Sin entregas registradas.</p>';
+                    return;
+                }
+
+                deliveries.sort(function (a, b) {
+                    return a.fecha.localeCompare(b.fecha);
+                });
+
+                var map = {};
+                deliveries.forEach(function (item) {
+                    if (!map[item.fecha]) {
+                        map[item.fecha] = [];
+                    }
+                    map[item.fecha].push(item);
+                });
+
+                var minDate = parseDate(deliveries[0].fecha);
+                var maxDate = parseDate(deliveries[deliveries.length - 1].fecha);
+
+                var state = {
+                    container: container,
+                    deliveries: deliveries,
+                    map: map,
+                    minKey: monthKey(minDate),
+                    maxKey: monthKey(maxDate),
+                    current: new Date(minDate.getFullYear(), minDate.getMonth(), 1),
+                    selected: null
+                };
+
+                renderCalendar(state);
+            }
+
+            function renderCalendar(state) {
+                var container = state.container;
+                container.innerHTML = "";
+
+                var header = document.createElement("div");
+                header.className = "calendar-header";
+
+                var prev = document.createElement("button");
+                prev.type = "button";
+                prev.className = "btn btn-light btn-sm";
+                prev.textContent = "<";
+
+                var next = document.createElement("button");
+                next.type = "button";
+                next.className = "btn btn-light btn-sm";
+                next.textContent = ">";
+
+                var title = document.createElement("div");
+                title.className = "calendar-title";
+                title.textContent = monthLabel(state.current);
+
+                header.appendChild(prev);
+                header.appendChild(title);
+                header.appendChild(next);
+
+                var grid = document.createElement("div");
+                grid.className = "calendar-grid";
+
+                var dayNames = ["L", "M", "M", "J", "V", "S", "D"];
+                dayNames.forEach(function (name) {
+                    var cell = document.createElement("div");
+                    cell.className = "day-name";
+                    cell.textContent = name;
+                    grid.appendChild(cell);
+                });
+
+                var firstDay = new Date(state.current.getFullYear(), state.current.getMonth(), 1);
+                var startIndex = (firstDay.getDay() + 6) % 7;
+
+                for (var i = 0; i < startIndex; i += 1) {
+                    var empty = document.createElement("div");
+                    empty.className = "day is-muted";
+                    grid.appendChild(empty);
+                }
+
+                var daysInMonth = new Date(state.current.getFullYear(), state.current.getMonth() + 1, 0).getDate();
+
+                var selectDate = function (dateStr) {
+                    state.selected = dateStr;
+                    var detail = container.querySelector(".calendar-details");
+                    var items = state.map[dateStr] || [];
+                    if (!items.length) {
+                        detail.textContent = "Sin entregas en esta fecha.";
+                    } else {
+                        detail.innerHTML = items.map(function (item) {
+                            return "<div>" + formatDateLabel(item.fecha) + " - " + item.cantidad + " kg</div>";
+                        }).join("");
+                    }
+
+                    var buttons = container.querySelectorAll(".day[data-date]");
+                    buttons.forEach(function (btn) {
+                        if (btn.dataset.date === dateStr) {
+                            btn.classList.add("is-selected");
+                        } else {
+                            btn.classList.remove("is-selected");
+                        }
+                    });
+                };
+
+                for (var day = 1; day <= daysInMonth; day += 1) {
+                    var dateStr = state.current.getFullYear() + "-" + pad(state.current.getMonth() + 1) + "-" + pad(day);
+                    var button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "day";
+                    button.textContent = day;
+                    button.dataset.date = dateStr;
+
+                    if (state.map[dateStr]) {
+                        button.classList.add("has-delivery");
+                    } else {
+                        button.classList.add("is-muted");
+                    }
+
+                    button.addEventListener("click", function (event) {
+                        var targetDate = event.currentTarget.dataset.date;
+                        selectDate(targetDate);
+                    });
+
+                    grid.appendChild(button);
+                }
+
+                var details = document.createElement("div");
+                details.className = "calendar-details text-muted small mt-2";
+                details.textContent = "Seleccione una fecha.";
+
+                var currentKey = monthKey(state.current);
+                prev.disabled = currentKey <= state.minKey;
+                next.disabled = currentKey >= state.maxKey;
+
+                prev.addEventListener("click", function () {
+                    if (monthKey(state.current) <= state.minKey) {
+                        return;
+                    }
+                    state.current = new Date(state.current.getFullYear(), state.current.getMonth() - 1, 1);
+                    renderCalendar(state);
+                });
+
+                next.addEventListener("click", function () {
+                    if (monthKey(state.current) >= state.maxKey) {
+                        return;
+                    }
+                    state.current = new Date(state.current.getFullYear(), state.current.getMonth() + 1, 1);
+                    renderCalendar(state);
+                });
+
+                container.appendChild(header);
+                container.appendChild(grid);
+                container.appendChild(details);
+
+                var prefix = monthPrefix(state.current);
+                var firstInMonth = state.deliveries.find(function (item) {
+                    return item.fecha.indexOf(prefix) === 0;
+                });
+                if (firstInMonth) {
+                    selectDate(firstInMonth.fecha);
+                }
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+                var calendars = document.querySelectorAll(".delivery-calendar");
+                calendars.forEach(function (container) {
+                    buildCalendar(container);
+                });
+            });
+        })();
+    </script>
+
+{% endblock %}

@@ -311,6 +311,13 @@ def crear_pedido(request):
     comerciales = User.objects.all()
 
     if request.method == 'POST':
+        fechas_entrega = request.POST.getlist('fecha_entrega[]')
+        cantidades_entrega = request.POST.getlist('cantidad[]')
+        entregas_form = [
+            {'fecha': fecha, 'cantidad': cantidad}
+            for fecha, cantidad in zip(fechas_entrega, cantidades_entrega)
+            if fecha or cantidad
+        ]
         entregas = _obtener_entregas_desde_request(request)
         cantidad_total = request.POST.get('cantidad_total')
         try:
@@ -319,6 +326,23 @@ def crear_pedido(request):
             cantidad_total_int = 0
         if cantidad_total_int <= 0:
             cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+
+        total_entregas = sum(cantidad for _, cantidad in entregas)
+        if cantidad_total_int and total_entregas != cantidad_total_int:
+            context = {
+                'proveedores': proveedores,
+                'comerciales': comerciales,
+                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+                'entregas': entregas_form,
+                'form_data': request.POST,
+                'error_message': (
+                    'Las entregas programadas deben sumar la misma cantidad '
+                    'que la cantidad total (kg) indicada en la semana.'
+                ),
+                'total_entregas': total_entregas,
+            }
+            return render(request, 'pedidos/crear_pedido.html', context)
 
         fecha_principal = None
         if entregas:
@@ -356,6 +380,7 @@ def crear_pedido(request):
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'entregas': [],
+        'form_data': {},
     }
 
     return render(request, 'pedidos/crear_pedido.html', context)
