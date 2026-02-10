@@ -22,6 +22,7 @@ Proveedores
                             <th>Teléfono</th>
                             <th>Email</th>
                             <th>Activo</th>
+                            <th>Acciones</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -39,10 +40,14 @@ Proveedores
                                 No
                                 {% endif %}
                             </td>
+                            <td>
+                                <a class="btn btn-sm btn-info" href="{% url 'editarproveedor' proveedor.id %}">Editar</a>
+                                <a class="btn btn-sm btn-danger" href="{% url 'eliminarproveedor' proveedor.id %}">Eliminar</a>
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="text-center text-muted">No hay proveedores registrados.</td>
+                            <td colspan="7" class="text-center text-muted">No hay proveedores registrados.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

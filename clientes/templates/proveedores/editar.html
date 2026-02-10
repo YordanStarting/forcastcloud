@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 
 {% block titulo %}
-Crear proveedor
+Editar proveedor
 {% endblock %}
 
 {% block contenido %}
 <div class="container-fluid">
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Nuevo proveedor</h6>
+            <h6 class="m-0 font-weight-bold text-primary">Editar proveedor</h6>
         </div>
         <div class="card-body">
             <form method="post">
@@ -64,7 +64,7 @@ Crear proveedor
                         </div>
                     </div>
                 </div>
-                <button type="submit" class="btn btn-primary">Guardar</button>
+                <button type="submit" class="btn btn-primary">Guardar cambios</button>
                 <a class="btn btn-secondary" href="{% url 'proveedores' %}">Cancelar</a>
             </form>
         </div>

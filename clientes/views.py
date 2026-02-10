@@ -1,16 +1,23 @@
 from datetime import date
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import HttpResponse, JsonResponse
+from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
 from .models import (
     Cliente,
     EntregaPedido,
     Notificacion,
     Pedido,
+    PerfilUsuario,
     Proveedor,
     TIPO_HUEVO_CHOICES,
     PRESENTACION_CHOICES,
 )
-from .forms import ClienteForm, PedidoForm
+from .forms import (
+    ClienteForm,
+    PedidoForm,
+    ProveedorForm,
+    UsuarioCrearForm,
+    UsuarioEditarForm,
+)
 from django.db.models import Sum, Case, When, IntegerField, Max
 from django.db.models.functions import TruncDate
 from django.contrib.auth.models import User
@@ -42,6 +49,54 @@ def _obtener_entregas_desde_request(request):
             continue
         entregas.append((fecha, cantidad_int))
     return entregas
+
+
+def _obtener_rol_usuario(user):
+    if not user.is_authenticated:
+        return None
+    perfil = PerfilUsuario.objects.filter(usuario=user).first()
+    if perfil:
+        return perfil.rol
+    return None
+
+
+def _usuario_puede_gestionar_proveedores(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) in {'admin', 'comercial'}
+
+
+def _usuario_puede_gestionar_usuarios(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) == 'admin'
+
+
+def _aplicar_estilos_form(form):
+    for field in form.fields.values():
+        input_type = getattr(field.widget, 'input_type', None)
+        if input_type == 'checkbox':
+            base_class = 'form-check-input'
+        else:
+            base_class = 'form-control'
+        current_class = field.widget.attrs.get('class', '')
+        if base_class not in current_class:
+            field.widget.attrs['class'] = f"{current_class} {base_class}".strip()
+
+    if form.is_bound:
+        _ = form.errors
+        for field_name in form.errors.keys():
+            field = form.fields.get(field_name)
+            if not field:
+                continue
+            current_class = field.widget.attrs.get('class', '')
+            if 'is-invalid' not in current_class:
+                field.widget.attrs['class'] = f"{current_class} is-invalid".strip()
+    return form
 
 
 def login_view(request):
@@ -158,15 +213,91 @@ def verproveedores(request):
 def crearproveedor(request):
     if not _usuario_puede_gestionar_proveedores(request.user):
         return HttpResponseForbidden("No tienes permisos para crear proveedores.")
-    form = ProveedorForm(request.POST or None)
-    for field in form.fields.values():
-        if field.widget.input_type != 'checkbox':
-            field.widget.attrs.update({'class': 'form-control'})
-    form.fields['activo'].widget.attrs.update({'class': 'form-check-input'})
+    form = _aplicar_estilos_form(ProveedorForm(request.POST or None))
     if request.method == 'POST' and form.is_valid():
         form.save()
         return redirect('proveedores')
     return render(request, 'proveedores/crear.html', {'form': form})
+
+
+@login_required
+def editarproveedor(request, id):
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para editar proveedores.")
+    proveedor = get_object_or_404(Proveedor, id=id)
+    form = _aplicar_estilos_form(ProveedorForm(request.POST or None, instance=proveedor))
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('proveedores')
+    return render(request, 'proveedores/editar.html', {'form': form, 'proveedor': proveedor})
+
+
+@login_required
+def eliminarproveedor(request, id):
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para eliminar proveedores.")
+    proveedor = get_object_or_404(Proveedor, id=id)
+    if request.method == 'POST':
+        proveedor.delete()
+        return redirect('proveedores')
+    return render(request, 'proveedores/eliminar.html', {'proveedor': proveedor})
+
+
+@login_required
+def usuarios_lista(request):
+    if not _usuario_puede_gestionar_usuarios(request.user):
+        return HttpResponseForbidden("No tienes permisos para ver usuarios.")
+    usuarios = list(User.objects.all().order_by('username'))
+    perfiles = PerfilUsuario.objects.filter(usuario__in=usuarios)
+    roles = {perfil.usuario_id: perfil.get_rol_display() for perfil in perfiles}
+    data = [
+        {
+            'user': usuario,
+            'rol': roles.get(usuario.id),
+        }
+        for usuario in usuarios
+    ]
+    return render(request, 'usuarios/lista.html', {'usuarios': data})
+
+
+@login_required
+def usuario_crear(request):
+    if not _usuario_puede_gestionar_usuarios(request.user):
+        return HttpResponseForbidden("No tienes permisos para crear usuarios.")
+    form = _aplicar_estilos_form(UsuarioCrearForm(request.POST or None))
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('usuarios')
+    return render(request, 'usuarios/crear.html', {'form': form})
+
+
+@login_required
+def usuario_editar(request, id):
+    if not _usuario_puede_gestionar_usuarios(request.user):
+        return HttpResponseForbidden("No tienes permisos para editar usuarios.")
+    usuario = get_object_or_404(User, id=id)
+    perfil = PerfilUsuario.objects.filter(usuario=usuario).first()
+    rol_inicial = 'admin' if usuario.is_superuser else (perfil.rol if perfil else 'comercial')
+    form = UsuarioEditarForm(request.POST or None, instance=usuario, initial={'rol': rol_inicial})
+    form = _aplicar_estilos_form(form)
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('usuarios')
+    return render(request, 'usuarios/editar.html', {'form': form, 'usuario': usuario})
+
+
+@login_required
+def usuario_eliminar(request, id):
+    if not _usuario_puede_gestionar_usuarios(request.user):
+        return HttpResponseForbidden("No tienes permisos para eliminar usuarios.")
+    usuario = get_object_or_404(User, id=id)
+    if usuario.id == request.user.id:
+        return HttpResponseForbidden("No puedes eliminar tu propio usuario.")
+    if request.method == 'POST':
+        usuario.delete()
+        return redirect('usuarios')
+    return render(request, 'usuarios/eliminar.html', {'usuario': usuario})
+
 
 @login_required
 def form(request): 

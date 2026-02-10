@@ -93,6 +93,24 @@
             </li>
             {% endif %}
 
+            {% if can_manage_usuarios %}
+            <li class="nav-item">
+                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseUsuarios"
+                    aria-expanded="true" aria-controls="collapseUsuarios">
+                    <i class="fas fa-fw fa-users"></i>
+                    <span>Usuarios</span>
+                </a>
+                <div id="collapseUsuarios" class="collapse" aria-labelledby="headingUsuarios"
+                    data-parent="#accordionSidebar">
+                    <div class="bg-white py-2 collapse-inner rounded">
+                        <h6 class="collapse-header">GestiÃ³n:</h6>
+                        <a class="collapse-item" href="{% url 'usuarios' %}">Listado</a>
+                        <a class="collapse-item" href="{% url 'usuariocrear' %}">Crear usuario</a>
+                    </div>
+                </div>
+            </li>
+            {% endif %}
+
             <!-- Nav Item - Utilities Collapse Menu -->
             <li class="nav-item">
                 <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseUtilities"
