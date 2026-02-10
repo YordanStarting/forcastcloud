@@ -43,10 +43,10 @@ class Proveedor(models.Model):
 
 class PerfilUsuario(models.Model):
     ROL_CHOICES = [
+        ('admin', 'Administrador'),
         ('comercial', 'Comercial'),
         ('logistica', 'Logística'),
-        ('produccion', 'Producción'),
-        ('admin', 'Administrador'),
+        ('programador', 'Programador'),
     ]
     usuario = models.OneToOneField(User, on_delete=models.CASCADE)
     rol = models.CharField(max_length=20, choices=ROL_CHOICES)

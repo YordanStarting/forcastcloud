@@ -14,6 +14,9 @@ from .forms import ClienteForm, PedidoForm
 from django.db.models import Sum, Case, When, IntegerField, Max
 from django.db.models.functions import TruncDate
 from django.contrib.auth.models import User
+from django.contrib.auth.decorators import login_required
+from django.contrib.auth import login, logout
+from django.contrib.auth.forms import AuthenticationForm
 from .utils import enviar_correo_pedido
 
 def _cantidad_pedido_expr():
@@ -41,6 +44,26 @@ def _obtener_entregas_desde_request(request):
     return entregas
 
 
+def login_view(request):
+    if request.user.is_authenticated:
+        return redirect('inicio')
+    form = AuthenticationForm(request, data=request.POST or None)
+    form.fields['username'].widget.attrs.update({'class': 'form-control'})
+    form.fields['password'].widget.attrs.update({'class': 'form-control'})
+    if request.method == 'POST' and form.is_valid():
+        login(request, form.get_user())
+        next_url = request.POST.get('next') or request.GET.get('next') or 'inicio'
+        return redirect(next_url)
+    next_url = request.GET.get('next', '')
+    return render(request, 'usuarios/login.html', {'form': form, 'next': next_url})
+
+
+def logout_view(request):
+    logout(request)
+    return redirect('login')
+
+
+@login_required
 def inicio(request):
     pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
@@ -85,14 +108,17 @@ def inicio(request):
     
 
 
+@login_required
 def nosotros(request):
     return render(request, 'paginas/nosotros.html')
 # vista logica del forscast.
+@login_required
 def clientesweb(request):
     Clientes = Cliente.objects.all()
     print(Clientes)
     return render(request, 'clientesweb/index.html',{'Clientes': Clientes})
 # vista logica del forscast.
+@login_required
 def crearcliente(request):
     formulario = ClienteForm(request.POST or None, request.FILES or None)
     if formulario.is_valid():
@@ -101,6 +127,7 @@ def crearcliente(request):
         return redirect('clientesweb')
     return render(request, 'clientesweb/crear.html', {'formulario': formulario})
 # vista logica del forscast.
+@login_required
 def editarcliente(request, id):
     cliente = Cliente.objects.get(id=id)
     formulario = ClienteForm(request.POST or None, request.FILES or None, instance=cliente)
@@ -112,19 +139,41 @@ def editarcliente(request, id):
 
     return render(request, 'clientesweb/editar.html', {'formulario': formulario})
 
+@login_required
 def eliminarcliente(request, id):
     cliente = Cliente.objects.get(id=id)
     cliente.delete()
     return redirect('clientesweb')
 
 
+@login_required
 def verproveedores(request):
-    return render(request, 'usuarios/perfil.html')
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para ver proveedores.")
+    proveedores = Proveedor.objects.all().order_by('nombre')
+    return render(request, 'proveedores/lista.html', {'proveedores': proveedores})
 
+
+@login_required
+def crearproveedor(request):
+    if not _usuario_puede_gestionar_proveedores(request.user):
+        return HttpResponseForbidden("No tienes permisos para crear proveedores.")
+    form = ProveedorForm(request.POST or None)
+    for field in form.fields.values():
+        if field.widget.input_type != 'checkbox':
+            field.widget.attrs.update({'class': 'form-control'})
+    form.fields['activo'].widget.attrs.update({'class': 'form-check-input'})
+    if request.method == 'POST' and form.is_valid():
+        form.save()
+        return redirect('proveedores')
+    return render(request, 'proveedores/crear.html', {'form': form})
+
+@login_required
 def form(request): 
     return render(request, 'clientesweb/form.html')
 
 #VISTA DE PEDIDOS
+@login_required
 def crear_pedido(request):
 
     proveedores = Proveedor.objects.filter(activo=True)
@@ -181,6 +230,7 @@ def crear_pedido(request):
     return render(request, 'pedidos/crear_pedido.html', context)
 
 
+@login_required
 def editarpedido(request, id):
 
     pedido = get_object_or_404(Pedido, id=id)
@@ -234,10 +284,12 @@ def editarpedido(request, id):
 
     return render(request, 'pedidos/editar_pedido.html', context)
 
+@login_required
 def eliminarpedido(request, id):
     Pedido.objects.filter(id=id).delete()
     return redirect('inicio')
 
+@login_required
 def editartablas(request):
     pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='PENDIENTE')
 
@@ -268,6 +320,7 @@ def editartablas(request):
     })
 
 
+@login_required
 def historial(request):
     pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='REALIZADO')
 
@@ -281,6 +334,7 @@ def historial(request):
         **filtros
     })
 
+@login_required
 def marcar_pedido_realizado(request, id):
     pedido = get_object_or_404(Pedido, id=id)
     pedido.estado = 'REALIZADO'
@@ -306,6 +360,7 @@ def filtrar_pedidos(request, qs):
     return qs, filtros
 
 
+@login_required
 def entregas_calendario(request):
     entregas = EntregaPedido.objects.filter(estado='PENDIENTE')
 
@@ -319,6 +374,7 @@ def entregas_calendario(request):
 
     return JsonResponse(eventos, safe=False)
 
+@login_required
 def crear_pedido_semanal(request):
     if request.method == 'POST':
         entregas = _obtener_entregas_desde_request(request)

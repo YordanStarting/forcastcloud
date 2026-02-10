@@ -1,0 +1,54 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Proveedores
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">Listado de proveedores</h6>
+            <a class="btn btn-sm btn-primary" href="{% url 'crearproveedor' %}">Crear proveedor</a>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>Nombre</th>
+                            <th>NIT</th>
+                            <th>Contacto</th>
+                            <th>Teléfono</th>
+                            <th>Email</th>
+                            <th>Activo</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for proveedor in proveedores %}
+                        <tr>
+                            <td>{{ proveedor.nombre }}</td>
+                            <td>{{ proveedor.nit|default:"—" }}</td>
+                            <td>{{ proveedor.contacto|default:"—" }}</td>
+                            <td>{{ proveedor.telefono|default:"—" }}</td>
+                            <td>{{ proveedor.email|default:"—" }}</td>
+                            <td>
+                                {% if proveedor.activo %}
+                                Sí
+                                {% else %}
+                                No
+                                {% endif %}
+                            </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">No hay proveedores registrados.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
