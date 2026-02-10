@@ -1,17 +1,325 @@
-{% extends 'base.html' %}
+﻿{% extends 'base.html' %}
+
 {% block titulo %}
-Editar Pedido
+Editar pedidos
+<style id="delivery-calendar-styles">
+        .delivery-calendar {
+            margin-top: 0.5rem;
+        }
 
+        .delivery-calendar .calendar-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 0.5rem;
+        }
 
+        .delivery-calendar .calendar-title {
+            font-weight: 600;
+            font-size: 0.95rem;
+        }
 
+        .delivery-calendar .calendar-grid {
+            display: grid;
+            grid-template-columns: repeat(7, 1fr);
+            gap: 0.25rem;
+        }
+
+        .delivery-calendar .day-name {
+            text-transform: uppercase;
+            font-size: 0.65rem;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        .delivery-calendar .day {
+            border: 1px solid #e2e8f0;
+            background: #ffffff;
+            border-radius: 6px;
+            padding: 0.35rem 0;
+            font-size: 0.75rem;
+            cursor: pointer;
+            position: relative;
+            text-align: center;
+        }
+
+        .delivery-calendar .day.is-muted {
+            color: #cbd5e1;
+            cursor: default;
+        }
+
+        .delivery-calendar .day.has-delivery {
+            border-color: #93c5fd;
+            background: #eff6ff;
+            font-weight: 600;
+        }
+
+        .delivery-calendar .day.has-delivery::after {
+            content: "";
+            width: 6px;
+            height: 6px;
+            background: #2563eb;
+            border-radius: 50%;
+            position: absolute;
+            bottom: 4px;
+            left: 50%;
+            transform: translateX(-50%);
+        }
+
+        .delivery-calendar .day.is-selected {
+            outline: 2px solid #2563eb;
+            outline-offset: 1px;
+        }
+    
+
+        .delivery-calendar .calendar-details {
+            margin-top: 0.75rem;
+            padding: 0.5rem 0.75rem;
+            border-radius: 8px;
+            background: #eef2ff;
+            border: 1px solid #c7d2fe;
+            color: #1e3a8a;
+            font-size: 0.95rem;
+            font-weight: 600;
+        }
+
+        .delivery-calendar .calendar-details .calendar-date {
+            display: inline-block;
+            margin-right: 0.5rem;
+            font-size: 1rem;
+        }
+
+        .delivery-calendar .calendar-details .calendar-qty {
+            display: inline-block;
+            font-weight: 700;
+            color: #1d4ed8;
+        }</style>
+
+<script id="delivery-calendar-script">
+        (function () {
+            function pad(value) {
+                return value < 10 ? "0" + value : "" + value;
+            }
+
+            function parseDate(value) {
+                var parts = value.split("-");
+                return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            }
+
+            function formatDateLabel(value) {
+                var date = parseDate(value);
+                return pad(date.getDate()) + "/" + pad(date.getMonth() + 1) + "/" + date.getFullYear();
+            }
+
+            function monthKey(date) {
+                return date.getFullYear() * 12 + date.getMonth();
+            }
+
+            function monthLabel(date) {
+                var months = [
+                    "Enero",
+                    "Febrero",
+                    "Marzo",
+                    "Abril",
+                    "Mayo",
+                    "Junio",
+                    "Julio",
+                    "Agosto",
+                    "Septiembre",
+                    "Octubre",
+                    "Noviembre",
+                    "Diciembre"
+                ];
+                return months[date.getMonth()] + " " + date.getFullYear();
+            }
+
+            function monthPrefix(date) {
+                return date.getFullYear() + "-" + pad(date.getMonth() + 1);
+            }
+
+            function buildCalendar(container) {
+                var deliveries = [];
+                try {
+                    deliveries = JSON.parse(container.dataset.entregas || "[]");
+                } catch (e) {
+                    deliveries = [];
+                }
+
+                if (!deliveries.length) {
+                    container.innerHTML = '<p class="text-muted small mb-0">Sin entregas registradas.</p>';
+                    return;
+                }
+
+                deliveries.sort(function (a, b) {
+                    return a.fecha.localeCompare(b.fecha);
+                });
+
+                var map = {};
+                deliveries.forEach(function (item) {
+                    if (!map[item.fecha]) {
+                        map[item.fecha] = [];
+                    }
+                    map[item.fecha].push(item);
+                });
+
+                var minDate = parseDate(deliveries[0].fecha);
+                var maxDate = parseDate(deliveries[deliveries.length - 1].fecha);
+
+                var state = {
+                    container: container,
+                    deliveries: deliveries,
+                    map: map,
+                    minKey: monthKey(minDate),
+                    maxKey: monthKey(maxDate),
+                    current: new Date(minDate.getFullYear(), minDate.getMonth(), 1),
+                    selected: null
+                };
+
+                renderCalendar(state);
+            }
+
+            function renderCalendar(state) {
+                var container = state.container;
+                container.innerHTML = "";
+
+                var header = document.createElement("div");
+                header.className = "calendar-header";
+
+                var prev = document.createElement("button");
+                prev.type = "button";
+                prev.className = "btn btn-light btn-sm";
+                prev.textContent = "<";
+
+                var next = document.createElement("button");
+                next.type = "button";
+                next.className = "btn btn-light btn-sm";
+                next.textContent = ">";
+
+                var title = document.createElement("div");
+                title.className = "calendar-title";
+                title.textContent = monthLabel(state.current);
+
+                header.appendChild(prev);
+                header.appendChild(title);
+                header.appendChild(next);
+
+                var grid = document.createElement("div");
+                grid.className = "calendar-grid";
+
+                var dayNames = ["L", "M", "M", "J", "V", "S", "D"];
+                dayNames.forEach(function (name) {
+                    var cell = document.createElement("div");
+                    cell.className = "day-name";
+                    cell.textContent = name;
+                    grid.appendChild(cell);
+                });
+
+                var firstDay = new Date(state.current.getFullYear(), state.current.getMonth(), 1);
+                var startIndex = (firstDay.getDay() + 6) % 7;
+
+                for (var i = 0; i < startIndex; i += 1) {
+                    var empty = document.createElement("div");
+                    empty.className = "day is-muted";
+                    grid.appendChild(empty);
+                }
+
+                var daysInMonth = new Date(state.current.getFullYear(), state.current.getMonth() + 1, 0).getDate();
+
+                var selectDate = function (dateStr) {
+                    state.selected = dateStr;
+                    var detail = container.querySelector(".calendar-details");
+                    var items = state.map[dateStr] || [];
+                    if (!items.length) {
+                        detail.textContent = "Sin entregas en esta fecha.";
+                    } else {
+                        detail.innerHTML = items.map(function (item) {
+                            return '<div><span class="calendar-date">' + formatDateLabel(item.fecha) + '</span><span class="calendar-qty">' + item.cantidad + ' kg</span></div>';
+                        }).join("");
+                    }
+
+                    var buttons = container.querySelectorAll(".day[data-date]");
+                    buttons.forEach(function (btn) {
+                        if (btn.dataset.date === dateStr) {
+                            btn.classList.add("is-selected");
+                        } else {
+                            btn.classList.remove("is-selected");
+                        }
+                    });
+                };
+
+                for (var day = 1; day <= daysInMonth; day += 1) {
+                    var dateStr = state.current.getFullYear() + "-" + pad(state.current.getMonth() + 1) + "-" + pad(day);
+                    var button = document.createElement("button");
+                    button.type = "button";
+                    button.className = "day";
+                    button.textContent = day;
+                    button.dataset.date = dateStr;
+
+                    if (state.map[dateStr]) {
+                        button.classList.add("has-delivery");
+                    } else {
+                        button.classList.add("is-muted");
+                    }
+
+                    button.addEventListener("click", function (event) {
+                        var targetDate = event.currentTarget.dataset.date;
+                        selectDate(targetDate);
+                    });
+
+                    grid.appendChild(button);
+                }
+
+                var details = document.createElement("div");
+                details.className = "calendar-details";
+                details.textContent = "Selecciona una fecha para ver la cantidad.";
+
+                var currentKey = monthKey(state.current);
+                prev.disabled = currentKey <= state.minKey;
+                next.disabled = currentKey >= state.maxKey;
+
+                prev.addEventListener("click", function () {
+                    if (monthKey(state.current) <= state.minKey) {
+                        return;
+                    }
+                    state.current = new Date(state.current.getFullYear(), state.current.getMonth() - 1, 1);
+                    renderCalendar(state);
+                });
+
+                next.addEventListener("click", function () {
+                    if (monthKey(state.current) >= state.maxKey) {
+                        return;
+                    }
+                    state.current = new Date(state.current.getFullYear(), state.current.getMonth() + 1, 1);
+                    renderCalendar(state);
+                });
+
+                container.appendChild(header);
+                container.appendChild(grid);
+                container.appendChild(details);
+
+                var prefix = monthPrefix(state.current);
+                var firstInMonth = state.deliveries.find(function (item) {
+                    return item.fecha.indexOf(prefix) === 0;
+                });
+                if (firstInMonth) {
+                    selectDate(firstInMonth.fecha);
+                }
+            }
+
+            document.addEventListener("DOMContentLoaded", function () {
+                var calendars = document.querySelectorAll(".delivery-calendar");
+                calendars.forEach(function (container) {
+                    buildCalendar(container);
+                });
+            });
+        })();
+    </script>
 
 {% endblock %}
 
 {% block contenido %}
 <div class="container-fluid">
-
-    <!-- Page Heading -->
-    <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES</h1>
+    <h1 class="h3 mb-2 text-gray-800">EDITAR PEDIDOS</h1>
 
     <form method="get" class="mb-4">
         <div class="form-row align-items-end">
@@ -59,25 +367,23 @@ Editar Pedido
             </div>
             <div class="col-12 col-md-1 mb-2">
                 <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
-                <a class="btn btn-link btn-block p-0 mt-2" href="{% url 'editartablas' %}">Limpiar</a>
+                <a class="btn btn-link btn-block p-0 mt-2" href="{% url 'editar_pedidos' %}">Limpiar</a>
             </div>
         </div>
     </form>
 
-
-    <!-- DataTales Example -->
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS SEMANALES</h6>
+            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-hover table-borderless align-middle table-responsive-stack" id="dataTable"
-                    width="100%" cellspacing="0">
+                <table class="table table-hover table-borderless align-middle table-responsive-stack" width="100%"
+                    cellspacing="0">
                     <thead>
                         <tr>
-                            <th>PRESENTACIÓN</th>
-                            <th>COMPAÑIA</th>
+                            <th>PRESENTACION</th>
+                            <th>COMPANIA</th>
                             <th>TIPO DE HUEVO</th>
                             <th>CANTIDAD TOTAL (KG)</th>
                             <th class="col-semana">SEMANA</th>
@@ -87,19 +393,6 @@ Editar Pedido
                             <th>ACCIONES</th>
                         </tr>
                     </thead>
-                    <tfoot>
-                        <tr>
-                            <th>TOTAL</th>
-                            <th></th>
-                            <th></th>
-                            <th></th>
-                            <th class="col-semana"></th>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
                     <tbody>
                         {% for pedido in pedidos %}
                         <tr>
@@ -136,7 +429,7 @@ Editar Pedido
                                                     {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
                                                 </p>
                                                 <div class="delivery-calendar" data-entregas='[{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'></div>
-                                                                                            </div>
+                                            </div>
                                             <div class="modal-footer">
                                                 <button type="button" class="btn btn-secondary"
                                                     data-dismiss="modal">Cerrar</button>
@@ -167,39 +460,22 @@ Editar Pedido
                                 </span>
                             </td>
                             <td data-label="Acciones" class="table-actions">
-                                {% if can_manage_pedidos %}
-                                <a href="{% url 'editar_estado_pedido' pedido.id %}?next=editartablas"
-                                    class="btn btn-outline-primary btn-sm">
-                                    Cambiar estado
+                                <a href="{% url 'editarpedido' pedido.id %}" class="btn btn-outline-primary btn-sm">
+                                    Editar pedido
                                 </a>
-                                {% endif %}
                             </td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="9" class="text-center text-muted">Sin pedidos para mostrar.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                 </table>
-                <div class="mt-3">
-                    <p class="card-text mb-1">
-                        🥚 Huevo líquido total:
-                        <strong>{{ total_liquido }} kg</strong>
-                    </p>
-
-                    <p class="card-text mb-1">
-                        🧪 Mezcla en polvo total:
-                        <strong>{{ total_mezcla }} kg</strong>
-                    </p>
-
-                    <p class="card-text mb-0">
-                        🟡 Yema total:
-                        <strong>{{ total_yema }} kg</strong>
-                    </p>
-                </div>
             </div>
         </div>
     </div>
-
 </div>
-
 <style id="delivery-calendar-styles">
         .delivery-calendar {
             margin-top: 0.5rem;

@@ -25,7 +25,9 @@ urlpatterns = [
 
     # VISTA DE PEDIDOS
     path('crearpedido/', views.crear_pedido, name='crearpedido'),
+    path('pedidos/editar/', views.editar_pedidos, name='editar_pedidos'),
     path('pedidos/editar/<int:id>/', views.editarpedido, name='editarpedido'),
+    path('pedidos/estado/<int:id>/', views.editar_estado_pedido, name='editar_estado_pedido'),
     path('pedidos/eliminar/<int:id>/', views.eliminarpedido, name='eliminarpedido'),
 
 

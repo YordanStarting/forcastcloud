@@ -21,6 +21,81 @@
     <!-- Custom styles for this template-->
     <link href="{% static 'web/css/sb-admin-2.min.css' %}" rel="stylesheet">
 
+    <style>
+        .badge-estado {
+            padding: 0.35rem 0.6rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+        }
+
+        .badge-estado-pendiente {
+            background: #fee2e2;
+            color: #b91c1c;
+        }
+
+        .badge-estado-en_proceso {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .badge-estado-realizado {
+            background: #dcfce7;
+            color: #15803d;
+        }
+
+        @media (max-width: 1200px) {
+            .table-responsive-stack .col-semana {
+                display: none;
+            }
+        }
+
+        @media (max-width: 768px) {
+            .table-responsive-stack thead,
+            .table-responsive-stack tfoot {
+                display: none;
+            }
+
+            .table-responsive-stack tbody,
+            .table-responsive-stack tr,
+            .table-responsive-stack td {
+                display: block;
+                width: 100%;
+            }
+
+            .table-responsive-stack tr {
+                border: 1px solid #e5e7eb;
+                border-radius: 0.5rem;
+                padding: 0.5rem 0.75rem;
+                margin-bottom: 0.75rem;
+                background: #ffffff;
+            }
+
+            .table-responsive-stack td {
+                display: flex;
+                align-items: center;
+                justify-content: space-between;
+                padding: 0.4rem 0;
+                border-top: 1px dashed #e5e7eb;
+            }
+
+            .table-responsive-stack td:first-child {
+                border-top: none;
+            }
+
+            .table-responsive-stack td::before {
+                content: attr(data-label);
+                font-weight: 600;
+                color: #64748b;
+                margin-right: 1rem;
+            }
+
+            .table-responsive-stack .table-actions {
+                justify-content: flex-start;
+                gap: 0.5rem;
+            }
+        }
+    </style>
+
 </head>
 
 <body id="page-top">
@@ -67,9 +142,18 @@
                 <div id="collapseTwo" class="collapse show" aria-labelledby="headingTwo"
                     data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
+                        {% if user_role == 'programador' %}
+                        <h6 class="collapse-header">Consultas:</h6>
+                        {% else %}
                         <h6 class="collapse-header">Creacion de datos:</h6>
+                        {% endif %}
+                        {% if can_manage_pedidos %}
                         <a class="collapse-item active" href="{% url 'crearpedido' %}">Crear Pedido</a>
+                        {% endif %}
                         <a class="collapse-item" href="{% url 'editartablas' %}">Listado de Pedidos</a>
+                        {% if can_manage_pedidos %}
+                        <a class="collapse-item" href="{% url 'editar_pedidos' %}">Editar Pedidos</a>
+                        {% endif %}
                         <a class="collapse-item" href="{% url 'historial' %}">Historial Pedido</a>
                     </div>
                 </div>

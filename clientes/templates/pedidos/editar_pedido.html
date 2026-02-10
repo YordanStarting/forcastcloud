@@ -14,7 +14,7 @@ Editar pedido semanal
                 <label>Proveedor</label>
                 <select name="proveedor" class="form-control">
                     {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}" {% if pedido.proveedor_id==proveedor.id %}selected{% endif %}>
+                    <option value="{{ proveedor.id }}" {% if pedido.proveedor_id == proveedor.id %}selected{% endif %}>
                         {{ proveedor.nombre }}
                     </option>
                     {% endfor %}
@@ -25,7 +25,7 @@ Editar pedido semanal
                 <label>Comercial</label>
                 <select name="comercial" class="form-control">
                     {% for user in comerciales %}
-                    <option value="{{ user.id }}" {% if pedido.comercial_id==user.id %}selected{% endif %}>
+                    <option value="{{ user.id }}" {% if pedido.comercial_id == user.id %}selected{% endif %}>
                         {{ user.username }}
                     </option>
                     {% endfor %}
@@ -36,7 +36,7 @@ Editar pedido semanal
                 <label>Tipo de Huevo</label>
                 <select name="tipo_huevo" class="form-control">
                     {% for value, label in TIPO_HUEVO_CHOICES %}
-                    <option value="{{ value }}" {% if pedido.tipo_huevo==value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if pedido.tipo_huevo == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
@@ -47,7 +47,7 @@ Editar pedido semanal
                 <label>Presentación</label>
                 <select name="presentacion" class="form-control">
                     {% for value, label in PRESENTACION_CHOICES %}
-                    <option value="{{ value }}" {% if pedido.presentacion==value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if pedido.presentacion == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
@@ -63,6 +63,17 @@ Editar pedido semanal
                 <label>Cantidad total (kg)</label>
                 <input type="number" name="cantidad_total" class="form-control" min="1"
                     value="{{ pedido.cantidad_total|default:pedido.cantidad }}">
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Estado</label>
+                <select name="estado" class="form-control">
+                    {% for value, label in estado_choices %}
+                    <option value="{{ value }}" {% if pedido.estado == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
 
             <div class="form-group col-md-12">

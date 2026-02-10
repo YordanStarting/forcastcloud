@@ -1,0 +1,50 @@
+﻿{% extends 'base.html' %}
+
+{% block titulo %}
+Cambiar estado del pedido
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">Actualizar estado</h6>
+        </div>
+        <div class="card-body">
+            <p class="mb-2">
+                <strong>Pedido:</strong> #{{ pedido.id }} · {{ pedido.proveedor.nombre }}
+            </p>
+            <p class="mb-4 text-muted">
+                {{ pedido.get_tipo_huevo_display }} · {{ pedido.get_presentacion_display }}
+            </p>
+
+            <form method="post">
+                {% csrf_token %}
+                {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
+
+                <div class="form-group">
+                    <label>Estado</label>
+                    <select name="estado" class="form-control" required>
+                        {% for value, label in estado_choices %}
+                        <option value="{{ value }}" {% if pedido.estado == value %}selected{% endif %}>
+                            {{ label }}
+                        </option>
+                        {% endfor %}
+                    </select>
+                </div>
+
+                <div class="mt-3">
+                    <button type="submit" class="btn btn-primary">Guardar</button>
+                    {% if next %}
+                    <a class="btn btn-secondary" href="{{ next }}">Cancelar</a>
+                    {% else %}
+                    <a class="btn btn-secondary" href="{% url 'editartablas' %}">Cancelar</a>
+                    {% endif %}
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endblock %}

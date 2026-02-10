@@ -75,6 +75,13 @@ def _usuario_puede_gestionar_usuarios(user):
         return True
     return _obtener_rol_usuario(user) == 'admin'
 
+def _usuario_puede_gestionar_pedidos(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) in {'admin', 'comercial'}
+
 
 def _aplicar_estilos_form(form):
     for field in form.fields.values():
@@ -132,7 +139,7 @@ def inicio(request):
     pedidos = (
         pedidos_qs
         .select_related('proveedor')
-        .filter(estado='PENDIENTE')
+        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
         .order_by('semana', 'fecha_entrega')
     )
 
@@ -388,11 +395,18 @@ def crear_pedido(request):
 
 @login_required
 def editarpedido(request, id):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para editar pedidos.")
 
     pedido = get_object_or_404(Pedido, id=id)
 
     proveedores = Proveedor.objects.filter(activo=True)
     comerciales = User.objects.all()
+    estado_choices = [
+        ('PENDIENTE', 'Pendiente'),
+        ('EN_PROCESO', 'Confirmado'),
+        ('REALIZADO', 'Realizado'),
+    ]
 
     if request.method == 'POST':
         entregas = _obtener_entregas_desde_request(request)
@@ -417,6 +431,9 @@ def editarpedido(request, id):
         pedido.cantidad_total = cantidad_total_int
         pedido.semana = request.POST.get('semana') or None
         pedido.observaciones = request.POST.get('observaciones')
+        nuevo_estado = request.POST.get('estado')
+        if nuevo_estado in {value for value, _ in estado_choices}:
+            pedido.estado = nuevo_estado
         pedido.save()
 
         pedido.entregas.all().delete()
@@ -436,6 +453,7 @@ def editarpedido(request, id):
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'entregas': pedido.entregas.all().order_by('fecha_entrega'),
+        'estado_choices': estado_choices,
     }
 
     return render(request, 'pedidos/editar_pedido.html', context)
@@ -447,7 +465,9 @@ def eliminarpedido(request, id):
 
 @login_required
 def editartablas(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='PENDIENTE')
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
+        estado__in=['PENDIENTE', 'EN_PROCESO']
+    )
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
@@ -492,12 +512,59 @@ def historial(request):
         **filtros
     })
 
+
+@login_required
+def editar_pedidos(request):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para editar pedidos.")
+
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
+        estado__in=['PENDIENTE', 'EN_PROCESO']
+    )
+    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+    proveedores = Proveedor.objects.filter(activo=True)
+
+    return render(request, 'pedidos/editar_pedidos.html', {
+        'pedidos': pedidos,
+        'proveedores': proveedores,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        **filtros
+    })
+
 @login_required
 def marcar_pedido_realizado(request, id):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
     pedido = get_object_or_404(Pedido, id=id)
     pedido.estado = 'REALIZADO'
     pedido.save()
     return redirect('editartablas')
+
+
+@login_required
+def editar_estado_pedido(request, id):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
+    pedido = get_object_or_404(Pedido, id=id)
+    estado_choices = [
+        ('PENDIENTE', 'Pendiente'),
+        ('EN_PROCESO', 'Confirmado'),
+        ('REALIZADO', 'Realizado'),
+    ]
+    if request.method == 'POST':
+        nuevo_estado = request.POST.get('estado')
+        if nuevo_estado in {value for value, _ in estado_choices}:
+            pedido.estado = nuevo_estado
+            pedido.save()
+            next_url = request.POST.get('next') or request.GET.get('next') or 'editartablas'
+            return redirect(next_url)
+    next_url = request.GET.get('next', '')
+    return render(request, 'pedidos/editar_estado.html', {
+        'pedido': pedido,
+        'estado_choices': estado_choices,
+        'next': next_url,
+    })
 
 
 def filtrar_pedidos(request, qs):
