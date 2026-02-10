@@ -9,6 +9,57 @@ Editar Pedido
     <!-- Page Heading -->
     <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES</h1>
 
+    <form method="get" class="mb-4">
+        <div class="form-row align-items-end">
+            <div class="col-12 col-md-3 mb-2">
+                <label class="mb-1">Compania</label>
+                <select class="form-control" name="proveedor">
+                    <option value="">Todas</option>
+                    {% for proveedor in proveedores %}
+                    <option value="{{ proveedor.id }}"
+                        {% if proveedor_id == proveedor.id|stringformat:"s" %}selected{% endif %}>
+                        {{ proveedor.nombre }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Tipo de huevo</label>
+                <select class="form-control" name="tipo_huevo">
+                    <option value="">Todos</option>
+                    {% for value, label in TIPO_HUEVO_CHOICES %}
+                    <option value="{{ value }}" {% if tipo_huevo == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Presentacion</label>
+                <select class="form-control" name="presentacion">
+                    <option value="">Todas</option>
+                    {% for value, label in PRESENTACION_CHOICES %}
+                    <option value="{{ value }}" {% if presentacion == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Fecha creacion</label>
+                <input type="date" class="form-control" name="fecha_creacion" value="{{ fecha_creacion|default:'' }}">
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Semana</label>
+                <input type="date" class="form-control" name="semana" value="{{ semana|default:'' }}">
+            </div>
+            <div class="col-12 col-md-1 mb-2">
+                <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
+                <a class="btn btn-link btn-block p-0 mt-2" href="{% url 'editartablas' %}">Limpiar</a>
+            </div>
+        </div>
+    </form>
+
 
     <!-- DataTales Example -->
     <div class="card shadow mb-4">

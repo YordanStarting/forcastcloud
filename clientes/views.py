@@ -444,6 +444,8 @@ def editartablas(request):
     return render(request, 'paginas/editartablas.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'total_liquido': total_liquido,
         'total_mezcla': total_mezcla,
         'total_yema': total_yema,
@@ -479,6 +481,22 @@ def filtrar_pedidos(request, qs):
     if proveedor := request.GET.get('proveedor'):
         qs = qs.filter(proveedor_id=proveedor)
         filtros['proveedor_id'] = proveedor
+
+    if tipo_huevo := request.GET.get('tipo_huevo'):
+        qs = qs.filter(tipo_huevo=tipo_huevo)
+        filtros['tipo_huevo'] = tipo_huevo
+
+    if presentacion := request.GET.get('presentacion'):
+        qs = qs.filter(presentacion=presentacion)
+        filtros['presentacion'] = presentacion
+
+    if fecha_creacion := request.GET.get('fecha_creacion'):
+        qs = qs.filter(fecha_creacion__date=fecha_creacion)
+        filtros['fecha_creacion'] = fecha_creacion
+
+    if semana := request.GET.get('semana'):
+        qs = qs.filter(semana=semana)
+        filtros['semana'] = semana
 
     if desde := request.GET.get('fecha_desde'):
         qs = qs.filter(fecha_entrega__gte=desde)
