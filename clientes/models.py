@@ -15,6 +15,12 @@ PRESENTACION_CHOICES = [
     ('SAC_5', 'Saco 5kg'),
 ]
 
+CIUDAD_CHOICES = [
+    ('BOGOTA', 'Bogota'),
+    ('MEDELLIN', 'Medellin'),
+    ('CALI', 'Cali'),
+]
+
 class Cliente(models.Model):
     id = models.AutoField(primary_key=True)
     titulo = models.CharField(max_length=100)
@@ -50,6 +56,7 @@ class PerfilUsuario(models.Model):
     ]
     usuario = models.OneToOneField(User, on_delete=models.CASCADE)
     rol = models.CharField(max_length=20, choices=ROL_CHOICES)
+    ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA')
 
     def __str__(self):
         return f"{self.usuario.username} - {self.rol}"
@@ -74,6 +81,7 @@ class Pedido(models.Model):
     
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE)
     comercial = models.ForeignKey(User, on_delete=models.PROTECT)
+    ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA')
     
     tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES)
     presentacion = models.CharField(max_length=20, choices=PRESENTACION_CHOICES)

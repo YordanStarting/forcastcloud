@@ -142,7 +142,7 @@ Inicio
             <div class="card shadow mb-4">
                 <!-- Card Header - Dropdown -->
                 <div class="card-header py-3 d-flex flex-row align-items-center justify-content-between">
-                    <h6 class="m-0 font-weight-bold text-primary">Venta de Comerciales</h6>
+                    <h6 class="m-0 font-weight-bold text-primary">Toneladas por ciudad</h6>
                     <div class="dropdown no-arrow">
                         <a class="dropdown-toggle" href="#" role="button" id="dropdownMenuLink" data-toggle="dropdown"
                             aria-haspopup="true" aria-expanded="false">
@@ -161,7 +161,49 @@ Inicio
                 <!-- Card Body -->
                 <div class="card-body">
                     <div class="chart-pie pt-4 pb-2">
+                        {{ city_labels|json_script:"city-labels" }}
+                        {{ city_data|json_script:"city-data" }}
                         <canvas id="myPieChart"></canvas>
+                        <script>
+                            document.addEventListener("DOMContentLoaded", function () {
+                                const labels = JSON.parse(
+                                    document.getElementById("city-labels").textContent
+                                );
+                                const dataValues = JSON.parse(
+                                    document.getElementById("city-data").textContent
+                                );
+
+                                const ctx = document.getElementById("myPieChart");
+                                if (!ctx) {
+                                    return;
+                                }
+
+                                new Chart(ctx.getContext("2d"), {
+                                    type: 'doughnut',
+                                    data: {
+                                        labels: labels,
+                                        datasets: [{
+                                            label: 'Total toneladas',
+                                            data: dataValues,
+                                            backgroundColor: [
+                                                '#4e73df',
+                                                '#1cc88a',
+                                                '#36b9cc'
+                                            ],
+                                            borderColor: '#ffffff',
+                                            borderWidth: 2
+                                        }]
+                                    },
+                                    options: {
+                                        responsive: true,
+                                        maintainAspectRatio: false,
+                                        plugins: {
+                                            legend: { display: false }
+                                        }
+                                    }
+                                });
+                            });
+                        </script>
                     </div>
                     <div class="mt-4 text-center small">
                         <span class="mr-2">

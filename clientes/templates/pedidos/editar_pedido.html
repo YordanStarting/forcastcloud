@@ -9,6 +9,12 @@ Editar pedido semanal
     <form method="post">
         {% csrf_token %}
 
+        {% if error_message %}
+        <div class="alert alert-danger">
+            {{ error_message }}
+        </div>
+        {% endif %}
+
         <div class="form-row">
             <div class="form-group col-md-12">
                 <label>Proveedor</label>

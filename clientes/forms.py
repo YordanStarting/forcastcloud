@@ -1,6 +1,6 @@
 from django import forms
 from django.contrib.auth.models import User
-from .models import Cliente, Pedido, Proveedor, PerfilUsuario
+from .models import Cliente, Pedido, Proveedor, PerfilUsuario, CIUDAD_CHOICES
 
 class ClienteForm(forms.ModelForm):
     class Meta:
@@ -39,6 +39,7 @@ class ProveedorForm(forms.ModelForm):
 
 class UsuarioBaseForm(forms.ModelForm):
     rol = forms.ChoiceField(choices=PerfilUsuario.ROL_CHOICES, label='Rol')
+    ciudad = forms.ChoiceField(choices=CIUDAD_CHOICES, label='Ciudad')
 
     class Meta:
         model = User
@@ -83,7 +84,10 @@ class UsuarioCrearForm(UsuarioBaseForm):
             user.save()
             PerfilUsuario.objects.update_or_create(
                 usuario=user,
-                defaults={'rol': self.cleaned_data['rol']}
+                defaults={
+                    'rol': self.cleaned_data['rol'],
+                    'ciudad': self.cleaned_data['ciudad'],
+                }
             )
         return user
 
@@ -118,6 +122,9 @@ class UsuarioEditarForm(UsuarioBaseForm):
             user.save()
             PerfilUsuario.objects.update_or_create(
                 usuario=user,
-                defaults={'rol': self.cleaned_data['rol']}
+                defaults={
+                    'rol': self.cleaned_data['rol'],
+                    'ciudad': self.cleaned_data['ciudad'],
+                }
             )
         return user

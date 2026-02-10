@@ -8,6 +8,7 @@ from .models import (
     Pedido,
     PerfilUsuario,
     Proveedor,
+    CIUDAD_CHOICES,
     TIPO_HUEVO_CHOICES,
     PRESENTACION_CHOICES,
 )
@@ -58,6 +59,16 @@ def _obtener_rol_usuario(user):
     if perfil:
         return perfil.rol
     return None
+
+
+def _obtener_ciudad_usuario_id(usuario_id):
+    if not usuario_id:
+        return None
+    return (
+        PerfilUsuario.objects.filter(usuario_id=usuario_id)
+        .values_list('ciudad', flat=True)
+        .first()
+    )
 
 
 def _usuario_puede_gestionar_proveedores(user):
@@ -157,12 +168,28 @@ def inicio(request):
     chart_labels = [r['fecha'].strftime('%d/%m/%Y') for r in resumen]
     chart_data = [r['total'] for r in resumen]
 
+    ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
+    resumen_ciudad = (
+        pedidos_qs
+        .values('ciudad')
+        .annotate(total=Sum(_cantidad_pedido_expr()))
+    )
+    for row in resumen_ciudad:
+        ciudad = row.get('ciudad')
+        if ciudad in ciudad_totales:
+            ciudad_totales[ciudad] = row.get('total') or 0
+
+    city_labels = [label for _, label in CIUDAD_CHOICES]
+    city_data = [round(ciudad_totales[value] / 1000, 2) for value, _ in CIUDAD_CHOICES]
+
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'pedidos_pendientes': pedidos_pendientes,
         'chart_labels': chart_labels,
         'chart_data': chart_data,
+        'city_labels': city_labels,
+        'city_data': city_data,
         'proveedores': proveedores,
         **filtros
     })
@@ -257,10 +284,12 @@ def usuarios_lista(request):
     usuarios = list(User.objects.all().order_by('username'))
     perfiles = PerfilUsuario.objects.filter(usuario__in=usuarios)
     roles = {perfil.usuario_id: perfil.get_rol_display() for perfil in perfiles}
+    ciudades = {perfil.usuario_id: perfil.get_ciudad_display() for perfil in perfiles}
     data = [
         {
             'user': usuario,
             'rol': roles.get(usuario.id),
+            'ciudad': ciudades.get(usuario.id),
         }
         for usuario in usuarios
     ]
@@ -285,7 +314,15 @@ def usuario_editar(request, id):
     usuario = get_object_or_404(User, id=id)
     perfil = PerfilUsuario.objects.filter(usuario=usuario).first()
     rol_inicial = 'admin' if usuario.is_superuser else (perfil.rol if perfil else 'comercial')
-    form = UsuarioEditarForm(request.POST or None, instance=usuario, initial={'rol': rol_inicial})
+    ciudad_inicial = perfil.ciudad if perfil else 'BOGOTA'
+    form = UsuarioEditarForm(
+        request.POST or None,
+        instance=usuario,
+        initial={
+            'rol': rol_inicial,
+            'ciudad': ciudad_inicial,
+        }
+    )
     form = _aplicar_estilos_form(form)
     if request.method == 'POST' and form.is_valid():
         form.save()
@@ -351,13 +388,32 @@ def crear_pedido(request):
             }
             return render(request, 'pedidos/crear_pedido.html', context)
 
+        comercial_id = request.POST.get('comercial')
+        ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
+        if not ciudad_comercial:
+            context = {
+                'proveedores': proveedores,
+                'comerciales': comerciales,
+                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+                'entregas': entregas_form,
+                'form_data': request.POST,
+                'error_message': (
+                    'El comercial seleccionado no tiene ciudad asignada. '
+                    'Actualiza la ciudad del usuario antes de crear el pedido.'
+                ),
+                'total_entregas': total_entregas,
+            }
+            return render(request, 'pedidos/crear_pedido.html', context)
+
         fecha_principal = None
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
 
         pedido = Pedido.objects.create(
             proveedor_id=request.POST.get('proveedor'),
-            comercial_id=request.POST.get('comercial'),
+            comercial_id=comercial_id,
+            ciudad=ciudad_comercial,
             tipo_huevo=request.POST.get('tipo_huevo'),
             presentacion=request.POST.get('presentacion'),
             cantidad=cantidad_total_int,
@@ -422,8 +478,27 @@ def editarpedido(request, id):
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
 
+        comercial_id = request.POST.get('comercial')
+        ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
+        if not ciudad_comercial:
+            context = {
+                'pedido': pedido,
+                'proveedores': proveedores,
+                'comerciales': comerciales,
+                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+                'entregas': pedido.entregas.all().order_by('fecha_entrega'),
+                'estado_choices': estado_choices,
+                'error_message': (
+                    'El comercial seleccionado no tiene ciudad asignada. '
+                    'Actualiza la ciudad del usuario antes de editar el pedido.'
+                ),
+            }
+            return render(request, 'pedidos/editar_pedido.html', context)
+
         pedido.proveedor_id = request.POST.get('proveedor')
-        pedido.comercial_id = request.POST.get('comercial')
+        pedido.comercial_id = comercial_id
+        pedido.ciudad = ciudad_comercial
         pedido.tipo_huevo = request.POST.get('tipo_huevo')
         pedido.presentacion = request.POST.get('presentacion')
         pedido.cantidad = cantidad_total_int
@@ -631,9 +706,15 @@ def crear_pedido_semanal(request):
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
 
+        comercial_id = request.POST.get('comercial')
+        ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
+        if not ciudad_comercial:
+            return redirect('inicio')
+
         pedido = Pedido.objects.create(
             proveedor_id=request.POST['proveedor'],
-            comercial_id=request.POST['comercial'],
+            comercial_id=comercial_id,
+            ciudad=ciudad_comercial,
             tipo_huevo=request.POST['tipo_huevo'],
             presentacion=request.POST['presentacion'],
             cantidad=cantidad_total_int,

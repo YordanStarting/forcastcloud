@@ -20,6 +20,7 @@ Usuarios
                             <th>Nombre</th>
                             <th>Apellido</th>
                             <th>Correo</th>
+                            <th>Ciudad</th>
                             <th>Rol</th>
                             <th>Activo</th>
                             <th>Acciones</th>
@@ -32,6 +33,7 @@ Usuarios
                             <td>{{ item.user.first_name|default:"—" }}</td>
                             <td>{{ item.user.last_name|default:"—" }}</td>
                             <td>{{ item.user.email|default:"—" }}</td>
+                            <td>{{ item.ciudad|default:"-" }}</td>
                             <td>{{ item.rol|default:"—" }}</td>
                             <td>
                                 {% if item.user.is_active %}
@@ -51,7 +53,7 @@ Usuarios
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="7" class="text-center text-muted">No hay usuarios registrados.</td>
+                            <td colspan="8" class="text-center text-muted">No hay usuarios registrados.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
