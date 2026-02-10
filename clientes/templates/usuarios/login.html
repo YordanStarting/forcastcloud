@@ -1,43 +1,218 @@
-{% extends 'base.html' %}
+{% load static %}
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge">
+    <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no">
+    <title>Ingreso | Ovopacific</title>
 
-{% block titulo %}
-Iniciar sesiÃ³n
-{% endblock %}
+    <link href="{% static 'web/vendor/fontawesome-free/css/all.min.css' %}" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css?family=Nunito:200,300,400,600,700,800" rel="stylesheet">
+    <link href="{% static 'web/css/sb-admin-2.min.css' %}" rel="stylesheet">
 
-{% block contenido %}
-<div class="container-fluid">
-    <div class="row justify-content-center">
-        <div class="col-md-6 col-lg-4">
-            <div class="card shadow mb-4">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">Acceso</h6>
+    <style>
+        :root {
+            --login-blue-900: #0b2b5b;
+            --login-blue-700: #1d4ed8;
+            --login-blue-500: #3b82f6;
+            --login-blue-300: #93c5fd;
+            --login-ink: #0f172a;
+            --login-mist: #eef4ff;
+        }
+
+        body.login-page {
+            min-height: 100vh;
+            background: radial-gradient(1200px 700px at 15% 15%, rgba(59, 130, 246, 0.35), transparent 60%),
+                linear-gradient(120deg, #f8fbff 0%, #e8f0ff 55%, #f4f8ff 100%);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 2.5rem 1.25rem;
+            color: var(--login-ink);
+        }
+
+        .login-shell {
+            width: 100%;
+            max-width: 420px;
+            position: relative;
+        }
+
+        .login-card {
+            background: #ffffff;
+            border-radius: 18px;
+            padding: 2.25rem 2.25rem 2rem;
+            box-shadow: 0 24px 60px rgba(15, 23, 42, 0.14);
+            border: 1px solid rgba(147, 197, 253, 0.4);
+        }
+
+        .brand {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            margin-bottom: 1.5rem;
+        }
+
+        .brand-mark {
+            width: 44px;
+            height: 44px;
+            border-radius: 12px;
+            background: linear-gradient(140deg, var(--login-blue-700), var(--login-blue-500));
+            color: #ffffff;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 800;
+            letter-spacing: 0.04em;
+            box-shadow: 0 10px 24px rgba(59, 130, 246, 0.4);
+        }
+
+        .brand-title {
+            margin: 0;
+            font-size: 1.25rem;
+            font-weight: 700;
+            letter-spacing: 0.08em;
+        }
+
+        .brand-subtitle {
+            margin: 0.25rem 0 0;
+            font-size: 0.9rem;
+            color: #64748b;
+        }
+
+        .login-form label {
+            font-weight: 600;
+            font-size: 0.85rem;
+            color: #1e293b;
+        }
+
+        .login-form input[type="text"],
+        .login-form input[type="password"] {
+            width: 100%;
+            border-radius: 12px;
+            border: 1px solid #d5e3ff;
+            padding: 0.7rem 0.9rem;
+            font-size: 0.95rem;
+            background: #f8fbff;
+            color: var(--login-ink);
+            transition: border-color 0.2s ease, box-shadow 0.2s ease, background 0.2s ease;
+        }
+
+        .login-form input[type="text"]:focus,
+        .login-form input[type="password"]:focus {
+            border-color: var(--login-blue-500);
+            background: #ffffff;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+            outline: none;
+        }
+
+        .login-btn {
+            border-radius: 999px;
+            padding: 0.65rem 1.2rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            background: linear-gradient(120deg, var(--login-blue-700), var(--login-blue-500));
+            border: none;
+            box-shadow: 0 12px 24px rgba(29, 78, 216, 0.3);
+        }
+
+        .login-btn:hover {
+            background: linear-gradient(120deg, #1e40af, var(--login-blue-500));
+        }
+
+        .login-hint {
+            margin-top: 1.5rem;
+            font-size: 0.82rem;
+            color: #94a3b8;
+            text-align: center;
+        }
+
+        .modal-header {
+            border-bottom: none;
+        }
+
+        .modal-footer {
+            border-top: none;
+        }
+
+        @media (max-width: 480px) {
+            .login-card {
+                padding: 2rem 1.5rem;
+            }
+        }
+    </style>
+</head>
+
+<body class="login-page">
+    <div class="login-shell">
+        <div class="login-card">
+            <div class="brand">
+                <div class="brand-mark">OP</div>
+                <div>
+                    <h1 class="brand-title">OVOPACIFIC</h1>
+                    <p class="brand-subtitle">Acceso seguro al sistema</p>
                 </div>
-                <div class="card-body">
-                    <form method="post">
-                        {% csrf_token %}
-                        {% if next %}
-                        <input type="hidden" name="next" value="{{ next }}">
-                        {% endif %}
-                        {% if form.non_field_errors %}
-                        <div class="alert alert-danger">
-                            {{ form.non_field_errors }}
-                        </div>
-                        {% endif %}
+            </div>
 
-                        <div class="form-group">
-                            <label for="{{ form.username.id_for_label }}">Usuario</label>
-                            {{ form.username }}
-                        </div>
-                        <div class="form-group">
-                            <label for="{{ form.password.id_for_label }}">ContraseÃ±a</label>
-                            {{ form.password }}
-                        </div>
+            <form method="post" class="login-form">
+                {% csrf_token %}
+                {% if next %}
+                <input type="hidden" name="next" value="{{ next }}">
+                {% endif %}
 
-                        <button type="submit" class="btn btn-primary btn-block">Entrar</button>
-                    </form>
+                <div class="form-group">
+                    <label for="{{ form.username.id_for_label }}">Usuario</label>
+                    {{ form.username }}
+                </div>
+                <div class="form-group">
+                    <label for="{{ form.password.id_for_label }}">Contraseña</label>
+                    {{ form.password }}
+                </div>
+
+                <button type="submit" class="btn btn-primary btn-block login-btn">Entrar</button>
+            </form>
+
+            <div class="login-hint">Solo personal autorizado</div>
+        </div>
+    </div>
+
+    <div class="modal fade" id="loginErrorModal" tabindex="-1" role="dialog" aria-labelledby="loginErrorLabel"
+        aria-hidden="true">
+        <div class="modal-dialog modal-dialog-centered" role="document">
+            <div class="modal-content border-0 shadow">
+                <div class="modal-header">
+                    <h5 class="modal-title text-danger" id="loginErrorLabel">Error de acceso</h5>
+                    <button class="close" type="button" data-dismiss="modal" aria-label="Cerrar">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <p class="mb-2">Usuario o contraseña incorrecta.</p>
+                    {% if form.non_field_errors %}
+                    <div class="small text-muted">
+                        {% for error in form.non_field_errors %}
+                        <div>{{ error }}</div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button class="btn btn-primary" type="button" data-dismiss="modal">Intentar de nuevo</button>
                 </div>
             </div>
         </div>
     </div>
-</div>
-{% endblock %}
+
+    <script src="{% static 'web/vendor/jquery/jquery.min.js' %}"></script>
+    <script src="{% static 'web/vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
+
+    {% if form.non_field_errors %}
+    <script>
+        $(function () {
+            $('#loginErrorModal').modal('show');
+        });
+    </script>
+    {% endif %}
+</body>
+</html>
