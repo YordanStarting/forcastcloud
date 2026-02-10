@@ -47,18 +47,70 @@
                                         <td>{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
                                         <td>{{ pedido.semana|date:"d/m/Y" }}</td>
                                         <td>
-                                            {% if pedido.entregas.all %}
-                                            <ul class="mb-0 pl-3">
-                                                {% for entrega in pedido.entregas.all %}
-                                                <li>{{ entrega.fecha_entrega|date:"d/m/Y" }} · {{ entrega.cantidad }} kg</li>
-                                                {% endfor %}
-                                            </ul>
-                                            {% elif pedido.fecha_entrega %}
-                                            {{ pedido.fecha_entrega|date:"d/m/Y" }} · {{ pedido.cantidad }} kg
-                                            {% else %}
-                                            —
-                                            {% endif %}
-                                        </td>
+                                {% with entregas=pedido.entregas.all %}
+                                {% with entregas_count=entregas|length %}
+                                {% if entregas_count > 1 %}
+                                <button type="button" class="btn btn-link p-0" data-toggle="modal"
+                                    data-target="#entregasModal{{ pedido.id }}" title="Ver calendario de entregas">
+                                    <i class="fas fa-calendar-alt text-primary"></i>
+                                    <span class="small text-muted">({{ entregas_count }})</span>
+                                </button>
+
+                                <div class="modal fade" id="entregasModal{{ pedido.id }}" tabindex="-1" role="dialog"
+                                    aria-labelledby="entregasModalLabel{{ pedido.id }}" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="entregasModalLabel{{ pedido.id }}">
+                                                    Calendario de entregas
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal"
+                                                    aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p class="small text-muted mb-2">
+                                                    {{ pedido.proveedor.nombre }} ?? {{ pedido.get_tipo_huevo_display }}
+                                                </p>
+                                                <div class="table-responsive">
+                                                    <table class="table table-sm mb-0">
+                                                        <thead>
+                                                            <tr>
+                                                                <th>Fecha</th>
+                                                                <th>Cantidad</th>
+                                                            </tr>
+                                                        </thead>
+                                                        <tbody>
+                                                            {% for entrega in entregas %}
+                                                            <tr>
+                                                                <td>{{ entrega.fecha_entrega|date:"d/m/Y" }}</td>
+                                                                <td>{{ entrega.cantidad }} kg</td>
+                                                            </tr>
+                                                            {% endfor %}
+                                                        </tbody>
+                                                    </table>
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary"
+                                                    data-dismiss="modal">Cerrar</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% elif entregas_count == 1 %}
+                                {% for entrega in entregas %}
+                                {{ entrega.fecha_entrega|date:"d/m/Y" }} ?? {{ entrega.cantidad }} kg
+                                {% endfor %}
+                                {% elif pedido.fecha_entrega %}
+                                {{ pedido.fecha_entrega|date:"d/m/Y" }} ?? {{ pedido.cantidad }} kg
+                                {% else %}
+                                ???
+                                {% endif %}
+                                {% endwith %}
+                                {% endwith %}
+                            </td>
                                         <td>{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
                                     </tr>
                                     {% endfor %}
