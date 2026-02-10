@@ -1,18 +1,17 @@
 from datetime import date
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from django.http import HttpResponse, JsonResponse
 from .models import (
     Cliente,
     EntregaPedido,
     Notificacion,
     Pedido,
     Proveedor,
-    PerfilUsuario,
     TIPO_HUEVO_CHOICES,
     PRESENTACION_CHOICES,
 )
-from .forms import ClienteForm, PedidoForm, ProveedorForm
-from django.db.models import Sum, Case, When, IntegerField
+from .forms import ClienteForm, PedidoForm
+from django.db.models import Sum, Case, When, IntegerField, Max
 from django.db.models.functions import TruncDate
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
@@ -43,19 +42,6 @@ def _obtener_entregas_desde_request(request):
             continue
         entregas.append((fecha, cantidad_int))
     return entregas
-
-
-def _obtener_rol_usuario(user):
-    if not user.is_authenticated:
-        return None
-    if user.is_superuser:
-        return 'admin'
-    perfil = PerfilUsuario.objects.filter(usuario=user).first()
-    return perfil.rol if perfil else None
-
-
-def _usuario_puede_gestionar_proveedores(user):
-    return _obtener_rol_usuario(user) in {'admin', 'comercial'}
 
 
 def login_view(request):

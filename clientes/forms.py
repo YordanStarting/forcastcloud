@@ -21,16 +21,3 @@ class PedidoForm(forms.ModelForm):
         widgets = {
             'semana': forms.DateInput(attrs={'type': 'date'}),
         }
-
-
-class ProveedorForm(forms.ModelForm):
-    class Meta:
-        model = Proveedor
-        fields = [
-            'nombre',
-            'nit',
-            'contacto',
-            'telefono',
-            'email',
-            'activo',
-        ]
