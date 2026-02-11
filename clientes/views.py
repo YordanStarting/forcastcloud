@@ -1,4 +1,4 @@
-from datetime import date
+from datetime import date, timedelta
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse, HttpResponseForbidden
 from .models import (
@@ -20,7 +20,7 @@ from .forms import (
     UsuarioEditarForm,
 )
 from django.db.models import Sum, Case, When, IntegerField
-from django.db.models.functions import ExtractMonth
+from django.db.models.functions import ExtractMonth, ExtractIsoWeekDay, Coalesce
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, update_session_auth_hash
@@ -71,6 +71,23 @@ def _calcular_cantidad_total(cantidad_total_raw, entregas):
     if cantidad_total_int <= 0:
         return sum(cantidad for _, cantidad in entregas)
     return cantidad_total_int
+
+
+def _ajustar_a_lunes(fecha_str):
+    if not fecha_str:
+        return None
+    try:
+        fecha = date.fromisoformat(fecha_str)
+    except (TypeError, ValueError):
+        return None
+    weekday = fecha.weekday()
+    if weekday == 0:
+        return fecha
+    dist_prev = weekday
+    dist_next = 7 - weekday
+    if dist_next < dist_prev:
+        return fecha + timedelta(days=dist_next)
+    return fecha - timedelta(days=dist_prev)
 
 
 def _build_pedido_form_context(
@@ -255,6 +272,7 @@ def inicio(request):
         .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
         .order_by('semana', 'fecha_entrega')
     )
+    pedidos_activos = pedidos_qs.filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
 
     pedidos_pendientes = pedidos.filter(estado='PENDIENTE').count()
     pedidos_confirmados = pedidos.filter(estado='EN_PROCESO').count()
@@ -290,7 +308,7 @@ def inicio(request):
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
     resumen_ciudad = (
-        pedidos_qs
+        pedidos_activos
         .values('ciudad')
         .annotate(total=Sum(_cantidad_pedido_expr()))
     )
@@ -301,10 +319,54 @@ def inicio(request):
 
     city_labels = [label for _, label in CIUDAD_CHOICES]
     city_data = [round(ciudad_totales[value] / 1000, 2) for value, _ in CIUDAD_CHOICES]
+    total_toneladas = round(sum(ciudad_totales.values()) / 1000, 2)
+
+    totales_comerciales = (
+        pedidos
+        .values(
+            'ciudad',
+            'comercial_id',
+            'comercial__username',
+            'comercial__first_name',
+            'comercial__last_name',
+        )
+        .annotate(total_kg=Sum(_cantidad_pedido_expr()))
+        .order_by('ciudad', 'comercial__username')
+    )
+    totales_por_ciudad = {value: [] for value, _ in CIUDAD_CHOICES}
+    for row in totales_comerciales:
+        ciudad = row.get('ciudad')
+        if ciudad not in totales_por_ciudad:
+            continue
+        nombre = f"{row.get('comercial__first_name', '')} {row.get('comercial__last_name', '')}".strip()
+        if not nombre:
+            nombre = row.get('comercial__username') or 'Sin comercial'
+        total_kg = row.get('total_kg') or 0
+        totales_por_ciudad[ciudad].append({
+            'comercial': nombre,
+            'total_kg': total_kg,
+            'total_toneladas': round(total_kg / 1000, 2),
+        })
+
+    total_toneladas_por_ciudad = {
+        value: round(ciudad_totales.get(value, 0) / 1000, 2)
+        for value, _ in CIUDAD_CHOICES
+    }
+    tablas_ciudades = [
+        {
+            'codigo': value,
+            'nombre': label,
+            'pedidos': pedidos.filter(ciudad=value),
+            'totales': totales_por_ciudad.get(value, []),
+            'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
+        }
+        for value, label in CIUDAD_CHOICES
+    ]
 
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
+        'tablas_ciudades': tablas_ciudades,
         'pedidos_pendientes': pedidos_pendientes,
         'pedidos_confirmados': pedidos_confirmados,
         'chart_labels': meses_labels,
@@ -313,6 +375,7 @@ def inicio(request):
         'chart_year': date.today().year,
         'city_labels': city_labels,
         'city_data': city_data,
+        'total_toneladas': total_toneladas,
         'proveedores': proveedores,
         **filtros
     })
@@ -323,6 +386,138 @@ def inicio(request):
 @login_required
 def nosotros(request):
     return render(request, 'paginas/nosotros.html')
+
+
+@login_required
+def resumen_pedidos(request):
+    dias_semana = [
+        {'key': 1, 'label': 'Lunes'},
+        {'key': 2, 'label': 'Martes'},
+        {'key': 3, 'label': 'Miercoles'},
+        {'key': 4, 'label': 'Jueves'},
+        {'key': 5, 'label': 'Viernes'},
+        {'key': 6, 'label': 'Sabado'},
+        {'key': 7, 'label': 'Domingo'},
+    ]
+    cantidad_expr = _cantidad_pedido_expr()
+    pedidos_base = (
+        Pedido.objects
+        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
+        .annotate(fecha_base=Coalesce('fecha_entrega', 'semana'))
+        .filter(fecha_base__isnull=False)
+        .annotate(dia_semana=ExtractIsoWeekDay('fecha_base'))
+    )
+
+    resumen = (
+        pedidos_base
+        .values(
+            'ciudad',
+            'comercial_id',
+            'comercial__username',
+            'comercial__first_name',
+            'comercial__last_name',
+            'dia_semana',
+        )
+        .annotate(
+            total_kg=Sum(cantidad_expr),
+            pending_kg=Sum(
+                Case(
+                    When(estado='PENDIENTE', then=cantidad_expr),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+        )
+    )
+
+    ciudad_map = {
+        value: {
+            'nombre': label,
+            'comerciales': {},
+            'totales_dia': {dia['key']: 0 for dia in dias_semana},
+            'pendientes_dia': {dia['key']: 0 for dia in dias_semana},
+        }
+        for value, label in CIUDAD_CHOICES
+    }
+
+    for row in resumen:
+        ciudad = row.get('ciudad')
+        if ciudad not in ciudad_map:
+            continue
+        dia = row.get('dia_semana')
+        if not dia:
+            continue
+        total_kg = row.get('total_kg') or 0
+        pending_kg = row.get('pending_kg') or 0
+
+        ciudad_data = ciudad_map[ciudad]
+        ciudad_data['totales_dia'][dia] += total_kg
+        ciudad_data['pendientes_dia'][dia] += pending_kg
+
+        comercial_id = row.get('comercial_id')
+        comerciales = ciudad_data['comerciales']
+        if comercial_id not in comerciales:
+            nombre = f"{row.get('comercial__first_name', '')} {row.get('comercial__last_name', '')}".strip()
+            if not nombre:
+                nombre = row.get('comercial__username') or 'Sin comercial'
+            comerciales[comercial_id] = {
+                'nombre': nombre,
+                'dias': {dia_info['key']: {'total': 0, 'pending': 0} for dia_info in dias_semana},
+            }
+        comerciales[comercial_id]['dias'][dia]['total'] += total_kg
+        comerciales[comercial_id]['dias'][dia]['pending'] += pending_kg
+
+    tablas_ciudades = []
+    for ciudad_codigo, ciudad_label in CIUDAD_CHOICES:
+        ciudad_data = ciudad_map.get(ciudad_codigo)
+        comerciales_list = []
+        for comercial in ciudad_data['comerciales'].values():
+            dias_list = []
+            total_general = 0
+            for dia_info in dias_semana:
+                dia_key = dia_info['key']
+                total_dia = comercial['dias'][dia_key]['total']
+                pending_dia = comercial['dias'][dia_key]['pending']
+                total_general += total_dia
+                dias_list.append({
+                    'key': dia_key,
+                    'label': dia_info['label'],
+                    'total': total_dia,
+                    'pending': pending_dia,
+                })
+            comerciales_list.append({
+                'nombre': comercial['nombre'],
+                'dias': dias_list,
+                'total_general': total_general,
+            })
+        comerciales_list.sort(key=lambda item: item['nombre'].lower())
+
+        totales_dia = []
+        total_general_ciudad = 0
+        for dia_info in dias_semana:
+            dia_key = dia_info['key']
+            total_dia = ciudad_data['totales_dia'][dia_key]
+            pending_dia = ciudad_data['pendientes_dia'][dia_key]
+            total_general_ciudad += total_dia
+            totales_dia.append({
+                'key': dia_key,
+                'label': dia_info['label'],
+                'total': total_dia,
+                'pending': pending_dia,
+            })
+
+        tablas_ciudades.append({
+            'codigo': ciudad_codigo,
+            'nombre': ciudad_label,
+            'dias': dias_semana,
+            'comerciales': comerciales_list,
+            'totales_dia': totales_dia,
+            'total_general': total_general_ciudad,
+        })
+
+    return render(request, 'paginas/resumen_pedidos.html', {
+        'tablas_ciudades': tablas_ciudades,
+    })
 # vista logica del forscast.
 @login_required
 def clientesweb(request):
@@ -470,7 +665,7 @@ def usuario_eliminar(request, id):
 def crear_pedido(request):
 
     proveedores = Proveedor.objects.filter(activo=True)
-    comerciales = User.objects.all()
+    comerciales = User.objects.filter(id=request.user.id)
 
     if request.method == 'POST':
         entregas_form = _obtener_entregas_form_desde_request(request)
@@ -478,12 +673,26 @@ def crear_pedido(request):
         cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
 
         total_entregas = sum(cantidad for _, cantidad in entregas)
+        semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
+        if not semana_ajustada:
+            form_data = request.POST.copy()
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=form_data,
+                error_message='La fecha de semana es invalida.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/crear_pedido.html', context)
+        form_data = request.POST.copy()
+        form_data['semana'] = semana_ajustada.isoformat()
         if cantidad_total_int and total_entregas != cantidad_total_int:
             context = _build_pedido_form_context(
                 proveedores,
                 comerciales,
                 entregas=entregas_form,
-                form_data=request.POST,
+                form_data=form_data,
                 error_message=(
                     'Las entregas programadas deben sumar la misma cantidad '
                     'que la cantidad total (kg) indicada en la semana.'
@@ -492,7 +701,7 @@ def crear_pedido(request):
             )
             return render(request, 'pedidos/crear_pedido.html', context)
 
-        comercial_id = request.POST.get('comercial')
+        comercial_id = request.user.id
         ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
         if not ciudad_comercial:
             context = _build_pedido_form_context(
@@ -521,7 +730,7 @@ def crear_pedido(request):
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
-            semana=request.POST.get('semana') or None,
+            semana=semana_ajustada,
             observaciones=request.POST.get('observaciones'),
         )
 
@@ -556,10 +765,28 @@ def editarpedido(request, id):
     estado_choices = PEDIDO_ESTADO_CHOICES
 
     if request.method == 'POST':
+        estado_anterior = pedido.estado
         entregas_form = _obtener_entregas_form_desde_request(request)
         entregas = _obtener_entregas_desde_request(request)
         cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
         total_entregas = sum(cantidad for _, cantidad in entregas)
+        semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
+        if not semana_ajustada and request.POST.get('semana'):
+            form_data = request.POST.copy()
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=form_data,
+                error_message='La fecha de semana es invalida.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/editar_pedido.html', context)
+        form_data = request.POST.copy()
+        if semana_ajustada:
+            form_data['semana'] = semana_ajustada.isoformat()
         if cantidad_total_int and total_entregas != cantidad_total_int:
             context = _build_pedido_form_context(
                 proveedores,
@@ -567,7 +794,7 @@ def editarpedido(request, id):
                 pedido=pedido,
                 estado_choices=estado_choices,
                 entregas=entregas_form,
-                form_data=request.POST,
+                form_data=form_data,
                 error_message=(
                     'Las entregas programadas deben sumar la misma cantidad '
                     'que la cantidad total (kg) indicada en la semana.'
@@ -606,12 +833,18 @@ def editarpedido(request, id):
         pedido.cantidad = cantidad_total_int
         pedido.fecha_entrega = fecha_principal
         pedido.cantidad_total = cantidad_total_int
-        pedido.semana = request.POST.get('semana') or None
+        pedido.semana = semana_ajustada or None
         pedido.observaciones = request.POST.get('observaciones')
         nuevo_estado = request.POST.get('estado')
         if nuevo_estado in {value for value, _ in estado_choices}:
             pedido.estado = nuevo_estado
         pedido.save()
+
+        if estado_anterior != pedido.estado and pedido.estado == 'CANCELADO':
+            Notificacion.objects.create(
+                usuario=pedido.comercial,
+                mensaje=f"Pedido #{pedido.id} cancelado por {request.user.username}"
+            )
 
         pedido.entregas.all().delete()
         for fecha, cantidad in entregas:
@@ -757,10 +990,16 @@ def editar_estado_pedido(request, id):
     pedido = get_object_or_404(Pedido, id=id)
     estado_choices = PEDIDO_ESTADO_CHOICES
     if request.method == 'POST':
+        estado_anterior = pedido.estado
         nuevo_estado = request.POST.get('estado')
         if nuevo_estado in {value for value, _ in estado_choices}:
             pedido.estado = nuevo_estado
             pedido.save()
+            if estado_anterior != pedido.estado and pedido.estado == 'CANCELADO':
+                Notificacion.objects.create(
+                    usuario=pedido.comercial,
+                    mensaje=f"Pedido #{pedido.id} cancelado por {request.user.username}"
+                )
             next_url = request.POST.get('next') or request.GET.get('next') or 'editartablas'
             return redirect(next_url)
     next_url = request.GET.get('next', '')
@@ -823,6 +1062,22 @@ def entregas_calendario(request):
 
     return JsonResponse(eventos, safe=False)
 
+
+@login_required
+def notificaciones_pedidos(request):
+    ultimo_pedido = (
+        Pedido.objects
+        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
+        .order_by('-fecha_creacion')
+        .first()
+    )
+    if not ultimo_pedido:
+        return JsonResponse({'last_pedido_id': None, 'last_pedido_ts': None})
+    return JsonResponse({
+        'last_pedido_id': ultimo_pedido.id,
+        'last_pedido_ts': ultimo_pedido.fecha_creacion.isoformat(),
+    })
+
 @login_required
 def crear_pedido_semanal(request):
     if request.method == 'POST':
@@ -833,9 +1088,12 @@ def crear_pedido_semanal(request):
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
 
-        comercial_id = request.POST.get('comercial')
+        comercial_id = request.user.id
         ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
         if not ciudad_comercial:
+            return redirect('inicio')
+        semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
+        if not semana_ajustada:
             return redirect('inicio')
 
         pedido = Pedido.objects.create(
@@ -847,7 +1105,7 @@ def crear_pedido_semanal(request):
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
-            semana=request.POST['semana'],
+            semana=semana_ajustada,
         )
         for fecha, cantidad in entregas:
             EntregaPedido.objects.create(

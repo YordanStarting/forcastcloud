@@ -1,0 +1,61 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Resumen de pedidos
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <h1 class="h3 mb-2 text-gray-800">RESUMEN DE PEDIDOS</h1>
+
+    {% for tabla in tablas_ciudades %}
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">RESUMEN SEMANAL - {{ tabla.nombre|upper }}</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>COMERCIAL</th>
+                            {% for dia in tabla.dias %}
+                            <th>{{ dia.label|upper }}</th>
+                            {% endfor %}
+                            <th>TOTAL</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comercial in tabla.comerciales %}
+                        <tr>
+                            <td data-label="Comercial">{{ comercial.nombre }}</td>
+                            {% for dia in comercial.dias %}
+                            <td data-label="{{ dia.label }}" class="{% if dia.pending %}text-danger font-weight-bold{% endif %}">
+                                {{ dia.total }} kg
+                            </td>
+                            {% endfor %}
+                            <td data-label="Total">{{ comercial.total_general }} kg</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{{ tabla.dias|length|add:'2' }}" class="text-center text-muted">Sin pedidos</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>TOTAL</th>
+                            {% for dia in tabla.totales_dia %}
+                            <th class="{% if dia.pending %}text-danger{% endif %}">{{ dia.total }} kg</th>
+                            {% endfor %}
+                            <th>{{ tabla.total_general }} kg</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            <p class="small text-muted mb-0">Los valores en rojo incluyen pedidos pendientes.</p>
+        </div>
+    </div>
+    {% endfor %}
+</div>
+{% endblock %}

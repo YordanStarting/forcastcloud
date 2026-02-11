@@ -4,6 +4,19 @@
 Editar pedido semanal
 {% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+    .flatpickr-day.disabled,
+    .flatpickr-day.notAllowed,
+    .flatpickr-day.prevMonthDay,
+    .flatpickr-day.nextMonthDay {
+        opacity: 0.25;
+        cursor: not-allowed;
+    }
+</style>
+{% endblock %}
+
 {% block contenido %}
 <div class="container-fluid">
     <form method="post">
@@ -62,7 +75,9 @@ Editar pedido semanal
 
             <div class="form-group col-md-6">
                 <label>Semana (lunes)</label>
-                <input type="date" name="semana" class="form-control" value="{{ pedido.semana|date:'Y-m-d' }}">
+                <input type="text" name="semana" class="form-control js-semana-lunes" autocomplete="off"
+                    value="{{ pedido.semana|date:'Y-m-d' }}">
+                <small class="form-text text-muted">Solo se pueden seleccionar lunes.</small>
             </div>
 
             <div class="form-group col-md-6">
@@ -89,7 +104,8 @@ Editar pedido semanal
                     {% for entrega in entregas %}
                     <div class="form-row entrega-row mb-2">
                         <div class="col-md-6">
-                            <input type="date" name="fecha_entrega[]" class="form-control"
+                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega"
+                                autocomplete="off"
                                 value="{{ entrega.fecha_entrega|date:'Y-m-d' }}" required>
                         </div>
                         <div class="col-md-5">
@@ -104,7 +120,8 @@ Editar pedido semanal
                     {% else %}
                     <div class="form-row entrega-row mb-2">
                         <div class="col-md-6">
-                            <input type="date" name="fecha_entrega[]" class="form-control"
+                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega"
+                                autocomplete="off"
                                 value="{{ pedido.fecha_entrega|date:'Y-m-d' }}">
                         </div>
                         <div class="col-md-5">
@@ -136,11 +153,36 @@ Editar pedido semanal
             </div>
         </div>
 
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
         <script>
             (function () {
                 const container = document.getElementById('entregas-container');
                 const addButton = document.getElementById('add-entrega');
                 const totalSpan = document.getElementById('total-entregas');
+                const semanaInput = document.querySelector('.js-semana-lunes');
+
+                if (semanaInput && window.flatpickr) {
+                    flatpickr(semanaInput, {
+                        dateFormat: "Y-m-d",
+                        allowInput: false,
+                        disableMobile: true,
+                        locale: { firstDayOfWeek: 1 },
+                        enable: [function (fecha) {
+                            return fecha.getDay() === 1;
+                        }]
+                    });
+                }
+
+                const initEntregaDatepicker = (input) => {
+                    if (!input || !window.flatpickr) {
+                        return;
+                    }
+                    flatpickr(input, {
+                        dateFormat: "Y-m-d",
+                        allowInput: false,
+                        disableMobile: true
+                    });
+                };
 
                 const updateTotal = () => {
                     const cantidades = Array.from(container.querySelectorAll('.cantidad-entrega'));
@@ -159,6 +201,8 @@ Editar pedido semanal
                     });
                     const cantidadInput = row.querySelector('.cantidad-entrega');
                     cantidadInput.addEventListener('input', updateTotal);
+                    const fechaInput = row.querySelector('.js-fecha-entrega');
+                    initEntregaDatepicker(fechaInput);
                 };
 
                 addButton.addEventListener('click', () => {
@@ -166,7 +210,7 @@ Editar pedido semanal
                     row.className = 'form-row entrega-row mb-2';
                     row.innerHTML = `
                         <div class="col-md-6">
-                            <input type="date" name="fecha_entrega[]" class="form-control" required>
+                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega" required autocomplete="off">
                         </div>
                         <div class="col-md-5">
                             <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
@@ -180,6 +224,7 @@ Editar pedido semanal
                 });
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
+                container.querySelectorAll('.js-fecha-entrega').forEach(initEntregaDatepicker);
                 updateTotal();
             })();
         </script>

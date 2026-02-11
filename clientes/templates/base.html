@@ -21,6 +21,8 @@
     <!-- Custom styles for this template-->
     <link href="{% static 'web/css/sb-admin-2.min.css' %}" rel="stylesheet">
 
+    {% block extra_head %}{% endblock %}
+
     <style>
         :root {
             --dashboard-primary: #2563eb;
@@ -56,6 +58,18 @@
         }
 
         .sidebar .nav-item .nav-link:hover {
+            color: #ffffff !important;
+        }
+
+        .sidebar .nav-item.section-active .nav-link {
+            background-image: linear-gradient(90deg, #10b981 0%, #059669 100%);
+            color: #ffffff !important;
+            border-radius: 0.5rem;
+            margin: 0 0.5rem;
+        }
+
+        .sidebar .nav-item.section-active .nav-link:hover {
+            background-image: linear-gradient(90deg, #059669 0%, #047857 100%);
             color: #ffffff !important;
         }
 
@@ -137,6 +151,11 @@
         .badge-estado-realizado {
             background: #d1fae5;
             color: #065f46;
+        }
+
+        .badge-estado-cancelado {
+            background: #fee2e2;
+            color: #b91c1c;
         }
 
         @media (max-width: 1200px) {
@@ -229,41 +248,61 @@
             </div>
 
             <!-- Nav Item - Pages Collapse Menu -->
-            <li class="nav-item active">
-                <a class="nav-link" href="#" data-toggle="collapse" data-target="#collapseTwo" aria-expanded="true"
+            {% with current_url=request.resolver_match.url_name %}
+            <li class="nav-item active {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'editartablas' and current_url != 'resumen_pedidos' and current_url != 'historial' %}collapsed{% endif %}"
+                    href="#" data-toggle="collapse" data-target="#collapseTwo"
+                    aria-expanded="{% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}true{% else %}false{% endif %}"
                     aria-controls="collapseTwo">
                     <i class="fas fa-fw fa-cog"></i>
                     <span>Pedidos</span>
                 </a>
-                <div id="collapseTwo" class="collapse show" aria-labelledby="headingTwo"
+                <div id="collapseTwo" class="collapse {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}show{% endif %}"
+                    aria-labelledby="headingTwo"
                     data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         {% if user_role == 'programador' %}
                         <h6 class="collapse-header">Consultas:</h6>
                         {% else %}
-                        <h6 class="collapse-header">Creacion de datos:</h6>
-                        {% endif %}
-                        {% if can_manage_pedidos %}
-                        <a class="collapse-item active" href="{% url 'crearpedido' %}">Crear Pedido</a>
+                        <h6 class="collapse-header">Consultas:</h6>
                         {% endif %}
                         <a class="collapse-item" href="{% url 'editartablas' %}">Listado de Pedidos</a>
-                        {% if can_manage_pedidos %}
-                        <a class="collapse-item" href="{% url 'editar_pedidos' %}">Editar Pedidos</a>
-                        {% endif %}
-                        <a class="collapse-item" href="{% url 'historial' %}">Historial Pedido</a>
+                        <a class="collapse-item" href="{% url 'resumen_pedidos' %}">Resumen de pedidos</a>
+                        <a class="collapse-item" href="{% url 'historial' %}">Historial de Pedidos</a>
                     </div>
                 </div>
             </li>
 
+            {% if can_manage_pedidos %}
+            <li class="nav-item {% if current_url == 'crearpedido' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'crearpedido' and current_url != 'editar_pedidos' and current_url != 'editarpedido' and current_url != 'editar_estado_pedido' and current_url != 'eliminarpedido' and current_url != 'marcar_realizado' %}collapsed{% endif %}"
+                    href="#" data-toggle="collapse" data-target="#collapsePedidosGestion"
+                    aria-expanded="{% if current_url == 'crearpedido' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}true{% else %}false{% endif %}"
+                    aria-controls="collapsePedidosGestion">
+                    <i class="fas fa-fw fa-clipboard-list"></i>
+                    <span>Gestion de pedidos</span>
+                </a>
+                <div id="collapsePedidosGestion" class="collapse {% if current_url == 'crearpedido' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}show{% endif %}"
+                    aria-labelledby="headingPedidosGestion" data-parent="#accordionSidebar">
+                    <div class="bg-white py-2 collapse-inner rounded">
+                        <h6 class="collapse-header">Gestion:</h6>
+                        <a class="collapse-item" href="{% url 'crearpedido' %}">Crear Pedido</a>
+                        <a class="collapse-item" href="{% url 'editar_pedidos' %}">Editar Pedidos</a>
+                    </div>
+                </div>
+            </li>
+            {% endif %}
             {% if can_manage_proveedores %}
-            <li class="nav-item">
-                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseProveedores"
-                    aria-expanded="true" aria-controls="collapseProveedores">
+            <li class="nav-item {% if current_url == 'proveedores' or current_url == 'crearproveedor' or current_url == 'editarproveedor' or current_url == 'eliminarproveedor' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'proveedores' and current_url != 'crearproveedor' and current_url != 'editarproveedor' and current_url != 'eliminarproveedor' %}collapsed{% endif %}"
+                    href="#" data-toggle="collapse" data-target="#collapseProveedores"
+                    aria-expanded="{% if current_url == 'proveedores' or current_url == 'crearproveedor' or current_url == 'editarproveedor' or current_url == 'eliminarproveedor' %}true{% else %}false{% endif %}"
+                    aria-controls="collapseProveedores">
                     <i class="fas fa-fw fa-industry"></i>
                     <span>Proveedores</span>
                 </a>
-                <div id="collapseProveedores" class="collapse" aria-labelledby="headingProveedores"
-                    data-parent="#accordionSidebar">
+                <div id="collapseProveedores" class="collapse {% if current_url == 'proveedores' or current_url == 'crearproveedor' or current_url == 'editarproveedor' or current_url == 'eliminarproveedor' %}show{% endif %}"
+                    aria-labelledby="headingProveedores" data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'proveedores' %}">Listado</a>
@@ -274,14 +313,16 @@
             {% endif %}
 
             {% if can_manage_usuarios %}
-            <li class="nav-item">
-                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseUsuarios"
-                    aria-expanded="true" aria-controls="collapseUsuarios">
+            <li class="nav-item {% if current_url == 'usuarios' or current_url == 'usuariocrear' or current_url == 'usuarioeditar' or current_url == 'usuarioeliminar' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'usuarios' and current_url != 'usuariocrear' and current_url != 'usuarioeditar' and current_url != 'usuarioeliminar' %}collapsed{% endif %}"
+                    href="#" data-toggle="collapse" data-target="#collapseUsuarios"
+                    aria-expanded="{% if current_url == 'usuarios' or current_url == 'usuariocrear' or current_url == 'usuarioeditar' or current_url == 'usuarioeliminar' %}true{% else %}false{% endif %}"
+                    aria-controls="collapseUsuarios">
                     <i class="fas fa-fw fa-users"></i>
                     <span>Usuarios</span>
                 </a>
-                <div id="collapseUsuarios" class="collapse" aria-labelledby="headingUsuarios"
-                    data-parent="#accordionSidebar">
+                <div id="collapseUsuarios" class="collapse {% if current_url == 'usuarios' or current_url == 'usuariocrear' or current_url == 'usuarioeditar' or current_url == 'usuarioeliminar' %}show{% endif %}"
+                    aria-labelledby="headingUsuarios" data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'usuarios' %}">Listado</a>
@@ -290,6 +331,7 @@
                 </div>
             </li>
             {% endif %}
+            {% endwith %}
 
             <!-- Divider -->
             <hr class="sidebar-divider">
@@ -477,6 +519,83 @@
 
         <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
 
+        {% if request.user.is_authenticated %}
+        <script>
+            (function () {
+                const bellStateKey = "ultimoPedidoId";
+                const bellIntervalMs = 15000;
+                let audioContext = null;
+                let audioUnlocked = false;
+
+                function unlockAudio() {
+                    if (audioUnlocked) {
+                        return;
+                    }
+                    try {
+                        audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        const buffer = audioContext.createBuffer(1, 1, 22050);
+                        const source = audioContext.createBufferSource();
+                        source.buffer = buffer;
+                        source.connect(audioContext.destination);
+                        source.start(0);
+                        audioUnlocked = true;
+                    } catch (err) {
+                        audioUnlocked = false;
+                    }
+                }
+
+                function playBell() {
+                    if (!audioUnlocked || !audioContext) {
+                        return;
+                    }
+                    const now = audioContext.currentTime;
+                    const gain = audioContext.createGain();
+                    gain.gain.setValueAtTime(0.001, now);
+                    gain.gain.exponentialRampToValueAtTime(0.35, now + 0.02);
+                    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.7);
+                    gain.connect(audioContext.destination);
+
+                    const osc1 = audioContext.createOscillator();
+                    osc1.type = "sine";
+                    osc1.frequency.setValueAtTime(880, now);
+                    osc1.connect(gain);
+                    osc1.start(now);
+                    osc1.stop(now + 0.7);
+
+                    const osc2 = audioContext.createOscillator();
+                    osc2.type = "triangle";
+                    osc2.frequency.setValueAtTime(1320, now);
+                    osc2.connect(gain);
+                    osc2.start(now);
+                    osc2.stop(now + 0.7);
+                }
+
+                function checkPedidos() {
+                    fetch("{% url 'notificaciones_pedidos' %}", { credentials: "same-origin" })
+                        .then((response) => response.json())
+                        .then((data) => {
+                            if (!data || data.last_pedido_id === null) {
+                                return;
+                            }
+                            const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
+                            if (lastSeen && data.last_pedido_id > lastSeen) {
+                                playBell();
+                            }
+                            if (!lastSeen || data.last_pedido_id > lastSeen) {
+                                localStorage.setItem(bellStateKey, String(data.last_pedido_id));
+                            }
+                        })
+                        .catch(() => {});
+                }
+
+                document.addEventListener("pointerdown", unlockAudio, { once: true });
+                document.addEventListener("keydown", unlockAudio, { once: true });
+
+                checkPedidos();
+                setInterval(checkPedidos, bellIntervalMs);
+            })();
+        </script>
+        {% endif %}
 
 </body>
 

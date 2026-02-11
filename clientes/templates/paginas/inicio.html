@@ -104,6 +104,10 @@ Inicio
                         {{ city_data|json_script:"city-data" }}
                         <canvas id="myPieChart"></canvas>
                     </div>
+                    <div class="mt-3 text-center">
+                        <div class="text-xs text-uppercase text-muted">Total general</div>
+                        <div class="h5 font-weight-bold text-gray-800">{{ total_toneladas }} toneladas</div>
+                    </div>
                     <div class="mt-4 text-center small">
                         <span class="mr-2">
                             <i class="fas fa-circle text-primary"></i> Bogota
@@ -122,13 +126,14 @@ Inicio
 
     <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES Y CONFIRMADOS</h1>
 
+    {% for tabla in tablas_ciudades %}
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS SEMANALES</h6>
+            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS SEMANALES - {{ tabla.nombre|upper }}</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-responsive-stack" id="dataTable" width="100%" cellspacing="0">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
                     <thead>
                         <tr>
                             <th>PRESENTACION</th>
@@ -141,23 +146,50 @@ Inicio
                             <th>ESTADO</th>
                         </tr>
                     </thead>
-                    <tfoot>
-                        <tr>
-                            <th>TOTAL</th>
-                            <th></th>
-                            <th></th>
-                            <th></th>
-                            <th class="col-semana"></th>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                        </tr>
-                    </tfoot>
                     <tbody>
-                        {% for pedido in pedidos %}
+                        {% for pedido in tabla.pedidos %}
                         <tr>
                             <td data-label="Presentacion">{{ pedido.get_presentacion_display }}</td>
-                            <td data-label="Compania">{{ pedido.proveedor.nombre }}</td>
+                            <td data-label="Compania">
+                                {% if pedido.observaciones %}
+                                <button type="button" class="btn btn-link p-0" data-toggle="modal"
+                                    data-target="#observacionesModal{{ pedido.id }}">
+                                    {{ pedido.proveedor.nombre }}
+                                </button>
+
+                                <div class="modal fade" id="observacionesModal{{ pedido.id }}" tabindex="-1" role="dialog"
+                                    aria-labelledby="observacionesModalLabel{{ pedido.id }}" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header"
+                                                style="background: linear-gradient(90deg, rgba(37, 99, 235, 0.12), rgba(14, 165, 163, 0.12));">
+                                                <h5 class="modal-title" id="observacionesModalLabel{{ pedido.id }}">
+                                                    Observaciones del pedido
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p class="small text-muted mb-2">
+                                                    {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
+                                                </p>
+                                                <div class="p-3" style="background: #f8fafc; border-radius: 0.75rem;">
+                                                    {{ pedido.observaciones|linebreaksbr }}
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
+                                                    Cerrar
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                                {% else %}
+                                {{ pedido.proveedor.nombre }}
+                                {% endif %}
+                            </td>
                             <td data-label="Tipo de huevo">{{ pedido.get_tipo_huevo_display }}</td>
                             <td data-label="Cantidad total (kg)">{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
                             <td data-label="Semana" class="col-semana">{{ pedido.semana|date:"d/m/Y" }}</td>
@@ -222,12 +254,51 @@ Inicio
                                 </span>
                             </td>
                         </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="8" class="text-center text-muted">Sin pedidos</td>
+                        </tr>
                         {% endfor %}
                     </tbody>
                 </table>
             </div>
+
+            <div class="mt-3">
+                <div class="text-uppercase text-muted small mb-2">Totales por comercial</div>
+                <div class="table-responsive">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead>
+                            <tr>
+                                <th>COMERCIAL</th>
+                                <th>TOTAL (KG)</th>
+                                <th>TOTAL (TON)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for total in tabla.totales %}
+                            <tr>
+                                <td>{{ total.comercial }}</td>
+                                <td>{{ total.total_kg }} kg</td>
+                                <td>{{ total.total_toneladas }} toneladas</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="3" class="text-center text-muted">Sin totales</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="2">TOTAL CIUDAD</th>
+                                <th>{{ tabla.total_toneladas }} toneladas</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
         </div>
     </div>
+    {% endfor %}
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}

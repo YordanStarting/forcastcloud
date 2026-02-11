@@ -78,6 +78,7 @@ class Pedido(models.Model):
         ('PENDIENTE', 'Pendiente'),
         ('EN_PROCESO', 'En proceso'),
         ('REALIZADO', 'Realizado'),  # Coincide con tu views.py
+        ('CANCELADO', 'Cancelado'),
     ]
     
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE)
