@@ -22,6 +22,102 @@
     <link href="{% static 'web/css/sb-admin-2.min.css' %}" rel="stylesheet">
 
     <style>
+        :root {
+            --dashboard-primary: #2563eb;
+            --dashboard-secondary: #0f766e;
+            --dashboard-success: #0ea5a3;
+            --dashboard-warning: #f59e0b;
+            --dashboard-bg: #f8fafc;
+            --dashboard-border: #e2e8f0;
+            --dashboard-text: #0f172a;
+        }
+
+        body#page-top {
+            background: linear-gradient(180deg, #eff6ff 0%, #f8fafc 45%, #eef2ff 100%);
+            color: var(--dashboard-text);
+        }
+
+        #wrapper #content-wrapper {
+            background: transparent;
+        }
+
+        .navbar-nav.bg-gradient-primary.sidebar {
+            background-image: linear-gradient(
+                180deg,
+                var(--dashboard-primary) 0%,
+                #1e40af 45%,
+                var(--dashboard-secondary) 100%
+            ) !important;
+        }
+
+        .sidebar .nav-item .nav-link,
+        .sidebar .sidebar-heading {
+            color: rgba(255, 255, 255, 0.9) !important;
+        }
+
+        .sidebar .nav-item .nav-link:hover {
+            color: #ffffff !important;
+        }
+
+        .topbar {
+            background: rgba(255, 255, 255, 0.92) !important;
+            backdrop-filter: blur(6px);
+            position: relative;
+            z-index: 1030;
+        }
+
+        #content-wrapper,
+        #content {
+            overflow: visible !important;
+        }
+
+        .topbar .dropdown-menu {
+            z-index: 1060;
+        }
+
+        .card {
+            border: 1px solid var(--dashboard-border);
+            border-radius: 0.75rem;
+        }
+
+        .card-header {
+            background: linear-gradient(90deg, rgba(37, 99, 235, 0.08), rgba(15, 118, 110, 0.08));
+            border-bottom: 1px solid var(--dashboard-border);
+        }
+
+        .dashboard-card-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 0.85rem 1.25rem;
+        }
+
+        .text-primary {
+            color: var(--dashboard-primary) !important;
+        }
+
+        .btn-primary {
+            background-color: var(--dashboard-primary);
+            border-color: var(--dashboard-primary);
+        }
+
+        .btn-primary:hover {
+            background-color: #1d4ed8;
+            border-color: #1d4ed8;
+        }
+
+        .border-left-primary {
+            border-left: 0.25rem solid var(--dashboard-primary) !important;
+        }
+
+        .border-left-warning {
+            border-left: 0.25rem solid var(--dashboard-warning) !important;
+        }
+
+        .border-left-success {
+            border-left: 0.25rem solid var(--dashboard-success) !important;
+        }
+
         .badge-estado {
             padding: 0.35rem 0.6rem;
             font-weight: 700;
@@ -29,8 +125,8 @@
         }
 
         .badge-estado-pendiente {
-            background: #fee2e2;
-            color: #b91c1c;
+            background: #ffedd5;
+            color: #9a3412;
         }
 
         .badge-estado-en_proceso {
@@ -39,8 +135,8 @@
         }
 
         .badge-estado-realizado {
-            background: #dcfce7;
-            color: #15803d;
+            background: #d1fae5;
+            color: #065f46;
         }
 
         @media (max-width: 1200px) {
@@ -169,7 +265,7 @@
                 <div id="collapseProveedores" class="collapse" aria-labelledby="headingProveedores"
                     data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
-                        <h6 class="collapse-header">Gestión:</h6>
+                        <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'proveedores' %}">Listado</a>
                         <a class="collapse-item" href="{% url 'crearproveedor' %}">Crear proveedor</a>
                     </div>
@@ -187,32 +283,13 @@
                 <div id="collapseUsuarios" class="collapse" aria-labelledby="headingUsuarios"
                     data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
-                        <h6 class="collapse-header">GestiÃ³n:</h6>
+                        <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'usuarios' %}">Listado</a>
                         <a class="collapse-item" href="{% url 'usuariocrear' %}">Crear usuario</a>
                     </div>
                 </div>
             </li>
             {% endif %}
-
-            <!-- Nav Item - Utilities Collapse Menu -->
-            <li class="nav-item">
-                <a class="nav-link collapsed" href="#" data-toggle="collapse" data-target="#collapseUtilities"
-                    aria-expanded="true" aria-controls="collapseUtilities">
-                    <i class="fas fa-fw fa-wrench"></i>
-                    <span>PQRS (Proximamente)</span>
-                </a>
-                <div id="collapseUtilities" class="collapse" aria-labelledby="headingUtilities"
-                    data-parent="#accordionSidebar">
-                    <div class="bg-white py-2 collapse-inner rounded">
-                        <h6 class="collapse-header">Crear Pedidos</h6>
-                        <a class="collapse-item" href="utilities-color.html">Editar Pedidos</a>
-                        <a class="collapse-item" href="utilities-border.html">Borders</a>
-                        <a class="collapse-item" href="utilities-animation.html">Animations</a>
-                        <a class="collapse-item" href="utilities-other.html">Other</a>
-                    </div>
-                </div>
-            </li>
 
             <!-- Divider -->
             <hr class="sidebar-divider">
@@ -293,7 +370,7 @@
                                         </div>
                                     </div>
                                     <div>
-                                        <div class="small text-gray-500">{{ n.fecha|date:"d M Y H:i" }}</div>
+                                        <div class="small text-gray-500">{{ n.fecha_creacion|date:"d M Y H:i" }}</div>
                                         <span class="font-weight-bold">{{ n.mensaje }}</span>
                                     </div>
                                 </a>
@@ -311,13 +388,18 @@
                             <a class="nav-link dropdown-toggle" href="#" id="userDropdown" role="button"
                                 data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 <span class="mr-2 d-none d-lg-inline text-gray-600 small">
-                                    {{ request.user.username }}{% if user_role %} · {{ user_role|title }}{% endif %}
+                                    {{ request.user.username }}{% if user_role %} - {{ user_role|title }}{% endif %}
                                 </span>
-                                <img class="img-profile rounded-circle" src="{% static 'web/img/diego.webp' %}">
+                                <img class="img-profile rounded-circle" src="{{ user_profile_image }}" alt="Foto de perfil">
                             </a>
                             <!-- Dropdown - User Information -->
                             <div class="dropdown-menu dropdown-menu-right shadow animated--grow-in"
                                 aria-labelledby="userDropdown">
+                                <a class="dropdown-item" href="{% url 'mi_perfil' %}">
+                                    <i class="fas fa-user fa-sm fa-fw mr-2 text-gray-400"></i>
+                                    Ver perfil
+                                </a>
+                                <div class="dropdown-divider"></div>
                                 <a class="dropdown-item" href="#" data-toggle="modal" data-target="#logoutModal">
                                     <i class="fas fa-sign-out-alt fa-sm fa-fw mr-2 text-gray-400"></i>
                                     Logout
@@ -326,7 +408,7 @@
                         </li>
                         {% else %}
                         <li class="nav-item">
-                            <a class="btn btn-primary btn-sm" href="{% url 'login' %}">Iniciar sesión</a>
+                            <a class="btn btn-primary btn-sm" href="{% url 'login' %}">Iniciar sesion</a>
                         </li>
                         {% endif %}
 
@@ -386,7 +468,7 @@
         <script src="{% static 'web/vendor/bootstrap/js/bootstrap.bundle.min.js' %}"></script>
 
         <!-- Core plugin JavaScript-->
-        <script src="vendor/jquery-easing/jquery.easing.min.js"></script>
+        <script src="{% static 'web/vendor/jquery-easing/jquery.easing.min.js' %}"></script>
 
         <!-- Custom scripts for all pages-->
         <script src="{% static 'web/js/sb-admin-2.min.js' %}"></script>
@@ -399,3 +481,4 @@
 </body>
 
 </html>
+

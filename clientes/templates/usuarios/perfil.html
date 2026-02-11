@@ -1,45 +1,122 @@
 {% extends 'base.html' %}
 
 {% block titulo %}
-Lista de Clientes
+Mi perfil
 {% endblock %}
 
 {% block contenido %}
-<div class="card">
-    <div class="card-header"><a name="" id="" class="btn btn-success" href=""
-            role="button">Agregar nuevo Usuario</a>
-    </div>
-    <div class="card-body">
-        <h4 class="card-title">USUARIOS REGISTRADOS</h4>
-        <div class="table-responsive">
-            <table class="table table">
-                <thead>
-                    <tr>
-                        <th scope="col">Nombre</th>
-                        <th scope="col">Apellido</th>
-                        <th scope="col">Correo</th>
-                        <th scope="col">Ciudad</th>
-                        <th scope="col">Rol</th>
-                    </tr>
-                </thead>
-                <tbody>
-                    {% for Proveedor in Proveedor %}
-                    <tr class="">
-                        <td>{{ Proveedor.nombre }}</td>
-                        <td>{{ Proveedor.email }}</td>
-                        <td>{{ Proveedor.activo }}</td>
-                        <td><a name="" id="" class="btn btn-info" href="{% url 'editarcliente' Proveedor.nombre %}"
-                                role="button">Editar</a>
-                            / <a name="" id="" class="btn btn-danger" href="{% url 'eliminarcliente' Proveedor.nombre %}" role="button">Borrar</a></td>
-                    </tr>
-                    {% endfor %}
-                </tbody>
-            </table>
+<div class="container-fluid">
+    <div class="row">
+        <div class="col-xl-4 col-lg-5 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Foto de perfil</h6>
+                </div>
+                <div class="card-body text-center">
+                    <img src="{{ user_profile_image }}" alt="Foto de perfil"
+                        class="rounded-circle shadow-sm mb-3"
+                        style="width: 150px; height: 150px; object-fit: cover;">
+                    <p class="text-muted mb-1"><strong>{{ request.user.username }}</strong></p>
+                    <p class="text-muted mb-0">{{ request.user.email|default:"Sin correo registrado" }}</p>
+                </div>
+            </div>
         </div>
 
-        
+        <div class="col-xl-8 col-lg-7 mb-4">
+            <div class="card shadow">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">Editar perfil</h6>
+                </div>
+                <div class="card-body">
+                    {% if success_message %}
+                    <div class="alert alert-success">{{ success_message }}</div>
+                    {% endif %}
 
+                    {% if form.non_field_errors %}
+                    <div class="alert alert-danger">{{ form.non_field_errors|striptags }}</div>
+                    {% endif %}
+
+                    <form method="post" enctype="multipart/form-data">
+                        {% csrf_token %}
+
+                        <div class="form-row">
+                            <div class="form-group col-md-6">
+                                <label for="{{ form.first_name.id_for_label }}">Nombre</label>
+                                {{ form.first_name }}
+                                {% if form.first_name.errors %}
+                                <div class="text-danger small">{{ form.first_name.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="form-group col-md-6">
+                                <label for="{{ form.last_name.id_for_label }}">Apellido</label>
+                                {{ form.last_name }}
+                                {% if form.last_name.errors %}
+                                <div class="text-danger small">{{ form.last_name.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="form-group col-md-12">
+                                <label for="{{ form.email.id_for_label }}">Correo</label>
+                                {{ form.email }}
+                                {% if form.email.errors %}
+                                <div class="text-danger small">{{ form.email.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <hr>
+                        <h6 class="font-weight-bold text-primary mb-3">Foto</h6>
+                        <div class="form-row align-items-center">
+                            <div class="form-group col-md-8">
+                                <label for="{{ form.foto_perfil.id_for_label }}">Cargar nueva foto</label>
+                                {{ form.foto_perfil }}
+                                {% if form.foto_perfil.errors %}
+                                <div class="text-danger small">{{ form.foto_perfil.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                            {% if perfil.foto_perfil %}
+                            <div class="form-group col-md-4">
+                                <div class="form-check mt-4">
+                                    {{ form.eliminar_foto }}
+                                    <label class="form-check-label" for="{{ form.eliminar_foto.id_for_label }}">
+                                        Quitar foto actual
+                                    </label>
+                                </div>
+                            </div>
+                            {% endif %}
+                        </div>
+
+                        <hr>
+                        <h6 class="font-weight-bold text-primary mb-3">Cambiar contrasena</h6>
+                        <p class="small text-muted">Si no deseas cambiarla, deja estos campos vacios.</p>
+                        <div class="form-row">
+                            <div class="form-group col-md-4">
+                                <label for="{{ form.current_password.id_for_label }}">Contrasena actual</label>
+                                {{ form.current_password }}
+                                {% if form.current_password.errors %}
+                                <div class="text-danger small">{{ form.current_password.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="{{ form.new_password1.id_for_label }}">Nueva contrasena</label>
+                                {{ form.new_password1 }}
+                                {% if form.new_password1.errors %}
+                                <div class="text-danger small">{{ form.new_password1.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                            <div class="form-group col-md-4">
+                                <label for="{{ form.new_password2.id_for_label }}">Confirmar nueva contrasena</label>
+                                {{ form.new_password2 }}
+                                {% if form.new_password2.errors %}
+                                <div class="text-danger small">{{ form.new_password2.errors|striptags }}</div>
+                                {% endif %}
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary">Guardar cambios</button>
+                    </form>
+                </div>
+            </div>
+        </div>
     </div>
- 
-
+</div>
 {% endblock %}

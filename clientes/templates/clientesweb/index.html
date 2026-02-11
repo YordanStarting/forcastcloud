@@ -23,17 +23,19 @@ Lista de Clientes
                     </tr>
                 </thead>
                 <tbody>
-                    {% for Cliente in Clientes %}
+                    {% for cliente in Clientes %}
                     <tr class="">
-                        <td>{{ Cliente.id }}</td>
-                        <td>{{ Cliente.titulo }}</td>
+                        <td>{{ cliente.id }}</td>
+                        <td>{{ cliente.titulo }}</td>
                         <td>
-                            <img src="{{ Cliente.imagen }}" height="100px" alt="">
+                            {% if cliente.imagen %}
+                            <img src="{{ cliente.imagen.url }}" height="100px" alt="{{ cliente.titulo }}">
+                            {% endif %}
                         </td>
-                        <td>{{ Cliente.desciption }}</td>
-                        <td><a name="" id="" class="btn btn-info" href="{% url 'editarcliente' Cliente.id %}"
+                        <td>{{ cliente.descripcion }}</td>
+                        <td><a name="" id="" class="btn btn-info" href="{% url 'editarcliente' cliente.id %}"
                                 role="button">Editar</a>
-                            / <a name="" id="" class="btn btn-danger" href="{% url 'eliminarcliente' Cliente.id %}" role="button">Borrar</a></td>
+                            / <a name="" id="" class="btn btn-danger" href="{% url 'eliminarcliente' cliente.id %}" role="button">Borrar</a></td>
                     </tr>
                     {% endfor %}
                 </tbody>

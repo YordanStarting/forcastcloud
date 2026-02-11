@@ -10,7 +10,6 @@ urlpatterns = [
     path('nosotros/', views.nosotros, name='nosotros'),
     path('clientesweb/', views.clientesweb, name='clientesweb'),
     path('crearcliente/', views.crearcliente, name='crearcliente'),
-    path('editarcliente/', views.editarcliente, name='editarcliente'),
     path('eliminarcliente/<int:id>/', views.eliminarcliente, name='eliminarcliente'),
     path('clientesweb/editar/<int:id>/', views.editarcliente, name='editarcliente'),
     path('editartablas/', views.editartablas, name='editartablas'),
@@ -22,6 +21,7 @@ urlpatterns = [
     path('usuarios/crear/', views.usuario_crear, name='usuariocrear'),
     path('usuarios/editar/<int:id>/', views.usuario_editar, name='usuarioeditar'),
     path('usuarios/eliminar/<int:id>/', views.usuario_eliminar, name='usuarioeliminar'),
+    path('mi-perfil/', views.mi_perfil, name='mi_perfil'),
 
     # VISTA DE PEDIDOS
     path('crearpedido/', views.crear_pedido, name='crearpedido'),

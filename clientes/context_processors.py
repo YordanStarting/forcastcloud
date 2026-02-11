@@ -1,39 +1,46 @@
-# En context_processors.py
-from .models import Notificacion, PerfilUsuario  # Esto debería funcionar ahora
+from django.templatetags.static import static
+
+from .models import Notificacion, PerfilUsuario
+
 
 def notificaciones(request):
     user_role = None
     can_manage_proveedores = False
     can_manage_usuarios = False
     can_manage_pedidos = False
-    if request.user.is_authenticated:
-        perfil = PerfilUsuario.objects.filter(usuario=request.user).first()
-        if perfil:
-            user_role = perfil.rol
-            can_manage_proveedores = perfil.rol in {'admin', 'comercial'}
-            can_manage_usuarios = perfil.rol == 'admin'
-            can_manage_pedidos = perfil.rol in {'admin', 'comercial'}
+    user_profile_image = static('web/img/diego.webp')
 
-    if request.user.is_authenticated:
+    if not request.user.is_authenticated:
         return {
-            'notificaciones': Notificacion.objects.filter(
-                usuario=request.user,
-                leida=False
-            ).order_by('-fecha_creacion')[:5],
-            'total_notificaciones': Notificacion.objects.filter(
-                usuario=request.user,
-                leida=False
-            ).count(),
+            'notificaciones': [],
+            'total_notificaciones': 0,
             'user_role': user_role,
             'can_manage_proveedores': can_manage_proveedores,
             'can_manage_usuarios': can_manage_usuarios,
             'can_manage_pedidos': can_manage_pedidos,
+            'user_profile_image': user_profile_image,
         }
+
+    perfil = PerfilUsuario.objects.filter(usuario=request.user).first()
+    if perfil:
+        user_role = perfil.rol
+        can_manage_proveedores = perfil.rol in {'admin', 'comercial'}
+        can_manage_usuarios = perfil.rol == 'admin'
+        can_manage_pedidos = perfil.rol in {'admin', 'comercial'}
+        if perfil.foto_perfil:
+            user_profile_image = perfil.foto_perfil.url
+
+    unread_notifications = Notificacion.objects.filter(
+        usuario=request.user,
+        leida=False
+    ).order_by('-fecha_creacion')
+
     return {
-        'notificaciones': [],
-        'total_notificaciones': 0,
+        'notificaciones': unread_notifications[:5],
+        'total_notificaciones': unread_notifications.count(),
         'user_role': user_role,
         'can_manage_proveedores': can_manage_proveedores,
         'can_manage_usuarios': can_manage_usuarios,
         'can_manage_pedidos': can_manage_pedidos,
+        'user_profile_image': user_profile_image,
     }

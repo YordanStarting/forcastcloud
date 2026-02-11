@@ -2,16 +2,15 @@
 
     {% csrf_token %}
     {% for campo in formulario %}
-    <div class="form-group">
-        <label for="{{ campo.name }}">{{ campo.label }}:</label>
-        <input type="{{ campo.field.widget.input_type }}" 
-        class="form-control y-2" for="{{ campo.name }}" 
-        name="{{ campo.name }}" 
-        value="{{ campo.value | default_if_none:'' }}">
+    <div class="form-group mb-3">
+        <label for="{{ campo.id_for_label }}">{{ campo.label }}:</label>
+        {{ campo }}
     </div>
-    <div class="col-12 help-text"> {{campo.errors}} </div>
+    {% if campo.errors %}
+    <div class="col-12 help-text text-danger small">{{ campo.errors }}</div>
+    {% endif %}
     {% endfor %}
-    <input type="submit" class="btn btn-primary y2" value="Enviar">
+    <input type="submit" class="btn btn-primary" value="Enviar">
     <a name="" id="" class="btn btn-danger" href="{% url 'clientesweb' %}" role="button">Cancelar</a>
 
 

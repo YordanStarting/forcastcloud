@@ -1,28 +1,24 @@
 from django import forms
 from django.contrib.auth.models import User
-from .models import Cliente, Pedido, Proveedor, PerfilUsuario, CIUDAD_CHOICES
+from django.contrib.auth.password_validation import validate_password
+from django.core.exceptions import ValidationError
+from .models import Cliente, Proveedor, PerfilUsuario, CIUDAD_CHOICES
 
 class ClienteForm(forms.ModelForm):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        for field in self.fields.values():
+            if isinstance(field.widget, forms.CheckboxInput):
+                base_class = 'form-check-input'
+            else:
+                base_class = 'form-control'
+            current_class = field.widget.attrs.get('class', '')
+            if base_class not in current_class:
+                field.widget.attrs['class'] = f"{current_class} {base_class}".strip()
+
     class Meta:
         model = Cliente
         fields = '__all__'
-
-class PedidoForm(forms.ModelForm):
-    class Meta:
-        model = Pedido
-        fields = [
-            'proveedor',
-            'comercial',
-            'tipo_huevo',
-            'presentacion',
-            'cantidad_total',
-            'semana',
-            'observaciones',
-        ]
-        widgets = {
-            'semana': forms.DateInput(attrs={'type': 'date'}),
-        }
-
 
 class ProveedorForm(forms.ModelForm):
     class Meta:
@@ -61,11 +57,11 @@ class UsuarioBaseForm(forms.ModelForm):
 
 class UsuarioCrearForm(UsuarioBaseForm):
     password1 = forms.CharField(
-        label='ContraseÃ±a',
+        label='Contrasena',
         widget=forms.PasswordInput
     )
     password2 = forms.CharField(
-        label='Confirmar contraseÃ±a',
+        label='Confirmar contrasena',
         widget=forms.PasswordInput
     )
 
@@ -74,7 +70,7 @@ class UsuarioCrearForm(UsuarioBaseForm):
         password1 = cleaned_data.get('password1')
         password2 = cleaned_data.get('password2')
         if password1 and password2 and password1 != password2:
-            self.add_error('password2', 'Las contraseÃ±as no coinciden.')
+            self.add_error('password2', 'Las contrasenas no coinciden.')
         return cleaned_data
 
     def save(self, commit=True):
@@ -94,12 +90,12 @@ class UsuarioCrearForm(UsuarioBaseForm):
 
 class UsuarioEditarForm(UsuarioBaseForm):
     password1 = forms.CharField(
-        label='Nueva contraseÃ±a',
+        label='Nueva contrasena',
         widget=forms.PasswordInput,
         required=False
     )
     password2 = forms.CharField(
-        label='Confirmar nueva contraseÃ±a',
+        label='Confirmar nueva contrasena',
         widget=forms.PasswordInput,
         required=False
     )
@@ -110,7 +106,7 @@ class UsuarioEditarForm(UsuarioBaseForm):
         password2 = cleaned_data.get('password2')
         if password1 or password2:
             if password1 != password2:
-                self.add_error('password2', 'Las contraseÃ±as no coinciden.')
+                self.add_error('password2', 'Las contrasenas no coinciden.')
         return cleaned_data
 
     def save(self, commit=True):
@@ -128,3 +124,83 @@ class UsuarioEditarForm(UsuarioBaseForm):
                 }
             )
         return user
+
+
+class MiPerfilForm(forms.ModelForm):
+    foto_perfil = forms.ImageField(required=False, label='Foto de perfil')
+    eliminar_foto = forms.BooleanField(required=False, label='Quitar foto actual')
+    current_password = forms.CharField(
+        label='Contrasena actual',
+        widget=forms.PasswordInput,
+        required=False
+    )
+    new_password1 = forms.CharField(
+        label='Nueva contrasena',
+        widget=forms.PasswordInput,
+        required=False
+    )
+    new_password2 = forms.CharField(
+        label='Confirmar nueva contrasena',
+        widget=forms.PasswordInput,
+        required=False
+    )
+
+    class Meta:
+        model = User
+        fields = ['first_name', 'last_name', 'email']
+        labels = {
+            'first_name': 'Nombre',
+            'last_name': 'Apellido',
+            'email': 'Correo',
+        }
+
+    def __init__(self, *args, **kwargs):
+        self.user = kwargs.pop('user', None)
+        super().__init__(*args, **kwargs)
+
+    def clean(self):
+        cleaned_data = super().clean()
+        current_password = cleaned_data.get('current_password')
+        new_password1 = cleaned_data.get('new_password1')
+        new_password2 = cleaned_data.get('new_password2')
+
+        wants_password_change = bool(current_password or new_password1 or new_password2)
+        if not wants_password_change:
+            return cleaned_data
+
+        if not current_password:
+            self.add_error('current_password', 'Debes ingresar tu contrasena actual.')
+            return cleaned_data
+
+        if not self.user or not self.user.check_password(current_password):
+            self.add_error('current_password', 'La contrasena actual no es valida.')
+            return cleaned_data
+
+        if not new_password1:
+            self.add_error('new_password1', 'Debes ingresar una nueva contrasena.')
+            return cleaned_data
+
+        if not new_password2:
+            self.add_error('new_password2', 'Debes confirmar la nueva contrasena.')
+            return cleaned_data
+
+        if new_password1 != new_password2:
+            self.add_error('new_password2', 'Las contrasenas no coinciden.')
+            return cleaned_data
+
+        try:
+            validate_password(new_password1, self.user)
+        except ValidationError as error:
+            self.add_error('new_password1', error)
+
+        return cleaned_data
+
+    def save(self, commit=True):
+        user = super().save(commit=False)
+        new_password1 = self.cleaned_data.get('new_password1')
+        if new_password1:
+            user.set_password(new_password1)
+        if commit:
+            user.save()
+        return user
+

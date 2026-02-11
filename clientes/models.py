@@ -25,7 +25,7 @@ class Cliente(models.Model):
     id = models.AutoField(primary_key=True)
     titulo = models.CharField(max_length=100)
     imagen = models.ImageField(upload_to='imagenes/', verbose_name="Imagen", null=True)
-    descripcion = models.TextField(max_length=500)  # CORREGIDO: descripcion (no desciption)
+    descripcion = models.TextField(max_length=500)
 
     def __str__(self):
         return f"{self.titulo} - {self.descripcion[:50]}..."
@@ -57,6 +57,7 @@ class PerfilUsuario(models.Model):
     usuario = models.OneToOneField(User, on_delete=models.CASCADE)
     rol = models.CharField(max_length=20, choices=ROL_CHOICES)
     ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA')
+    foto_perfil = models.ImageField(upload_to='perfiles/', null=True, blank=True)
 
     def __str__(self):
         return f"{self.usuario.username} - {self.rol}"
@@ -131,3 +132,4 @@ class EntregaPedido(models.Model):
     
     def __str__(self):
         return f"Entrega para Pedido #{self.pedido.id} - {self.fecha_entrega}"
+

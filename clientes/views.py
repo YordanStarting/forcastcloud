@@ -1,6 +1,6 @@
 from datetime import date
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import HttpResponse, JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden
 from .models import (
     Cliente,
     EntregaPedido,
@@ -14,18 +14,19 @@ from .models import (
 )
 from .forms import (
     ClienteForm,
-    PedidoForm,
+    MiPerfilForm,
     ProveedorForm,
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import Sum, Case, When, IntegerField, Max
-from django.db.models.functions import TruncDate
+from django.db.models import Sum, Case, When, IntegerField
+from django.db.models.functions import ExtractMonth
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth import login, logout
+from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm
-from .utils import enviar_correo_pedido
+
+PEDIDO_ESTADO_CHOICES = list(Pedido.ESTADO_CHOICES)
 
 def _cantidad_pedido_expr():
     return Case(
@@ -50,6 +51,56 @@ def _obtener_entregas_desde_request(request):
             continue
         entregas.append((fecha, cantidad_int))
     return entregas
+
+
+def _obtener_entregas_form_desde_request(request):
+    fechas_entrega = request.POST.getlist('fecha_entrega[]')
+    cantidades_entrega = request.POST.getlist('cantidad[]')
+    return [
+        {'fecha': fecha, 'cantidad': cantidad}
+        for fecha, cantidad in zip(fechas_entrega, cantidades_entrega)
+        if fecha or cantidad
+    ]
+
+
+def _calcular_cantidad_total(cantidad_total_raw, entregas):
+    try:
+        cantidad_total_int = int(cantidad_total_raw)
+    except (TypeError, ValueError):
+        cantidad_total_int = 0
+    if cantidad_total_int <= 0:
+        return sum(cantidad for _, cantidad in entregas)
+    return cantidad_total_int
+
+
+def _build_pedido_form_context(
+    proveedores,
+    comerciales,
+    *,
+    entregas=None,
+    form_data=None,
+    error_message=None,
+    total_entregas=None,
+    pedido=None,
+    estado_choices=None,
+):
+    context = {
+        'proveedores': proveedores,
+        'comerciales': comerciales,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        'entregas': entregas if entregas is not None else [],
+        'form_data': form_data if form_data is not None else {},
+    }
+    if error_message:
+        context['error_message'] = error_message
+    if total_entregas is not None:
+        context['total_entregas'] = total_entregas
+    if pedido is not None:
+        context['pedido'] = pedido
+    if estado_choices is not None:
+        context['estado_choices'] = estado_choices
+    return context
 
 
 def _obtener_rol_usuario(user):
@@ -137,6 +188,57 @@ def logout_view(request):
 
 
 @login_required
+def mi_perfil(request):
+    perfil, _ = PerfilUsuario.objects.get_or_create(
+        usuario=request.user,
+        defaults={
+            'rol': 'admin' if request.user.is_superuser else 'programador',
+            'ciudad': 'BOGOTA',
+        },
+    )
+
+    success_message = None
+    form = _aplicar_estilos_form(
+        MiPerfilForm(
+            request.POST or None,
+            request.FILES or None,
+            instance=request.user,
+            user=request.user,
+        )
+    )
+
+    if request.method == 'POST' and form.is_valid():
+        user = form.save()
+        password_changed = bool(form.cleaned_data.get('new_password1'))
+
+        nueva_foto = form.cleaned_data.get('foto_perfil')
+        eliminar_foto = form.cleaned_data.get('eliminar_foto')
+
+        if eliminar_foto and perfil.foto_perfil:
+            perfil.foto_perfil.delete(save=False)
+            perfil.foto_perfil = None
+
+        if nueva_foto:
+            if perfil.foto_perfil:
+                perfil.foto_perfil.delete(save=False)
+            perfil.foto_perfil = nueva_foto
+
+        perfil.save()
+
+        if password_changed:
+            update_session_auth_hash(request, user)
+
+        success_message = 'Perfil actualizado correctamente.'
+        form = _aplicar_estilos_form(MiPerfilForm(instance=request.user, user=request.user))
+
+    return render(request, 'usuarios/perfil.html', {
+        'form': form,
+        'perfil': perfil,
+        'success_message': success_message,
+    })
+
+
+@login_required
 def inicio(request):
     pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
@@ -154,19 +256,37 @@ def inicio(request):
         .order_by('semana', 'fecha_entrega')
     )
 
-    pedidos_pendientes = pedidos.count()
+    pedidos_pendientes = pedidos.filter(estado='PENDIENTE').count()
+    pedidos_confirmados = pedidos.filter(estado='EN_PROCESO').count()
     proveedores = Proveedor.objects.filter(activo=True)
 
-    resumen = (
+    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    chart_pendientes_data = [0] * 12
+    chart_confirmados_data = [0] * 12
+
+    resumen_estados = (
         pedidos_qs
-        .annotate(fecha=TruncDate('fecha_creacion'))
-        .values('fecha')
+        .filter(
+            estado__in=['PENDIENTE', 'EN_PROCESO'],
+            fecha_creacion__year=date.today().year,
+        )
+        .annotate(mes=ExtractMonth('fecha_creacion'))
+        .values('mes', 'estado')
         .annotate(total=Sum(_cantidad_pedido_expr()))
-        .order_by('fecha')
+        .order_by('mes')
     )
 
-    chart_labels = [r['fecha'].strftime('%d/%m/%Y') for r in resumen]
-    chart_data = [r['total'] for r in resumen]
+    for row in resumen_estados:
+        mes = row.get('mes')
+        if not mes:
+            continue
+        indice = mes - 1
+        total = row.get('total') or 0
+        if row.get('estado') == 'PENDIENTE':
+            chart_pendientes_data[indice] = total
+        elif row.get('estado') == 'EN_PROCESO':
+            chart_confirmados_data[indice] = total
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
     resumen_ciudad = (
@@ -186,8 +306,11 @@ def inicio(request):
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'pedidos_pendientes': pedidos_pendientes,
-        'chart_labels': chart_labels,
-        'chart_data': chart_data,
+        'pedidos_confirmados': pedidos_confirmados,
+        'chart_labels': meses_labels,
+        'chart_pendientes_data': chart_pendientes_data,
+        'chart_confirmados_data': chart_confirmados_data,
+        'chart_year': date.today().year,
         'city_labels': city_labels,
         'city_data': city_data,
         'proveedores': proveedores,
@@ -203,9 +326,8 @@ def nosotros(request):
 # vista logica del forscast.
 @login_required
 def clientesweb(request):
-    Clientes = Cliente.objects.all()
-    print(Clientes)
-    return render(request, 'clientesweb/index.html',{'Clientes': Clientes})
+    clientes = Cliente.objects.all()
+    return render(request, 'clientesweb/index.html', {'Clientes': clientes})
 # vista logica del forscast.
 @login_required
 def crearcliente(request):
@@ -218,7 +340,7 @@ def crearcliente(request):
 # vista logica del forscast.
 @login_required
 def editarcliente(request, id):
-    cliente = Cliente.objects.get(id=id)
+    cliente = get_object_or_404(Cliente, id=id)
     formulario = ClienteForm(request.POST or None, request.FILES or None, instance=cliente)
 
     if request.method == 'POST':
@@ -230,7 +352,7 @@ def editarcliente(request, id):
 
 @login_required
 def eliminarcliente(request, id):
-    cliente = Cliente.objects.get(id=id)
+    cliente = get_object_or_404(Cliente, id=id)
     cliente.delete()
     return redirect('clientesweb')
 
@@ -343,10 +465,6 @@ def usuario_eliminar(request, id):
     return render(request, 'usuarios/eliminar.html', {'usuario': usuario})
 
 
-@login_required
-def form(request): 
-    return render(request, 'clientesweb/form.html')
-
 #VISTA DE PEDIDOS
 @login_required
 def crear_pedido(request):
@@ -355,55 +473,39 @@ def crear_pedido(request):
     comerciales = User.objects.all()
 
     if request.method == 'POST':
-        fechas_entrega = request.POST.getlist('fecha_entrega[]')
-        cantidades_entrega = request.POST.getlist('cantidad[]')
-        entregas_form = [
-            {'fecha': fecha, 'cantidad': cantidad}
-            for fecha, cantidad in zip(fechas_entrega, cantidades_entrega)
-            if fecha or cantidad
-        ]
+        entregas_form = _obtener_entregas_form_desde_request(request)
         entregas = _obtener_entregas_desde_request(request)
-        cantidad_total = request.POST.get('cantidad_total')
-        try:
-            cantidad_total_int = int(cantidad_total)
-        except (TypeError, ValueError):
-            cantidad_total_int = 0
-        if cantidad_total_int <= 0:
-            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+        cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
 
         total_entregas = sum(cantidad for _, cantidad in entregas)
         if cantidad_total_int and total_entregas != cantidad_total_int:
-            context = {
-                'proveedores': proveedores,
-                'comerciales': comerciales,
-                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-                'entregas': entregas_form,
-                'form_data': request.POST,
-                'error_message': (
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message=(
                     'Las entregas programadas deben sumar la misma cantidad '
                     'que la cantidad total (kg) indicada en la semana.'
                 ),
-                'total_entregas': total_entregas,
-            }
+                total_entregas=total_entregas,
+            )
             return render(request, 'pedidos/crear_pedido.html', context)
 
         comercial_id = request.POST.get('comercial')
         ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
         if not ciudad_comercial:
-            context = {
-                'proveedores': proveedores,
-                'comerciales': comerciales,
-                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-                'entregas': entregas_form,
-                'form_data': request.POST,
-                'error_message': (
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message=(
                     'El comercial seleccionado no tiene ciudad asignada. '
                     'Actualiza la ciudad del usuario antes de crear el pedido.'
                 ),
-                'total_entregas': total_entregas,
-            }
+                total_entregas=total_entregas,
+            )
             return render(request, 'pedidos/crear_pedido.html', context)
 
         fecha_principal = None
@@ -432,19 +534,12 @@ def crear_pedido(request):
 
         Notificacion.objects.create(
             usuario=pedido.comercial,
-            mensaje=f"📦 Nuevo pedido creado por {pedido.comercial.username}"
+            mensaje=f"Nuevo pedido creado por {pedido.comercial.username}"
         )
 
         return redirect('inicio')
 
-    context = {
-        'proveedores': proveedores,
-        'comerciales': comerciales,
-        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-        'entregas': [],
-        'form_data': {},
-    }
+    context = _build_pedido_form_context(proveedores, comerciales)
 
     return render(request, 'pedidos/crear_pedido.html', context)
 
@@ -458,21 +553,28 @@ def editarpedido(request, id):
 
     proveedores = Proveedor.objects.filter(activo=True)
     comerciales = User.objects.all()
-    estado_choices = [
-        ('PENDIENTE', 'Pendiente'),
-        ('EN_PROCESO', 'Confirmado'),
-        ('REALIZADO', 'Realizado'),
-    ]
+    estado_choices = PEDIDO_ESTADO_CHOICES
 
     if request.method == 'POST':
+        entregas_form = _obtener_entregas_form_desde_request(request)
         entregas = _obtener_entregas_desde_request(request)
-        cantidad_total = request.POST.get('cantidad_total')
-        try:
-            cantidad_total_int = int(cantidad_total)
-        except (TypeError, ValueError):
-            cantidad_total_int = 0
-        if cantidad_total_int <= 0:
-            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+        cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
+        total_entregas = sum(cantidad for _, cantidad in entregas)
+        if cantidad_total_int and total_entregas != cantidad_total_int:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message=(
+                    'Las entregas programadas deben sumar la misma cantidad '
+                    'que la cantidad total (kg) indicada en la semana.'
+                ),
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/editar_pedido.html', context)
 
         fecha_principal = None
         if entregas:
@@ -481,19 +583,19 @@ def editarpedido(request, id):
         comercial_id = request.POST.get('comercial')
         ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
         if not ciudad_comercial:
-            context = {
-                'pedido': pedido,
-                'proveedores': proveedores,
-                'comerciales': comerciales,
-                'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-                'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-                'entregas': pedido.entregas.all().order_by('fecha_entrega'),
-                'estado_choices': estado_choices,
-                'error_message': (
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message=(
                     'El comercial seleccionado no tiene ciudad asignada. '
                     'Actualiza la ciudad del usuario antes de editar el pedido.'
                 ),
-            }
+                total_entregas=total_entregas,
+            )
             return render(request, 'pedidos/editar_pedido.html', context)
 
         pedido.proveedor_id = request.POST.get('proveedor')
@@ -521,15 +623,13 @@ def editarpedido(request, id):
 
         return redirect('inicio')
 
-    context = {
-        'pedido': pedido,
-        'proveedores': proveedores,
-        'comerciales': comerciales,
-        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-        'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-        'entregas': pedido.entregas.all().order_by('fecha_entrega'),
-        'estado_choices': estado_choices,
-    }
+    context = _build_pedido_form_context(
+        proveedores,
+        comerciales,
+        pedido=pedido,
+        estado_choices=estado_choices,
+        entregas=pedido.entregas.all().order_by('fecha_entrega'),
+    )
 
     return render(request, 'pedidos/editar_pedido.html', context)
 
@@ -548,7 +648,7 @@ def editartablas(request):
 
     proveedores = Proveedor.objects.filter(activo=True)
 
-     # ✅ SUMAS CORRECTAS (sin duplicar)
+    # SUMAS CORRECTAS (sin duplicar)
     total_liquido = pedidos.filter(
         tipo_huevo__in=['HELU', 'CLLU']
     ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
@@ -578,12 +678,45 @@ def historial(request):
     pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='REALIZADO')
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
+    anios_disponibles = [d.year for d in pedidos_qs.dates('fecha_creacion', 'year', order='DESC')]
+    anio_actual = date.today().year
+    anio_por_defecto = anios_disponibles[0] if anios_disponibles else anio_actual
+    try:
+        anio = int(request.GET.get('anio', anio_por_defecto))
+    except (TypeError, ValueError):
+        anio = anio_por_defecto
+
+    if anio not in anios_disponibles:
+        anios_disponibles = sorted(set(anios_disponibles + [anio]), reverse=True)
+
+    pedidos = pedidos.filter(fecha_creacion__year=anio)
+    filtros['anio'] = str(anio)
+
+    resumen_anual = (
+        pedidos
+        .annotate(mes=ExtractMonth('fecha_creacion'))
+        .values('mes')
+        .annotate(total=Sum(_cantidad_pedido_expr()))
+        .order_by('mes')
+    )
+    historial_chart_data = [0] * 12
+    for row in resumen_anual:
+        mes = row.get('mes')
+        if mes:
+            historial_chart_data[mes - 1] = row.get('total') or 0
 
     proveedores = Proveedor.objects.filter(activo=True)
 
     return render(request, 'pedidos/historial.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
+        'anios_disponibles': anios_disponibles,
+        'anio': str(anio),
+        'historial_chart_labels': meses_labels,
+        'historial_chart_data': historial_chart_data,
+        'historial_chart_year': anio,
         **filtros
     })
 
@@ -622,11 +755,7 @@ def editar_estado_pedido(request, id):
     if not _usuario_puede_gestionar_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
     pedido = get_object_or_404(Pedido, id=id)
-    estado_choices = [
-        ('PENDIENTE', 'Pendiente'),
-        ('EN_PROCESO', 'Confirmado'),
-        ('REALIZADO', 'Realizado'),
-    ]
+    estado_choices = PEDIDO_ESTADO_CHOICES
     if request.method == 'POST':
         nuevo_estado = request.POST.get('estado')
         if nuevo_estado in {value for value, _ in estado_choices}:
@@ -678,7 +807,11 @@ def filtrar_pedidos(request, qs):
 
 @login_required
 def entregas_calendario(request):
-    entregas = EntregaPedido.objects.filter(estado='PENDIENTE')
+    entregas = (
+        EntregaPedido.objects
+        .select_related('pedido__proveedor')
+        .filter(estado='PENDIENTE')
+    )
 
     eventos = [
         {
@@ -694,13 +827,7 @@ def entregas_calendario(request):
 def crear_pedido_semanal(request):
     if request.method == 'POST':
         entregas = _obtener_entregas_desde_request(request)
-        cantidad_total = request.POST.get('cantidad_total')
-        try:
-            cantidad_total_int = int(cantidad_total)
-        except (TypeError, ValueError):
-            cantidad_total_int = 0
-        if cantidad_total_int <= 0:
-            cantidad_total_int = sum(cantidad for _, cantidad in entregas)
+        cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
 
         fecha_principal = None
         if entregas:

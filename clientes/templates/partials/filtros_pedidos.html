@@ -1,7 +1,7 @@
 <form method="get" class="mb-4">
     <div class="row">
 
-        <div class="col-md-4">
+        <div class="col-12 col-md-3 mb-2">
             <label>Proveedor</label>
             <select name="proveedor" class="form-control">
                 <option value="">Todos</option>
@@ -14,17 +14,30 @@
             </select>
         </div>
 
-        <div class="col-md-3">
+        <div class="col-12 col-md-2 mb-2">
             <label>Desde</label>
             <input type="date" name="fecha_desde" class="form-control" value="{{ fecha_desde }}">
         </div>
 
-        <div class="col-md-3">
+        <div class="col-12 col-md-2 mb-2">
             <label>Hasta</label>
             <input type="date" name="fecha_hasta" class="form-control" value="{{ fecha_hasta }}">
         </div>
 
-        <div class="col-md-2 d-flex align-items-end">
+        {% if anios_disponibles %}
+        <div class="col-12 col-md-3 mb-2">
+            <label>Anio</label>
+            <select name="anio" class="form-control">
+                {% for y in anios_disponibles %}
+                <option value="{{ y }}" {% if anio == y|stringformat:"s" %}selected{% endif %}>
+                    {{ y }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        <div class="col-12 col-md-2 mb-2 d-flex align-items-end">
             <button type="submit" class="btn btn-primary w-100">
                 Filtrar
             </button>
