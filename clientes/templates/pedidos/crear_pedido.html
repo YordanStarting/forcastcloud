@@ -148,6 +148,7 @@ Crear pedido semanal
         </div>
 
         <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+        <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
         <script>
             (function () {
                 const container = document.getElementById('entregas-container');
@@ -176,7 +177,7 @@ Crear pedido semanal
                         dateFormat: "Y-m-d",
                         allowInput: false,
                         disableMobile: true,
-                        locale: { firstDayOfWeek: 1 },
+                        locale: "es",
                         enable: [function (fecha) {
                             return fecha.getDay() === 1;
                         }]
@@ -190,7 +191,8 @@ Crear pedido semanal
                     flatpickr(input, {
                         dateFormat: "Y-m-d",
                         allowInput: false,
-                        disableMobile: true
+                        disableMobile: true,
+                        locale: "es"
                     });
                 };
 
