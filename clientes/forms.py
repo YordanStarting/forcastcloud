@@ -25,10 +25,8 @@ class ProveedorForm(forms.ModelForm):
         model = Proveedor
         fields = [
             'nombre',
-            'nit',
-            'contacto',
-            'telefono',
-            'email',
+            'ciudad',
+            'presentacion',
             'activo',
         ]
 

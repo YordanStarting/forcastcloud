@@ -36,7 +36,7 @@ Crear pedido semanal
                 <select name="proveedor" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}"
+                    <option value="{{ proveedor.id }}" data-presentacion="{{ proveedor.presentacion }}"
                         {% if form_data.proveedor == proveedor.id|stringformat:"s" %}selected{% endif %}>
                         {{ proveedor.nombre }}
                     </option>
@@ -71,8 +71,8 @@ Crear pedido semanal
             </div>
 
             <div class="form-group col-md-6">
-                <label>Presentación</label>
-                <select name="presentacion" class="form-control" required>
+                <label>Presentacion (automatica por proveedor)</label>
+                <select id="presentacion_display" class="form-control" disabled>
                     <option value="">Escoger</option>
                     {% for value, label in PRESENTACION_CHOICES %}
                     <option value="{{ value }}" {% if form_data.presentacion == value %}selected{% endif %}>
@@ -80,6 +80,7 @@ Crear pedido semanal
                     </option>
                     {% endfor %}
                 </select>
+                <input type="hidden" name="presentacion" id="presentacion_hidden" value="{{ form_data.presentacion|default:'' }}">
             </div>
 
             <div class="form-group col-md-6">
@@ -156,6 +157,19 @@ Crear pedido semanal
                 const errorSpan = document.getElementById('entregas-error');
                 const submitButton = document.querySelector('input[type="submit"]');
                 const semanaInput = document.querySelector('.js-semana-lunes');
+                const proveedorSelect = document.querySelector('select[name="proveedor"]');
+                const presentacionDisplay = document.getElementById('presentacion_display');
+                const presentacionHidden = document.getElementById('presentacion_hidden');
+
+                const syncPresentacionConProveedor = () => {
+                    if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
+                        return;
+                    }
+                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
+                    const presentacion = selectedOption ? selectedOption.dataset.presentacion || '' : '';
+                    presentacionDisplay.value = presentacion;
+                    presentacionHidden.value = presentacion;
+                };
 
                 if (semanaInput && window.flatpickr) {
                     flatpickr(semanaInput, {
@@ -244,6 +258,10 @@ Crear pedido semanal
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
                 container.querySelectorAll('.js-fecha-entrega').forEach(initEntregaDatepicker);
+                if (proveedorSelect) {
+                    proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
+                    syncPresentacionConProveedor();
+                }
                 totalInput.addEventListener('input', updateTotal);
                 updateTotal();
             })();

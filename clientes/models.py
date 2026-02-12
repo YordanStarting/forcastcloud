@@ -9,10 +9,17 @@ TIPO_HUEVO_CHOICES = [
 ]
 
 PRESENTACION_CHOICES = [
-    ('OV20_1000', 'OV20 - 1000g'),
-    ('OV15_200', 'OV15 - 200g'),
-    ('SAC_20', 'Saco 20kg'),
-    ('SAC_5', 'Saco 5kg'),
+    ('OV20_1000', 'OV20 1000'),
+    ('OV15_200', 'OV15 200'),
+    ('OV15_20', 'OV15 20'),
+    ('OV15_15', 'OV15 15'),
+    ('OV15_14', 'OV15 14'),
+    ('OV30_20', 'OV30-20'),
+    ('OV30_10', 'OV30-10'),
+    ('OV30_5', 'OV30-5'),
+    ('OV30_3', 'OV30-3'),
+    ('SAC_20', 'Sac x 20'),
+    ('BOLSA_4_4KG', 'Bolsa 4,4Kg'),
 ]
 
 CIUDAD_CHOICES = [
@@ -36,11 +43,13 @@ class Cliente(models.Model):
         super().delete(*args, **kwargs)
 
 class Proveedor(models.Model):
-    nombre = models.CharField(max_length=150, unique=True)
-    nit = models.CharField(max_length=30, blank=True, null=True)
-    contacto = models.CharField(max_length=100, blank=True, null=True)
-    telefono = models.CharField(max_length=30, blank=True, null=True)
-    email = models.EmailField(blank=True, null=True)
+    nombre = models.CharField(max_length=150, default='Proveedor sin nombre')
+    ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA')
+    presentacion = models.CharField(
+        max_length=20,
+        choices=PRESENTACION_CHOICES,
+        default='OV20_1000'
+    )
     activo = models.BooleanField(default=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 

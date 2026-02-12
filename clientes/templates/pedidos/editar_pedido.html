@@ -33,7 +33,8 @@ Editar pedido semanal
                 <label>Proveedor</label>
                 <select name="proveedor" class="form-control">
                     {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}" {% if pedido.proveedor_id == proveedor.id %}selected{% endif %}>
+                    <option value="{{ proveedor.id }}" data-presentacion="{{ proveedor.presentacion }}"
+                        {% if form_data.proveedor == proveedor.id|stringformat:"s" or not form_data.proveedor and pedido.proveedor_id == proveedor.id %}selected{% endif %}>
                         {{ proveedor.nombre }}
                     </option>
                     {% endfor %}
@@ -44,7 +45,8 @@ Editar pedido semanal
                 <label>Comercial</label>
                 <select name="comercial" class="form-control">
                     {% for user in comerciales %}
-                    <option value="{{ user.id }}" {% if pedido.comercial_id == user.id %}selected{% endif %}>
+                    <option value="{{ user.id }}"
+                        {% if form_data.comercial == user.id|stringformat:"s" or not form_data.comercial and pedido.comercial_id == user.id %}selected{% endif %}>
                         {{ user.username }}
                     </option>
                     {% endfor %}
@@ -55,7 +57,8 @@ Editar pedido semanal
                 <label>Tipo de Huevo</label>
                 <select name="tipo_huevo" class="form-control">
                     {% for value, label in TIPO_HUEVO_CHOICES %}
-                    <option value="{{ value }}" {% if pedido.tipo_huevo == value %}selected{% endif %}>
+                    <option value="{{ value }}"
+                        {% if form_data.tipo_huevo == value or not form_data.tipo_huevo and pedido.tipo_huevo == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
@@ -63,34 +66,38 @@ Editar pedido semanal
             </div>
 
             <div class="form-group col-md-6">
-                <label>Presentación</label>
-                <select name="presentacion" class="form-control">
+                <label>Presentacion (automatica por proveedor)</label>
+                <select id="presentacion_display" class="form-control" disabled>
                     {% for value, label in PRESENTACION_CHOICES %}
-                    <option value="{{ value }}" {% if pedido.presentacion == value %}selected{% endif %}>
+                    <option value="{{ value }}"
+                        {% if form_data.presentacion == value or not form_data.presentacion and pedido.presentacion == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
                 </select>
+                <input type="hidden" name="presentacion" id="presentacion_hidden"
+                    value="{{ form_data.presentacion|default:pedido.presentacion }}">
             </div>
 
             <div class="form-group col-md-6">
                 <label>Semana (lunes)</label>
                 <input type="text" name="semana" class="form-control js-semana-lunes" autocomplete="off"
-                    value="{{ pedido.semana|date:'Y-m-d' }}">
+                    value="{{ form_data.semana|default:pedido.semana|date:'Y-m-d' }}">
                 <small class="form-text text-muted">Solo se pueden seleccionar lunes.</small>
             </div>
 
             <div class="form-group col-md-6">
                 <label>Cantidad total (kg)</label>
                 <input type="number" name="cantidad_total" class="form-control" min="1"
-                    value="{{ pedido.cantidad_total|default:pedido.cantidad }}">
+                    value="{{ form_data.cantidad_total|default:pedido.cantidad_total|default:pedido.cantidad }}">
             </div>
 
             <div class="form-group col-md-6">
                 <label>Estado</label>
                 <select name="estado" class="form-control">
                     {% for value, label in estado_choices %}
-                    <option value="{{ value }}" {% if pedido.estado == value %}selected{% endif %}>
+                    <option value="{{ value }}"
+                        {% if form_data.estado == value or not form_data.estado and pedido.estado == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
@@ -106,14 +113,14 @@ Editar pedido semanal
                         <div class="col-md-6">
                             <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega"
                                 autocomplete="off"
-                                value="{{ entrega.fecha_entrega|date:'Y-m-d' }}" required>
+                                value="{% if entrega.fecha_entrega %}{{ entrega.fecha_entrega|date:'Y-m-d' }}{% else %}{{ entrega.fecha }}{% endif %}" required>
                         </div>
                         <div class="col-md-5">
                             <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1"
                                 value="{{ entrega.cantidad }}" required>
                         </div>
                         <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
                         </div>
                     </div>
                     {% endfor %}
@@ -129,7 +136,7 @@ Editar pedido semanal
                                 value="{{ pedido.cantidad }}">
                         </div>
                         <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
                         </div>
                     </div>
                     {% endif %}
@@ -144,7 +151,7 @@ Editar pedido semanal
 
             <div class="form-group col-md-12">
                 <label>Observaciones</label>
-                <textarea name="observaciones" class="form-control">{{ pedido.observaciones }}</textarea>
+                <textarea name="observaciones" class="form-control">{{ form_data.observaciones|default:pedido.observaciones }}</textarea>
             </div>
 
             <div class="form-group col-md-12">
@@ -160,6 +167,19 @@ Editar pedido semanal
                 const addButton = document.getElementById('add-entrega');
                 const totalSpan = document.getElementById('total-entregas');
                 const semanaInput = document.querySelector('.js-semana-lunes');
+                const proveedorSelect = document.querySelector('select[name="proveedor"]');
+                const presentacionDisplay = document.getElementById('presentacion_display');
+                const presentacionHidden = document.getElementById('presentacion_hidden');
+
+                const syncPresentacionConProveedor = () => {
+                    if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
+                        return;
+                    }
+                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
+                    const presentacion = selectedOption ? selectedOption.dataset.presentacion || '' : '';
+                    presentacionDisplay.value = presentacion;
+                    presentacionHidden.value = presentacion;
+                };
 
                 if (semanaInput && window.flatpickr) {
                     flatpickr(semanaInput, {
@@ -216,7 +236,7 @@ Editar pedido semanal
                             <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
                         </div>
                         <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">✕</button>
+                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
                         </div>
                     `;
                     container.appendChild(row);
@@ -225,6 +245,10 @@ Editar pedido semanal
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
                 container.querySelectorAll('.js-fecha-entrega').forEach(initEntregaDatepicker);
+                if (proveedorSelect) {
+                    proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
+                    syncPresentacionConProveedor();
+                }
                 updateTotal();
             })();
         </script>

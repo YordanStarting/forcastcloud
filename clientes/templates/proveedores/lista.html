@@ -1,15 +1,15 @@
 {% extends 'base.html' %}
 
 {% block titulo %}
-Proveedores
+Clientes
 {% endblock %}
 
 {% block contenido %}
 <div class="container-fluid">
     <div class="card shadow mb-4">
         <div class="card-header py-3 d-flex justify-content-between align-items-center">
-            <h6 class="m-0 font-weight-bold text-primary">Listado de proveedores</h6>
-            <a class="btn btn-sm btn-primary" href="{% url 'crearproveedor' %}">Crear proveedor</a>
+            <h6 class="m-0 font-weight-bold text-primary">Listado de Clientes</h6>
+            <a class="btn btn-sm btn-primary" href="{% url 'crearproveedor' %}">Crear Clientes</a>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -17,10 +17,8 @@ Proveedores
                     <thead>
                         <tr>
                             <th>Nombre</th>
-                            <th>NIT</th>
-                            <th>Contacto</th>
-                            <th>Teléfono</th>
-                            <th>Email</th>
+                            <th>Ciudad</th>
+                            <th>Presentacion</th>
                             <th>Activo</th>
                             <th>Acciones</th>
                         </tr>
@@ -28,14 +26,12 @@ Proveedores
                     <tbody>
                         {% for proveedor in proveedores %}
                         <tr>
-                            <td>{{ proveedor.nombre }}</td>
-                            <td>{{ proveedor.nit|default:"—" }}</td>
-                            <td>{{ proveedor.contacto|default:"—" }}</td>
-                            <td>{{ proveedor.telefono|default:"—" }}</td>
-                            <td>{{ proveedor.email|default:"—" }}</td>
+                            <td>{{ proveedor.nombre|default:"-" }}</td>
+                            <td>{{ proveedor.get_ciudad_display }}</td>
+                            <td>{{ proveedor.get_presentacion_display }}</td>
                             <td>
                                 {% if proveedor.activo %}
-                                Sí
+                                Si
                                 {% else %}
                                 No
                                 {% endif %}
@@ -47,7 +43,7 @@ Proveedores
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="7" class="text-center text-muted">No hay proveedores registrados.</td>
+                            <td colspan="5" class="text-center text-muted">No hay Clientes registrados.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

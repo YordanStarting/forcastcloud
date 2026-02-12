@@ -138,6 +138,15 @@ def _obtener_ciudad_usuario_id(usuario_id):
         .first()
     )
 
+def _obtener_proveedor_desde_request(request, *, solo_activos=True):
+    proveedor_id = request.POST.get('proveedor')
+    if not proveedor_id:
+        return None
+    proveedores = Proveedor.objects
+    if solo_activos:
+        proveedores = proveedores.filter(activo=True)
+    return proveedores.filter(id=proveedor_id).first()
+
 
 def _usuario_puede_gestionar_proveedores(user):
     if not user.is_authenticated:
@@ -556,7 +565,7 @@ def eliminarcliente(request, id):
 def verproveedores(request):
     if not _usuario_puede_gestionar_proveedores(request.user):
         return HttpResponseForbidden("No tienes permisos para ver proveedores.")
-    proveedores = Proveedor.objects.all().order_by('nombre')
+    proveedores = Proveedor.objects.all().order_by('nombre', 'ciudad', 'presentacion', 'id')
     return render(request, 'proveedores/lista.html', {'proveedores': proveedores})
 
 
@@ -717,16 +726,28 @@ def crear_pedido(request):
             )
             return render(request, 'pedidos/crear_pedido.html', context)
 
+        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        if not proveedor:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message='Debes seleccionar un proveedor valido y activo.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/crear_pedido.html', context)
+
         fecha_principal = None
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
 
         pedido = Pedido.objects.create(
-            proveedor_id=request.POST.get('proveedor'),
+            proveedor=proveedor,
             comercial_id=comercial_id,
             ciudad=ciudad_comercial,
             tipo_huevo=request.POST.get('tipo_huevo'),
-            presentacion=request.POST.get('presentacion'),
+            presentacion=proveedor.presentacion,
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
@@ -825,11 +846,25 @@ def editarpedido(request, id):
             )
             return render(request, 'pedidos/editar_pedido.html', context)
 
-        pedido.proveedor_id = request.POST.get('proveedor')
+        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        if not proveedor:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message='Debes seleccionar un proveedor valido y activo.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/editar_pedido.html', context)
+
+        pedido.proveedor = proveedor
         pedido.comercial_id = comercial_id
         pedido.ciudad = ciudad_comercial
         pedido.tipo_huevo = request.POST.get('tipo_huevo')
-        pedido.presentacion = request.POST.get('presentacion')
+        pedido.presentacion = proveedor.presentacion
         pedido.cantidad = cantidad_total_int
         pedido.fecha_entrega = fecha_principal
         pedido.cantidad_total = cantidad_total_int
@@ -1095,13 +1130,16 @@ def crear_pedido_semanal(request):
         semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
         if not semana_ajustada:
             return redirect('inicio')
+        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        if not proveedor:
+            return redirect('inicio')
 
         pedido = Pedido.objects.create(
-            proveedor_id=request.POST['proveedor'],
+            proveedor=proveedor,
             comercial_id=comercial_id,
             ciudad=ciudad_comercial,
             tipo_huevo=request.POST['tipo_huevo'],
-            presentacion=request.POST['presentacion'],
+            presentacion=proveedor.presentacion,
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,

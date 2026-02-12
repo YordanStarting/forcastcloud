@@ -1,14 +1,14 @@
 {% extends 'base.html' %}
 
 {% block titulo %}
-Crear proveedor
+Crear Cliente
 {% endblock %}
 
 {% block contenido %}
 <div class="container-fluid">
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">Nuevo proveedor</h6>
+            <h6 class="m-0 font-weight-bold text-primary">Nuevo Cliente</h6>
         </div>
         <div class="card-body">
             <form method="post">
@@ -27,31 +27,17 @@ Crear proveedor
                         {% endif %}
                     </div>
                     <div class="form-group col-md-6">
-                        <label for="{{ form.nit.id_for_label }}">NIT</label>
-                        {{ form.nit }}
-                        {% if form.nit.errors %}
-                        <div class="text-danger small">{{ form.nit.errors|striptags }}</div>
+                        <label for="{{ form.ciudad.id_for_label }}">Ciudad</label>
+                        {{ form.ciudad }}
+                        {% if form.ciudad.errors %}
+                        <div class="text-danger small">{{ form.ciudad.errors|striptags }}</div>
                         {% endif %}
                     </div>
                     <div class="form-group col-md-6">
-                        <label for="{{ form.contacto.id_for_label }}">Contacto</label>
-                        {{ form.contacto }}
-                        {% if form.contacto.errors %}
-                        <div class="text-danger small">{{ form.contacto.errors|striptags }}</div>
-                        {% endif %}
-                    </div>
-                    <div class="form-group col-md-6">
-                        <label for="{{ form.telefono.id_for_label }}">Teléfono</label>
-                        {{ form.telefono }}
-                        {% if form.telefono.errors %}
-                        <div class="text-danger small">{{ form.telefono.errors|striptags }}</div>
-                        {% endif %}
-                    </div>
-                    <div class="form-group col-md-6">
-                        <label for="{{ form.email.id_for_label }}">Email</label>
-                        {{ form.email }}
-                        {% if form.email.errors %}
-                        <div class="text-danger small">{{ form.email.errors|striptags }}</div>
+                        <label for="{{ form.presentacion.id_for_label }}">Presentacion</label>
+                        {{ form.presentacion }}
+                        {% if form.presentacion.errors %}
+                        <div class="text-danger small">{{ form.presentacion.errors|striptags }}</div>
                         {% endif %}
                     </div>
                     <div class="form-group col-md-6 d-flex align-items-center">

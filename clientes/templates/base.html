@@ -299,14 +299,14 @@
                     aria-expanded="{% if current_url == 'proveedores' or current_url == 'crearproveedor' or current_url == 'editarproveedor' or current_url == 'eliminarproveedor' %}true{% else %}false{% endif %}"
                     aria-controls="collapseProveedores">
                     <i class="fas fa-fw fa-industry"></i>
-                    <span>Proveedores</span>
+                    <span>Clientes</span>
                 </a>
                 <div id="collapseProveedores" class="collapse {% if current_url == 'proveedores' or current_url == 'crearproveedor' or current_url == 'editarproveedor' or current_url == 'eliminarproveedor' %}show{% endif %}"
                     aria-labelledby="headingProveedores" data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'proveedores' %}">Listado</a>
-                        <a class="collapse-item" href="{% url 'crearproveedor' %}">Crear proveedor</a>
+                        <a class="collapse-item" href="{% url 'crearproveedor' %}">Crear Clientes</a>
                     </div>
                 </div>
             </li>
