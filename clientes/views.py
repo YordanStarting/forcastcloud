@@ -19,7 +19,7 @@ from .forms import (
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import Sum, Case, When, IntegerField
+from django.db.models import F, Sum, Case, When, IntegerField
 from django.db.models.functions import ExtractMonth, ExtractIsoWeekDay, Coalesce
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
@@ -406,25 +406,134 @@ def resumen_pedidos(request):
         {'key': 4, 'label': 'Jueves'},
         {'key': 5, 'label': 'Viernes'},
         {'key': 6, 'label': 'Sabado'},
-        {'key': 7, 'label': 'Domingo'},
     ]
-    cantidad_expr = _cantidad_pedido_expr()
-    pedidos_base = (
-        Pedido.objects
-        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
-        .annotate(fecha_base=Coalesce('fecha_entrega', 'semana'))
-        .filter(fecha_base__isnull=False)
-        .annotate(dia_semana=ExtractIsoWeekDay('fecha_base'))
-    )
+    dias_semana_corta = {
+        1: 'Lun',
+        2: 'Mar',
+        3: 'Mie',
+        4: 'Jue',
+        5: 'Vie',
+        6: 'Sab',
+    }
+    dias_validos = {dia['key'] for dia in dias_semana}
 
-    resumen = (
-        pedidos_base
+    tipo_map = {}
+    for codigo, etiqueta in TIPO_HUEVO_CHOICES:
+        tipo_map[codigo] = {
+            'codigo': codigo,
+            'etiqueta': etiqueta,
+            'totales_dia': {
+                dia['key']: {'total': 0, 'pending': 0}
+                for dia in dias_semana
+            },
+            'ciudades': {
+                ciudad_codigo: {
+                    'codigo': ciudad_codigo,
+                    'nombre': ciudad_label,
+                    'comerciales': {},
+                    'totales_dia': {
+                        dia['key']: {'total': 0, 'pending': 0}
+                        for dia in dias_semana
+                    },
+                }
+                for ciudad_codigo, ciudad_label in CIUDAD_CHOICES
+            },
+        }
+
+    def _nombre_comercial(row):
+        nombre = f"{row.get('comercial_first_name', '')} {row.get('comercial_last_name', '')}".strip()
+        if nombre:
+            return nombre
+        return row.get('comercial_username') or 'Sin comercial'
+
+    def _acumular_fila(row):
+        tipo_huevo = row.get('tipo_huevo')
+        ciudad = row.get('ciudad')
+        dia_semana = row.get('dia_semana')
+        if tipo_huevo not in tipo_map:
+            return
+        if ciudad not in tipo_map[tipo_huevo]['ciudades']:
+            return
+        if dia_semana not in dias_validos:
+            return
+
+        total_kg = row.get('total_kg') or 0
+        pending_kg = row.get('pending_kg') or 0
+        comercial_id = row.get('comercial_id')
+
+        tipo_data = tipo_map[tipo_huevo]
+        ciudad_data = tipo_data['ciudades'][ciudad]
+        tipo_data['totales_dia'][dia_semana]['total'] += total_kg
+        tipo_data['totales_dia'][dia_semana]['pending'] += pending_kg
+        ciudad_data['totales_dia'][dia_semana]['total'] += total_kg
+        ciudad_data['totales_dia'][dia_semana]['pending'] += pending_kg
+
+        comerciales = ciudad_data['comerciales']
+        if comercial_id not in comerciales:
+            comerciales[comercial_id] = {
+                'nombre': _nombre_comercial(row),
+                'dias': {
+                    dia['key']: {'total': 0, 'pending': 0}
+                    for dia in dias_semana
+                },
+            }
+        comerciales[comercial_id]['dias'][dia_semana]['total'] += total_kg
+        comerciales[comercial_id]['dias'][dia_semana]['pending'] += pending_kg
+
+    entregas_resumen = (
+        EntregaPedido.objects
+        .filter(pedido__estado__in=['PENDIENTE', 'EN_PROCESO'])
+        .annotate(
+            tipo_huevo=F('pedido__tipo_huevo'),
+            ciudad=F('pedido__ciudad'),
+            comercial_id=F('pedido__comercial_id'),
+            comercial_username=F('pedido__comercial__username'),
+            comercial_first_name=F('pedido__comercial__first_name'),
+            comercial_last_name=F('pedido__comercial__last_name'),
+            dia_semana=ExtractIsoWeekDay('fecha_entrega'),
+        )
+        .filter(dia_semana__gte=1, dia_semana__lte=6)
         .values(
+            'tipo_huevo',
             'ciudad',
             'comercial_id',
-            'comercial__username',
-            'comercial__first_name',
-            'comercial__last_name',
+            'comercial_username',
+            'comercial_first_name',
+            'comercial_last_name',
+            'dia_semana',
+        )
+        .annotate(
+            total_kg=Sum('cantidad'),
+            pending_kg=Sum(
+                Case(
+                    When(pedido__estado='PENDIENTE', then=F('cantidad')),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+        )
+    )
+
+    cantidad_expr = _cantidad_pedido_expr()
+    pedidos_sin_entregas = (
+        Pedido.objects
+        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'], entregas__isnull=True)
+        .annotate(
+            comercial_username=F('comercial__username'),
+            comercial_first_name=F('comercial__first_name'),
+            comercial_last_name=F('comercial__last_name'),
+            fecha_base=Coalesce('fecha_entrega', 'semana'),
+        )
+        .filter(fecha_base__isnull=False)
+        .annotate(dia_semana=ExtractIsoWeekDay('fecha_base'))
+        .filter(dia_semana__gte=1, dia_semana__lte=6)
+        .values(
+            'tipo_huevo',
+            'ciudad',
+            'comercial_id',
+            'comercial_username',
+            'comercial_first_name',
+            'comercial_last_name',
             'dia_semana',
         )
         .annotate(
@@ -439,93 +548,96 @@ def resumen_pedidos(request):
         )
     )
 
-    ciudad_map = {
-        value: {
-            'nombre': label,
-            'comerciales': {},
-            'totales_dia': {dia['key']: 0 for dia in dias_semana},
-            'pendientes_dia': {dia['key']: 0 for dia in dias_semana},
-        }
-        for value, label in CIUDAD_CHOICES
-    }
+    for row in entregas_resumen:
+        _acumular_fila(row)
+    for row in pedidos_sin_entregas:
+        _acumular_fila(row)
 
-    for row in resumen:
-        ciudad = row.get('ciudad')
-        if ciudad not in ciudad_map:
-            continue
-        dia = row.get('dia_semana')
-        if not dia:
-            continue
-        total_kg = row.get('total_kg') or 0
-        pending_kg = row.get('pending_kg') or 0
+    tarjetas_tipo = []
+    tipos_detalle = []
+    for tipo_codigo, tipo_label in TIPO_HUEVO_CHOICES:
+        tipo_data = tipo_map[tipo_codigo]
+        dias_tarjeta = []
+        total_tipo = 0
+        for dia in dias_semana:
+            dia_totales = tipo_data['totales_dia'][dia['key']]
+            total_tipo += dia_totales['total']
+            dias_tarjeta.append({
+                'key': dia['key'],
+                'label': dia['label'],
+                'short_label': dias_semana_corta[dia['key']],
+                'total': dia_totales['total'],
+                'pending': dia_totales['pending'],
+            })
 
-        ciudad_data = ciudad_map[ciudad]
-        ciudad_data['totales_dia'][dia] += total_kg
-        ciudad_data['pendientes_dia'][dia] += pending_kg
-
-        comercial_id = row.get('comercial_id')
-        comerciales = ciudad_data['comerciales']
-        if comercial_id not in comerciales:
-            nombre = f"{row.get('comercial__first_name', '')} {row.get('comercial__last_name', '')}".strip()
-            if not nombre:
-                nombre = row.get('comercial__username') or 'Sin comercial'
-            comerciales[comercial_id] = {
-                'nombre': nombre,
-                'dias': {dia_info['key']: {'total': 0, 'pending': 0} for dia_info in dias_semana},
-            }
-        comerciales[comercial_id]['dias'][dia]['total'] += total_kg
-        comerciales[comercial_id]['dias'][dia]['pending'] += pending_kg
-
-    tablas_ciudades = []
-    for ciudad_codigo, ciudad_label in CIUDAD_CHOICES:
-        ciudad_data = ciudad_map.get(ciudad_codigo)
-        comerciales_list = []
-        for comercial in ciudad_data['comerciales'].values():
-            dias_list = []
-            total_general = 0
-            for dia_info in dias_semana:
-                dia_key = dia_info['key']
-                total_dia = comercial['dias'][dia_key]['total']
-                pending_dia = comercial['dias'][dia_key]['pending']
-                total_general += total_dia
-                dias_list.append({
-                    'key': dia_key,
-                    'label': dia_info['label'],
-                    'total': total_dia,
-                    'pending': pending_dia,
+        ciudades_detalle = []
+        for ciudad_codigo, ciudad_label in CIUDAD_CHOICES:
+            ciudad_data = tipo_data['ciudades'][ciudad_codigo]
+            comerciales_detalle = []
+            for comercial in ciudad_data['comerciales'].values():
+                dias_comercial = []
+                total_comercial = 0
+                for dia in dias_semana:
+                    dia_info = comercial['dias'][dia['key']]
+                    total_comercial += dia_info['total']
+                    dias_comercial.append({
+                        'key': dia['key'],
+                        'label': dia['label'],
+                        'total': dia_info['total'],
+                        'pending': dia_info['pending'],
+                    })
+                comerciales_detalle.append({
+                    'nombre': comercial['nombre'],
+                    'dias': dias_comercial,
+                    'total_general': total_comercial,
                 })
-            comerciales_list.append({
-                'nombre': comercial['nombre'],
-                'dias': dias_list,
-                'total_general': total_general,
-            })
-        comerciales_list.sort(key=lambda item: item['nombre'].lower())
+            comerciales_detalle.sort(key=lambda item: item['nombre'].lower())
 
-        totales_dia = []
-        total_general_ciudad = 0
-        for dia_info in dias_semana:
-            dia_key = dia_info['key']
-            total_dia = ciudad_data['totales_dia'][dia_key]
-            pending_dia = ciudad_data['pendientes_dia'][dia_key]
-            total_general_ciudad += total_dia
-            totales_dia.append({
-                'key': dia_key,
-                'label': dia_info['label'],
-                'total': total_dia,
-                'pending': pending_dia,
+            totales_ciudad = []
+            total_ciudad = 0
+            for dia in dias_semana:
+                dia_totales = ciudad_data['totales_dia'][dia['key']]
+                total_ciudad += dia_totales['total']
+                totales_ciudad.append({
+                    'key': dia['key'],
+                    'label': dia['label'],
+                    'total': dia_totales['total'],
+                    'pending': dia_totales['pending'],
+                })
+
+            ciudades_detalle.append({
+                'codigo': ciudad_codigo,
+                'nombre': ciudad_label,
+                'dias': dias_semana,
+                'comerciales': comerciales_detalle,
+                'totales_dia': totales_ciudad,
+                'total_general': total_ciudad,
             })
 
-        tablas_ciudades.append({
-            'codigo': ciudad_codigo,
-            'nombre': ciudad_label,
-            'dias': dias_semana,
-            'comerciales': comerciales_list,
-            'totales_dia': totales_dia,
-            'total_general': total_general_ciudad,
+        tarjetas_tipo.append({
+            'codigo': tipo_codigo,
+            'etiqueta': tipo_label,
+            'anchor_id': f"tipo-{tipo_codigo.lower()}",
+            'dias': dias_tarjeta,
+            'total_general': total_tipo,
+        })
+        tipos_detalle.append({
+            'codigo': tipo_codigo,
+            'etiqueta': tipo_label,
+            'anchor_id': f"tipo-{tipo_codigo.lower()}",
+            'ciudades': ciudades_detalle,
+            'total_general': total_tipo,
         })
 
+    tipo_seleccionado = request.GET.get('tipo')
+    if tipo_seleccionado not in tipo_map and tarjetas_tipo:
+        tipo_seleccionado = tarjetas_tipo[0]['codigo']
+
     return render(request, 'paginas/resumen_pedidos.html', {
-        'tablas_ciudades': tablas_ciudades,
+        'dias_semana': dias_semana,
+        'tarjetas_tipo': tarjetas_tipo,
+        'tipos_detalle': tipos_detalle,
+        'tipo_seleccionado': tipo_seleccionado,
     })
 # vista logica del forscast.
 @login_required
