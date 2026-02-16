@@ -49,33 +49,20 @@
         .brand {
             display: flex;
             align-items: center;
+            flex-direction: column;
             gap: 0.75rem;
             margin-bottom: 1.5rem;
+            text-align: center;
         }
 
-        .brand-mark {
-            width: 44px;
-            height: 44px;
-            border-radius: 12px;
-            background: linear-gradient(140deg, var(--login-blue-700), var(--login-blue-500));
-            color: #ffffff;
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 800;
-            letter-spacing: 0.04em;
-            box-shadow: 0 10px 24px rgba(59, 130, 246, 0.4);
-        }
-
-        .brand-title {
-            margin: 0;
-            font-size: 1.25rem;
-            font-weight: 700;
-            letter-spacing: 0.08em;
+        .brand-logo {
+            width: min(280px, 100%);
+            height: auto;
+            display: block;
         }
 
         .brand-subtitle {
-            margin: 0.25rem 0 0;
+            margin: 0;
             font-size: 0.9rem;
             color: #64748b;
         }
@@ -148,11 +135,8 @@
     <div class="login-shell">
         <div class="login-card">
             <div class="brand">
-                <div class="brand-mark">OP</div>
-                <div>
-                    <h1 class="brand-title">OVOPACIFIC</h1>
-                    <p class="brand-subtitle">Acceso seguro al sistema</p>
-                </div>
+                <img class="brand-logo" src="{% static 'web/img/ovocloud-logo.png' %}" alt="OvoCloud">
+                <p class="brand-subtitle">Acceso seguro al sistema</p>
             </div>
 
             <form method="post" class="login-form">
