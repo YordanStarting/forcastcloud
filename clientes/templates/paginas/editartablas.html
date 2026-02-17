@@ -28,6 +28,17 @@ Editar Pedido
                 </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Ciudad</label>
+                <select class="form-control" name="ciudad">
+                    <option value="">Todas</option>
+                    {% for value, label in CIUDAD_CHOICES %}
+                    <option value="{{ value }}" {% if ciudad == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Tipo de huevo</label>
                 <select class="form-control" name="tipo_huevo">
                     <option value="">Todos</option>
@@ -49,7 +60,7 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-2 mb-2">
+            <div class="col-12 col-md-1 mb-2">
                 <label class="mb-1">Estado</label>
                 <select class="form-control" name="estado">
                     <option value="">Todos</option>
@@ -60,7 +71,7 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-2 mb-2">
+            <div class="col-12 col-md-1 mb-2">
                 <label class="mb-1">Fecha creacion</label>
                 <input type="date" class="form-control" name="fecha_creacion" value="{{ fecha_creacion|default:'' }}">
             </div>

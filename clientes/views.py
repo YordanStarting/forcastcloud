@@ -1346,6 +1346,7 @@ def editartablas(request):
     return render(request, 'paginas/editartablas.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
+        'CIUDAD_CHOICES': CIUDAD_CHOICES,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'PEDIDO_ESTADO_CHOICES': estados_activos_choices,
@@ -1581,6 +1582,10 @@ def filtrar_pedidos(request, qs):
     if proveedor := request.GET.get('proveedor'):
         qs = qs.filter(proveedor_id=proveedor)
         filtros['proveedor_id'] = proveedor
+
+    if ciudad := request.GET.get('ciudad'):
+        qs = qs.filter(ciudad=ciudad)
+        filtros['ciudad'] = ciudad
 
     if tipo_huevo := request.GET.get('tipo_huevo'):
         qs = qs.filter(tipo_huevo=tipo_huevo)
