@@ -278,13 +278,37 @@ def _obtener_ciudad_usuario_id(usuario_id):
         .first()
     )
 
-def _obtener_proveedor_desde_request(request, *, solo_activos=True):
+
+def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
+    proveedores = Proveedor.objects.all()
+    if solo_activos:
+        proveedores = proveedores.filter(activo=True)
+
+    if not user.is_authenticated or user.is_superuser:
+        return proveedores
+
+    if _obtener_rol_usuario(user) == 'comercial':
+        ciudad_usuario = _obtener_ciudad_usuario_id(user.id)
+        if not ciudad_usuario:
+            return proveedores.none()
+        return proveedores.filter(ciudad=ciudad_usuario)
+
+    return proveedores
+
+
+def _obtener_proveedor_desde_request(request, *, solo_activos=True, proveedores_queryset=None):
     proveedor_id = request.POST.get('proveedor')
     if not proveedor_id:
         return None
-    proveedores = Proveedor.objects
+
+    if proveedores_queryset is None:
+        proveedores = Proveedor.objects.all()
+    else:
+        proveedores = proveedores_queryset
+
     if solo_activos:
         proveedores = proveedores.filter(activo=True)
+
     return proveedores.filter(id=proveedor_id).first()
 
 
@@ -1000,7 +1024,7 @@ def usuario_eliminar(request, id):
 @login_required
 def crear_pedido(request):
 
-    proveedores = Proveedor.objects.filter(activo=True)
+    proveedores = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
     comerciales = User.objects.filter(id=request.user.id)
 
     if request.method == 'POST':
@@ -1053,7 +1077,11 @@ def crear_pedido(request):
             )
             return render(request, 'pedidos/crear_pedido.html', context)
 
-        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        proveedor = _obtener_proveedor_desde_request(
+            request,
+            solo_activos=True,
+            proveedores_queryset=proveedores,
+        )
         if not proveedor:
             context = _build_pedido_form_context(
                 proveedores,
@@ -1633,6 +1661,7 @@ def crear_pedido_semanal(request):
     if request.method == 'POST':
         entregas = _obtener_entregas_desde_request(request)
         cantidad_total_int = _calcular_cantidad_total(request.POST.get('cantidad_total'), entregas)
+        proveedores_disponibles = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
 
         fecha_principal = None
         if entregas:
@@ -1645,7 +1674,11 @@ def crear_pedido_semanal(request):
         semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
         if not semana_ajustada:
             return redirect('inicio')
-        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        proveedor = _obtener_proveedor_desde_request(
+            request,
+            solo_activos=True,
+            proveedores_queryset=proveedores_disponibles,
+        )
         if not proveedor:
             return redirect('inicio')
 

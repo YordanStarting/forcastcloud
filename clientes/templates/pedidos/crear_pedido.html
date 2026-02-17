@@ -14,6 +14,62 @@ Crear pedido semanal
         opacity: 0.25;
         cursor: not-allowed;
     }
+
+    .proveedor-dropdown {
+        position: relative;
+    }
+
+    .proveedor-toggle {
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .proveedor-toggle::after {
+        content: "";
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid #6c757d;
+        margin-left: 10px;
+    }
+
+    .proveedor-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        z-index: 30;
+        display: none;
+    }
+
+    .proveedor-menu.show {
+        display: block;
+    }
+
+    .proveedor-list {
+        max-height: 230px;
+        overflow-y: auto;
+        padding: 0.25rem 0;
+    }
+
+    .proveedor-option {
+        width: 100%;
+        border: none;
+        background: transparent;
+        text-align: left;
+        padding: 0.45rem 0.9rem;
+        cursor: pointer;
+    }
+
+    .proveedor-option:hover,
+    .proveedor-option.active {
+        background: #f1f5ff;
+    }
 </style>
 {% endblock %}
 
@@ -33,17 +89,29 @@ Crear pedido semanal
 
             <div class="form-group col-md-12">
                 <label>Proveedor</label>
-                <input type="text" id="proveedor-search" class="form-control mb-2"
-                    placeholder="Buscar proveedor por nombre...">
-                <select name="proveedor" class="form-control" required>
-                    <option value="">Escoger</option>
-                    {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}" data-presentacion="{{ proveedor.presentacion }}"
-                        {% if form_data.proveedor == proveedor.id|stringformat:"s" %}selected{% endif %}>
-                        {{ proveedor.nombre }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <div class="proveedor-dropdown" id="proveedor-dropdown">
+                    <input type="hidden" name="proveedor" id="proveedor_hidden" value="{{ form_data.proveedor|default:'' }}">
+                    <button type="button" class="form-control proveedor-toggle" id="proveedor-toggle">
+                        <span id="proveedor-selected-label">Escoger</span>
+                    </button>
+                    <div class="proveedor-menu" id="proveedor-menu">
+                        <div class="p-2 border-bottom">
+                            <input type="text" id="proveedor-search" class="form-control"
+                                placeholder="Buscar proveedor por nombre..." autocomplete="off">
+                        </div>
+                        <div class="proveedor-list" id="proveedor-list">
+                            {% for proveedor in proveedores %}
+                            <button type="button" class="proveedor-option" data-id="{{ proveedor.id }}"
+                                data-presentacion="{{ proveedor.presentacion|default:'' }}">
+                                {{ proveedor.nombre }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <small id="proveedor-error" class="form-text text-danger mt-1 d-none">
+                    Debes seleccionar un proveedor.
+                </small>
             </div>
 
             <div class="form-group col-md-12">
@@ -160,39 +228,80 @@ Crear pedido semanal
                 const errorSpan = document.getElementById('entregas-error');
                 const submitButton = document.querySelector('input[type="submit"]');
                 const semanaInput = document.querySelector('.js-semana-lunes');
-                const proveedorSelect = document.querySelector('select[name="proveedor"]');
+                const form = document.querySelector('form');
+                const proveedorDropdown = document.getElementById('proveedor-dropdown');
+                const proveedorToggle = document.getElementById('proveedor-toggle');
+                const proveedorMenu = document.getElementById('proveedor-menu');
+                const proveedorSelectedLabel = document.getElementById('proveedor-selected-label');
+                const proveedorHidden = document.getElementById('proveedor_hidden');
                 const proveedorSearch = document.getElementById('proveedor-search');
+                const proveedorError = document.getElementById('proveedor-error');
                 const presentacionDisplay = document.getElementById('presentacion_display');
                 const presentacionHidden = document.getElementById('presentacion_hidden');
-                const proveedorOptions = proveedorSelect
-                    ? Array.from(proveedorSelect.querySelectorAll('option')).filter(option => option.value)
-                    : [];
+                const proveedorOptions = Array.from(document.querySelectorAll('.proveedor-option'));
+                let selectedProveedorButton = null;
 
                 const syncPresentacionConProveedor = () => {
-                    if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
+                    if (!presentacionDisplay || !presentacionHidden) {
                         return;
                     }
-                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
-                    const presentacion = selectedOption ? selectedOption.dataset.presentacion || '' : '';
+                    const presentacion = selectedProveedorButton
+                        ? selectedProveedorButton.dataset.presentacion || ''
+                        : '';
                     presentacionDisplay.value = presentacion;
                     presentacionHidden.value = presentacion;
                 };
 
+                const closeProveedorMenu = () => {
+                    if (proveedorMenu) {
+                        proveedorMenu.classList.remove('show');
+                    }
+                };
+
+                const openProveedorMenu = () => {
+                    if (!proveedorMenu) {
+                        return;
+                    }
+                    proveedorMenu.classList.add('show');
+                    if (proveedorSearch) {
+                        proveedorSearch.focus();
+                        proveedorSearch.select();
+                    }
+                };
+
+                const setProveedorSeleccion = (id) => {
+                    selectedProveedorButton = null;
+                    proveedorOptions.forEach((option) => {
+                        const isSelected = option.dataset.id === id;
+                        option.classList.toggle('active', isSelected);
+                        if (isSelected) {
+                            selectedProveedorButton = option;
+                        }
+                    });
+                    if (proveedorHidden) {
+                        proveedorHidden.value = selectedProveedorButton ? selectedProveedorButton.dataset.id : '';
+                    }
+                    if (proveedorSelectedLabel) {
+                        proveedorSelectedLabel.textContent = selectedProveedorButton
+                            ? selectedProveedorButton.textContent.trim()
+                            : 'Escoger';
+                    }
+                    if (proveedorError && proveedorHidden && proveedorHidden.value) {
+                        proveedorError.classList.add('d-none');
+                    }
+                    syncPresentacionConProveedor();
+                };
+
                 const filtrarProveedores = () => {
-                    if (!proveedorSelect || !proveedorSearch) {
+                    if (!proveedorSearch) {
                         return;
                     }
                     const searchTerm = (proveedorSearch.value || '').trim().toLowerCase();
                     proveedorOptions.forEach((option) => {
-                        const match = !searchTerm || option.textContent.toLowerCase().includes(searchTerm);
-                        option.hidden = !match;
+                        const proveedorNombre = option.textContent.toLowerCase();
+                        const match = !searchTerm || proveedorNombre.includes(searchTerm);
+                        option.classList.toggle('d-none', !match);
                     });
-
-                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
-                    if (selectedOption && selectedOption.hidden) {
-                        proveedorSelect.value = '';
-                    }
-                    syncPresentacionConProveedor();
                 };
 
                 if (semanaInput && window.flatpickr) {
@@ -283,14 +392,48 @@ Crear pedido semanal
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
                 container.querySelectorAll('.js-fecha-entrega').forEach(initEntregaDatepicker);
-                if (proveedorSelect) {
-                    proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
-                    syncPresentacionConProveedor();
+                if (proveedorToggle) {
+                    proveedorToggle.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        if (proveedorMenu && proveedorMenu.classList.contains('show')) {
+                            closeProveedorMenu();
+                        } else {
+                            openProveedorMenu();
+                        }
+                    });
                 }
+                proveedorOptions.forEach((option) => {
+                    option.addEventListener('click', () => {
+                        setProveedorSeleccion(option.dataset.id);
+                        closeProveedorMenu();
+                    });
+                });
                 if (proveedorSearch) {
                     proveedorSearch.addEventListener('input', filtrarProveedores);
                     filtrarProveedores();
                 }
+                document.addEventListener('click', (event) => {
+                    if (proveedorDropdown && !proveedorDropdown.contains(event.target)) {
+                        closeProveedorMenu();
+                    }
+                });
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        closeProveedorMenu();
+                    }
+                });
+                if (form) {
+                    form.addEventListener('submit', (event) => {
+                        if (proveedorHidden && !proveedorHidden.value) {
+                            event.preventDefault();
+                            if (proveedorError) {
+                                proveedorError.classList.remove('d-none');
+                            }
+                            openProveedorMenu();
+                        }
+                    });
+                }
+                setProveedorSeleccion(proveedorHidden ? proveedorHidden.value : '');
                 totalInput.addEventListener('input', updateTotal);
                 updateTotal();
             })();
