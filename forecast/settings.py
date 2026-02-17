@@ -152,3 +152,6 @@ LOGOUT_REDIRECT_URL = 'login'
 TEMPLATES[0]['OPTIONS']['context_processors'] += [
     'clientes.context_processors.notificaciones',
 ]
+
+# Keep model auto primary keys aligned with existing migrations.
+DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'

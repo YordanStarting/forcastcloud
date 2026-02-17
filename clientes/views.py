@@ -35,7 +35,8 @@ PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
 PEDIDO_ESTADO_LABELS = dict(PEDIDO_ESTADO_CHOICES)
 PEDIDO_ESTADOS_ACTIVOS = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
-PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE', 'CONFIRMADO']
+PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD = ['CONFIRMADO', 'EN_PRODUCCION']
+PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE'] + PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
 PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
 PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
 ROL_ESTADOS_PERMITIDOS = {
@@ -432,7 +433,7 @@ def inicio(request):
     pedidos_activos = pedidos_qs.filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
 
     pedidos_pendientes = pedidos.filter(estado='PENDIENTE').count()
-    pedidos_confirmados = pedidos.filter(estado='CONFIRMADO').count()
+    pedidos_confirmados = pedidos.filter(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD).count()
     proveedores = Proveedor.objects.filter(activo=True)
 
     meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -460,8 +461,8 @@ def inicio(request):
         total = row.get('total') or 0
         if row.get('estado') == 'PENDIENTE':
             chart_pendientes_data[indice] = total
-        elif row.get('estado') == 'CONFIRMADO':
-            chart_confirmados_data[indice] = total
+        elif row.get('estado') in PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD:
+            chart_confirmados_data[indice] += total
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
     resumen_ciudad = (
@@ -868,8 +869,31 @@ def eliminarcliente(request, id):
 def verproveedores(request):
     if not _usuario_puede_gestionar_proveedores(request.user):
         return HttpResponseForbidden("No tienes permisos para ver proveedores.")
-    proveedores = Proveedor.objects.all().order_by('nombre', 'ciudad', 'presentacion', 'id')
-    return render(request, 'proveedores/lista.html', {'proveedores': proveedores})
+
+    proveedores_qs = Proveedor.objects.all().order_by('nombre', 'ciudad', 'presentacion', 'id')
+
+    ciudad = (request.GET.get('ciudad') or '').strip()
+    q = (request.GET.get('q') or '').strip()
+
+    if ciudad:
+        proveedores_qs = proveedores_qs.filter(ciudad=ciudad)
+    if q:
+        proveedores_qs = proveedores_qs.filter(nombre__icontains=q)
+
+    paginator = Paginator(proveedores_qs, 10)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+
+    return render(request, 'proveedores/lista.html', {
+        'proveedores': page_obj.object_list,
+        'page_obj': page_obj,
+        'query_string': query_params.urlencode(),
+        'ciudad': ciudad,
+        'q': q,
+        'CIUDAD_CHOICES': CIUDAD_CHOICES,
+    })
 
 
 @login_required

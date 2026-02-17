@@ -552,6 +552,7 @@
         <script>
             (function () {
                 const bellStateKey = "ultimoEventoSonidoId:{{ request.user.id }}";
+                const bellPendingKey = "eventoSonidoPendienteId:{{ request.user.id }}";
                 const bellIntervalMs = 15000;
                 let audioContext = null;
                 let audioUnlocked = false;
@@ -562,12 +563,16 @@
                     }
                     try {
                         audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                        if (audioContext.state === "suspended") {
+                            audioContext.resume().catch(() => {});
+                        }
                         const buffer = audioContext.createBuffer(1, 1, 22050);
                         const source = audioContext.createBufferSource();
                         source.buffer = buffer;
                         source.connect(audioContext.destination);
                         source.start(0);
                         audioUnlocked = true;
+                        flushPendingBell();
                     } catch (err) {
                         audioUnlocked = false;
                     }
@@ -597,6 +602,20 @@
                     osc2.connect(gain);
                     osc2.start(now);
                     osc2.stop(now + 0.7);
+                    return true;
+                }
+
+                function flushPendingBell() {
+                    const pendingId = parseInt(localStorage.getItem(bellPendingKey) || "0", 10);
+                    const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
+                    if (!pendingId || pendingId <= lastSeen) {
+                        localStorage.removeItem(bellPendingKey);
+                        return;
+                    }
+                    if (playBell()) {
+                        localStorage.setItem(bellStateKey, String(pendingId));
+                        localStorage.removeItem(bellPendingKey);
+                    }
                 }
 
                 function checkPedidos() {
@@ -606,19 +625,26 @@
                             if (!data || data.last_event_id === null) {
                                 return;
                             }
+                            const eventId = parseInt(data.last_event_id, 10);
                             const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
-                            if (lastSeen && data.last_event_id > lastSeen) {
-                                playBell();
+                            if (!eventId || eventId <= lastSeen) {
+                                return;
                             }
-                            if (!lastSeen || data.last_event_id > lastSeen) {
-                                localStorage.setItem(bellStateKey, String(data.last_event_id));
+                            if (audioUnlocked && playBell()) {
+                                localStorage.setItem(bellStateKey, String(eventId));
+                                localStorage.removeItem(bellPendingKey);
+                            } else {
+                                const pendingId = parseInt(localStorage.getItem(bellPendingKey) || "0", 10);
+                                if (eventId > pendingId) {
+                                    localStorage.setItem(bellPendingKey, String(eventId));
+                                }
                             }
                         })
                         .catch(() => {});
                 }
 
-                document.addEventListener("pointerdown", unlockAudio, { once: true });
-                document.addEventListener("keydown", unlockAudio, { once: true });
+                document.addEventListener("pointerdown", unlockAudio);
+                document.addEventListener("keydown", unlockAudio);
 
                 checkPedidos();
                 setInterval(checkPedidos, bellIntervalMs);

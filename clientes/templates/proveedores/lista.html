@@ -12,6 +12,29 @@ Clientes
             <a class="btn btn-sm btn-primary" href="{% url 'crearproveedor' %}">Crear Clientes</a>
         </div>
         <div class="card-body">
+            <form method="get" id="proveedoresFiltrosForm" class="mb-3">
+                <div class="form-row align-items-end">
+                    <div class="col-md-5 mb-2">
+                        <label class="mb-1">Buscar por nombre</label>
+                        <input type="text" class="form-control" name="q" id="buscarProveedorNombre"
+                            value="{{ q|default:'' }}" placeholder="Escribe el nombre del cliente...">
+                    </div>
+                    <div class="col-md-4 mb-2">
+                        <label class="mb-1">Ciudad</label>
+                        <select class="form-control" name="ciudad" id="filtroCiudadProveedor">
+                            <option value="">Todas</option>
+                            {% for value, label in CIUDAD_CHOICES %}
+                            <option value="{{ value }}" {% if ciudad == value %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-md-3 mb-2">
+                        <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
+                        <a class="btn btn-link btn-block p-0 mt-2" href="{% url 'proveedores' %}">Limpiar</a>
+                    </div>
+                </div>
+            </form>
+
             <div class="table-responsive">
                 <table class="table table-bordered" width="100%" cellspacing="0">
                     <thead>
@@ -49,7 +72,63 @@ Clientes
                     </tbody>
                 </table>
             </div>
+
+            {% if page_obj and page_obj.paginator.num_pages > 1 %}
+            <nav aria-label="Paginacion de clientes">
+                <ul class="pagination justify-content-end mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.previous_page_number }}">Anterior</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    {% for num in page_obj.paginator.page_range %}
+                    {% if num == page_obj.number %}
+                    <li class="page-item active"><span class="page-link">{{ num }}</span></li>
+                    {% elif num >= page_obj.number|add:'-2' and num <= page_obj.number|add:'2' %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ num }}">{{ num }}</a>
+                    </li>
+                    {% endif %}
+                    {% endfor %}
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?{% if query_string %}{{ query_string }}&{% endif %}page={{ page_obj.next_page_number }}">Siguiente</a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
         </div>
     </div>
 </div>
+
+<script>
+    (function () {
+        const form = document.getElementById("proveedoresFiltrosForm");
+        const buscarNombre = document.getElementById("buscarProveedorNombre");
+        const filtroCiudad = document.getElementById("filtroCiudadProveedor");
+        if (!form || !buscarNombre || !filtroCiudad) {
+            return;
+        }
+
+        let debounceTimer = null;
+        const submitConDebounce = function () {
+            window.clearTimeout(debounceTimer);
+            debounceTimer = window.setTimeout(function () {
+                form.submit();
+            }, 300);
+        };
+
+        buscarNombre.addEventListener("input", submitConDebounce);
+        filtroCiudad.addEventListener("change", function () {
+            form.submit();
+        });
+    })();
+</script>
 {% endblock %}

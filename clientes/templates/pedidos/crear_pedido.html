@@ -33,6 +33,8 @@ Crear pedido semanal
 
             <div class="form-group col-md-12">
                 <label>Proveedor</label>
+                <input type="text" id="proveedor-search" class="form-control mb-2"
+                    placeholder="Buscar proveedor por nombre...">
                 <select name="proveedor" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for proveedor in proveedores %}
@@ -159,8 +161,12 @@ Crear pedido semanal
                 const submitButton = document.querySelector('input[type="submit"]');
                 const semanaInput = document.querySelector('.js-semana-lunes');
                 const proveedorSelect = document.querySelector('select[name="proveedor"]');
+                const proveedorSearch = document.getElementById('proveedor-search');
                 const presentacionDisplay = document.getElementById('presentacion_display');
                 const presentacionHidden = document.getElementById('presentacion_hidden');
+                const proveedorOptions = proveedorSelect
+                    ? Array.from(proveedorSelect.querySelectorAll('option')).filter(option => option.value)
+                    : [];
 
                 const syncPresentacionConProveedor = () => {
                     if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
@@ -170,6 +176,23 @@ Crear pedido semanal
                     const presentacion = selectedOption ? selectedOption.dataset.presentacion || '' : '';
                     presentacionDisplay.value = presentacion;
                     presentacionHidden.value = presentacion;
+                };
+
+                const filtrarProveedores = () => {
+                    if (!proveedorSelect || !proveedorSearch) {
+                        return;
+                    }
+                    const searchTerm = (proveedorSearch.value || '').trim().toLowerCase();
+                    proveedorOptions.forEach((option) => {
+                        const match = !searchTerm || option.textContent.toLowerCase().includes(searchTerm);
+                        option.hidden = !match;
+                    });
+
+                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
+                    if (selectedOption && selectedOption.hidden) {
+                        proveedorSelect.value = '';
+                    }
+                    syncPresentacionConProveedor();
                 };
 
                 if (semanaInput && window.flatpickr) {
@@ -263,6 +286,10 @@ Crear pedido semanal
                 if (proveedorSelect) {
                     proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
                     syncPresentacionConProveedor();
+                }
+                if (proveedorSearch) {
+                    proveedorSearch.addEventListener('input', filtrarProveedores);
+                    filtrarProveedores();
                 }
                 totalInput.addEventListener('input', updateTotal);
                 updateTotal();
