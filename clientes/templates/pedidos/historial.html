@@ -26,7 +26,7 @@ Historial de pedidos
 
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS ENTREGADOS Y CANCELADOS</h6>
+            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS ENTREGADOS, CANCELADOS Y DEVUELTOS</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
@@ -41,6 +41,7 @@ Historial de pedidos
                             <th>ENTREGAS</th>
                             <th>FECHA CREACION</th>
                             <th>ESTADO</th>
+                            <th>ACCIONES</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -101,16 +102,70 @@ Historial de pedidos
                                 {% endwith %}
                                 {% endwith %}
                             </td>
-                            <td data-label="Fecha/creacion">{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
+                            <td data-label="Fecha/creacion">
+                                <button type="button"
+                                    class="btn btn-link p-0"
+                                    data-toggle="modal"
+                                    data-target="#detalleHistorialModal{{ pedido.id }}"
+                                    title="Ver detalle de cierre">
+                                    {{ pedido.fecha_creacion|date:"d/m/Y" }}
+                                </button>
+                                <div class="modal fade" id="detalleHistorialModal{{ pedido.id }}" tabindex="-1" role="dialog"
+                                    aria-labelledby="detalleHistorialModalLabel{{ pedido.id }}" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="detalleHistorialModalLabel{{ pedido.id }}">
+                                                    Detalle de cierre - Pedido #{{ pedido.id }}
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <p class="mb-2"><strong>Estado:</strong> {{ pedido.estado_historial }}</p>
+                                                <p class="mb-2"><strong>Registrado por:</strong> {{ pedido.usuario_historial }}</p>
+                                                <p class="mb-3"><strong>Fecha del cambio:</strong>
+                                                    {% if pedido.fecha_historial %}
+                                                    {{ pedido.fecha_historial|date:"d/m/Y H:i" }}
+                                                    {% else %}
+                                                    Sin registro
+                                                    {% endif %}
+                                                </p>
+                                                <p class="mb-1"><strong>Descripcion:</strong></p>
+                                                <div class="border rounded p-2 bg-light">
+                                                    {% if pedido.detalle_historial %}
+                                                    {{ pedido.detalle_historial|linebreaksbr }}
+                                                    {% else %}
+                                                    <span class="text-muted">Sin descripcion registrada.</span>
+                                                    {% endif %}
+                                                </div>
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </td>
                             <td data-label="Estado">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
                                     {{ pedido.get_estado_display }}
                                 </span>
                             </td>
+                            <td data-label="Acciones">
+                                {% if puede_editar_historial %}
+                                <a href="{% url 'editarpedido' pedido.id %}" class="btn btn-outline-primary btn-sm">
+                                    Editar pedido
+                                </a>
+                                {% else %}
+                                <span class="text-muted small">Solo admin</span>
+                                {% endif %}
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted">Sin pedidos para mostrar.</td>
+                            <td colspan="9" class="text-center text-muted">Sin pedidos para mostrar.</td>
                         </tr>
                         {% endfor %}
                     </tbody>

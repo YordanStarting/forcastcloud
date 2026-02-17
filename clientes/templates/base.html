@@ -178,6 +178,11 @@
             color: #b91c1c;
         }
 
+        .badge-estado-devuelto {
+            background: #fef3c7;
+            color: #92400e;
+        }
+
         @media (max-width: 1200px) {
             .table-responsive-stack .col-semana {
                 display: none;
@@ -414,17 +419,20 @@
                             <a class="nav-link dropdown-toggle" href="#" id="alertsDropdown" role="button"
                                 data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 <i class="fas fa-bell fa-fw"></i>
-                                <!-- Counter - Alerts -->
-                                <span class="badge badge-danger badge-counter">
+                                <span class="badge badge-danger badge-counter {% if total_notificaciones == 0 %}d-none{% endif %}">
                                     {{ total_notificaciones }}
                                 </span>
                             </a>
-                            <!-- Dropdown - Alerts -->
                             <div class="dropdown-list dropdown-menu dropdown-menu-right shadow animated--grow-in"
                                 aria-labelledby="alertsDropdown">
-                                <h6 class="dropdown-header">
-                                    Alertas!!
-                                </h6>
+                                <div class="dropdown-header d-flex align-items-center justify-content-between">
+                                    <span>Alertas</span>
+                                    <form method="post" action="{% url 'limpiar_notificaciones' %}" class="m-0">
+                                        {% csrf_token %}
+                                        <input type="hidden" name="next" value="{{ request.path }}">
+                                        <button type="submit" class="btn btn-link btn-sm p-0 text-white">Clear all</button>
+                                    </form>
+                                </div>
                                 {% for n in notificaciones %}
                                 <a class="dropdown-item d-flex align-items-center" href="#">
                                     <div class="mr-3">
@@ -437,9 +445,9 @@
                                         <span class="font-weight-bold">{{ n.mensaje }}</span>
                                     </div>
                                 </a>
+                                {% empty %}
+                                <span class="dropdown-item text-center small text-muted">Sin notificaciones nuevas</span>
                                 {% endfor %}
-                                
-                                <a class="dropdown-item text-center small text-gray-500" href="#">Show All Alerts</a>
                             </div>
                         </li>
 

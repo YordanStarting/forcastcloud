@@ -37,19 +37,20 @@ def notificaciones(request):
         can_manage_pedidos = can_manage_pedidos or perfil.rol in {'admin', 'comercial'}
         can_change_pedido_status = (
             can_change_pedido_status
-            or perfil.rol in {'admin', 'comercial', 'logistica', 'programador'}
+            or perfil.rol in {'admin', 'comercial', 'logistica', 'produccion', 'programador'}
         )
         if perfil.foto_perfil:
             user_profile_image = perfil.foto_perfil.url
 
-    unread_notifications = Notificacion.objects.filter(
+    unread_notifications_qs = Notificacion.objects.filter(
         usuario=request.user,
         leida=False
-    ).order_by('-fecha_creacion')
+    ).order_by('-fecha_creacion')[:5]
+    unread_notifications = list(unread_notifications_qs)
 
     return {
-        'notificaciones': unread_notifications[:5],
-        'total_notificaciones': unread_notifications.count(),
+        'notificaciones': unread_notifications,
+        'total_notificaciones': len(unread_notifications),
         'user_role': user_role,
         'can_manage_proveedores': can_manage_proveedores,
         'can_manage_usuarios': can_manage_usuarios,

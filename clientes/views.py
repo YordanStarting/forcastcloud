@@ -3,6 +3,7 @@ from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse, HttpResponseForbidden
 from django.core.paginator import Paginator
 from django.urls import NoReverseMatch, reverse
+from django.views.decorators.http import require_POST
 from .models import (
     Cliente,
     EntregaPedido,
@@ -22,7 +23,7 @@ from .forms import (
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import F, Sum, Case, When, IntegerField
+from django.db.models import F, Prefetch, Sum, Case, When, IntegerField
 from django.db.models.functions import ExtractMonth, ExtractIsoWeekDay, Coalesce
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
@@ -32,13 +33,18 @@ from django.contrib.auth.forms import AuthenticationForm
 PEDIDO_ESTADO_CHOICES = list(Pedido.ESTADO_CHOICES)
 PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
 PEDIDO_ESTADO_LABELS = dict(PEDIDO_ESTADO_CHOICES)
+PEDIDO_ESTADOS_ACTIVOS = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
+PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE', 'CONFIRMADO']
-PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO']
+PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
+PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
 ROL_ESTADOS_PERMITIDOS = {
-    'admin': PEDIDO_ESTADOS_VALIDOS,
+    'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
-    'programador': {'EN_PRODUCCION'},
-    'logistica': {'DESPACHADO', 'ENTREGADO'},
+    'produccion': {'EN_PRODUCCION', 'DEVUELTO'},
+    # Compatibilidad con perfiles existentes antes del rol "produccion".
+    'programador': {'EN_PRODUCCION', 'DEVUELTO'},
+    'logistica': {'DESPACHADO', 'ENTREGADO', 'DEVUELTO'},
 }
 
 
@@ -70,7 +76,7 @@ def _estados_permitidos_para_usuario(user):
     if not user.is_authenticated:
         return set()
     if user.is_superuser:
-        return set(PEDIDO_ESTADOS_VALIDOS)
+        return set(PEDIDO_ESTADOS_VALIDOS) - {'DEVUELTO'}
     rol = _obtener_rol_usuario(user)
     return set(ROL_ESTADOS_PERMITIDOS.get(rol, set()))
 
@@ -80,7 +86,7 @@ def _usuario_puede_cambiar_estado_pedidos(user):
 
 
 def _crear_notificaciones_globales(mensaje, *, tipo_evento='INFO', reproducir_sonido=False):
-    usuarios_activos = User.objects.filter(is_active=True).only('id')
+    usuarios_activos = list(User.objects.filter(is_active=True).only('id'))
     notificaciones = [
         Notificacion(
             usuario=usuario,
@@ -92,6 +98,15 @@ def _crear_notificaciones_globales(mensaje, *, tipo_evento='INFO', reproducir_so
     ]
     if notificaciones:
         Notificacion.objects.bulk_create(notificaciones)
+    for usuario in usuarios_activos:
+        ids_exceso = list(
+            Notificacion.objects
+            .filter(usuario=usuario)
+            .order_by('-fecha_creacion')
+            .values_list('id', flat=True)[5:]
+        )
+        if ids_exceso:
+            Notificacion.objects.filter(id__in=ids_exceso).delete()
 
 
 def _registrar_evento_creacion_pedido(pedido, usuario):
@@ -103,7 +118,14 @@ def _registrar_evento_creacion_pedido(pedido, usuario):
     )
 
 
-def _registrar_cambio_estado_pedido(pedido, estado_anterior, estado_nuevo, usuario):
+def _registrar_cambio_estado_pedido(
+    pedido,
+    estado_anterior,
+    estado_nuevo,
+    usuario,
+    *,
+    descripcion='',
+):
     if not estado_anterior or estado_anterior == estado_nuevo:
         return
 
@@ -112,6 +134,7 @@ def _registrar_cambio_estado_pedido(pedido, estado_anterior, estado_nuevo, usuar
         usuario=usuario,
         estado_anterior=estado_anterior,
         estado_nuevo=estado_nuevo,
+        descripcion=descripcion or '',
     )
 
     nombre_usuario = _nombre_usuario(usuario)
@@ -127,6 +150,10 @@ def _registrar_cambio_estado_pedido(pedido, estado_anterior, estado_nuevo, usuar
     elif estado_nuevo == 'CANCELADO':
         mensaje = f"Pedido #{pedido.id} cancelado por {nombre_usuario}"
         tipo_evento = 'PEDIDO_CANCELADO'
+        reproducir_sonido = True
+    elif estado_nuevo == 'DEVUELTO':
+        mensaje = f"Pedido #{pedido.id} marcado como devuelto por {nombre_usuario}"
+        tipo_evento = 'PEDIDO_DEVUELTO'
         reproducir_sonido = True
     else:
         mensaje = (
@@ -274,6 +301,15 @@ def _usuario_puede_gestionar_usuarios(user):
     if user.is_superuser:
         return True
     return _obtener_rol_usuario(user) == 'admin'
+
+
+def _usuario_es_admin(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) == 'admin'
+
 
 def _usuario_puede_gestionar_pedidos(user):
     if not user.is_authenticated:
@@ -519,38 +555,34 @@ def resumen_pedidos(request):
         {'key': 5, 'label': 'Viernes'},
         {'key': 6, 'label': 'Sabado'},
     ]
-    dias_semana_corta = {
-        1: 'Lun',
-        2: 'Mar',
-        3: 'Mie',
-        4: 'Jue',
-        5: 'Vie',
-        6: 'Sab',
-    }
     dias_validos = {dia['key'] for dia in dias_semana}
 
-    tipo_map = {}
-    for codigo, etiqueta in TIPO_HUEVO_CHOICES:
-        tipo_map[codigo] = {
-            'codigo': codigo,
-            'etiqueta': etiqueta,
-            'totales_dia': {
-                dia['key']: {'total': 0, 'pending': 0}
-                for dia in dias_semana
-            },
-            'ciudades': {
-                ciudad_codigo: {
-                    'codigo': ciudad_codigo,
-                    'nombre': ciudad_label,
-                    'comerciales': {},
-                    'totales_dia': {
-                        dia['key']: {'total': 0, 'pending': 0}
-                        for dia in dias_semana
-                    },
-                }
-                for ciudad_codigo, ciudad_label in CIUDAD_CHOICES
-            },
+    def _build_tipos_base():
+        return {
+            tipo_codigo: {
+                'codigo': tipo_codigo,
+                'etiqueta': tipo_label,
+                'dias': {dia['key']: {'total': 0, 'pending': 0, 'confirmed': 0} for dia in dias_semana},
+                'total_general': 0,
+                'total_pending': 0,
+                'total_confirmed': 0,
+            }
+            for tipo_codigo, tipo_label in TIPO_HUEVO_CHOICES
         }
+
+    ciudades_map = {
+        ciudad_codigo: {
+            'codigo': ciudad_codigo,
+            'nombre': ciudad_label,
+            'tipos': _build_tipos_base(),
+            'comerciales': {},
+            'totales_dia': {dia['key']: {'total': 0, 'pending': 0, 'confirmed': 0} for dia in dias_semana},
+            'total_general': 0,
+            'total_pending': 0,
+            'total_confirmed': 0,
+        }
+        for ciudad_codigo, ciudad_label in CIUDAD_CHOICES
+    }
 
     def _nombre_comercial(row):
         nombre = f"{row.get('comercial_first_name', '')} {row.get('comercial_last_name', '')}".strip()
@@ -562,39 +594,53 @@ def resumen_pedidos(request):
         tipo_huevo = row.get('tipo_huevo')
         ciudad = row.get('ciudad')
         dia_semana = row.get('dia_semana')
-        if tipo_huevo not in tipo_map:
+        if ciudad not in ciudades_map:
             return
-        if ciudad not in tipo_map[tipo_huevo]['ciudades']:
+        ciudad_data = ciudades_map[ciudad]
+        if tipo_huevo not in ciudad_data['tipos']:
             return
         if dia_semana not in dias_validos:
             return
 
         total_kg = row.get('total_kg') or 0
         pending_kg = row.get('pending_kg') or 0
-        comercial_id = row.get('comercial_id')
+        confirmed_kg = row.get('confirmed_kg') or 0
+        comercial_id = row.get('comercial_id') or 0
 
-        tipo_data = tipo_map[tipo_huevo]
-        ciudad_data = tipo_data['ciudades'][ciudad]
-        tipo_data['totales_dia'][dia_semana]['total'] += total_kg
-        tipo_data['totales_dia'][dia_semana]['pending'] += pending_kg
         ciudad_data['totales_dia'][dia_semana]['total'] += total_kg
         ciudad_data['totales_dia'][dia_semana]['pending'] += pending_kg
+        ciudad_data['totales_dia'][dia_semana]['confirmed'] += confirmed_kg
+        ciudad_data['total_general'] += total_kg
+        ciudad_data['total_pending'] += pending_kg
+        ciudad_data['total_confirmed'] += confirmed_kg
+
+        tipo_data = ciudad_data['tipos'][tipo_huevo]
+        tipo_data['dias'][dia_semana]['total'] += total_kg
+        tipo_data['dias'][dia_semana]['pending'] += pending_kg
+        tipo_data['dias'][dia_semana]['confirmed'] += confirmed_kg
+        tipo_data['total_general'] += total_kg
+        tipo_data['total_pending'] += pending_kg
+        tipo_data['total_confirmed'] += confirmed_kg
 
         comerciales = ciudad_data['comerciales']
         if comercial_id not in comerciales:
             comerciales[comercial_id] = {
                 'nombre': _nombre_comercial(row),
-                'dias': {
-                    dia['key']: {'total': 0, 'pending': 0}
-                    for dia in dias_semana
-                },
+                'dias': {dia['key']: {'total': 0, 'pending': 0, 'confirmed': 0} for dia in dias_semana},
+                'total_general': 0,
+                'total_pending': 0,
+                'total_confirmed': 0,
             }
         comerciales[comercial_id]['dias'][dia_semana]['total'] += total_kg
         comerciales[comercial_id]['dias'][dia_semana]['pending'] += pending_kg
+        comerciales[comercial_id]['dias'][dia_semana]['confirmed'] += confirmed_kg
+        comerciales[comercial_id]['total_general'] += total_kg
+        comerciales[comercial_id]['total_pending'] += pending_kg
+        comerciales[comercial_id]['total_confirmed'] += confirmed_kg
 
     entregas_resumen = (
         EntregaPedido.objects
-        .filter(pedido__estado__in=PEDIDO_ESTADOS_DASHBOARD)
+        .filter(pedido__estado__in=PEDIDO_ESTADOS_ACTIVOS)
         .annotate(
             tipo_huevo=F('pedido__tipo_huevo'),
             ciudad=F('pedido__ciudad'),
@@ -623,13 +669,20 @@ def resumen_pedidos(request):
                     output_field=IntegerField(),
                 )
             ),
+            confirmed_kg=Sum(
+                Case(
+                    When(pedido__estado__in=PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN, then=F('cantidad')),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
         )
     )
 
     cantidad_expr = _cantidad_pedido_expr()
     pedidos_sin_entregas = (
         Pedido.objects
-        .filter(estado__in=PEDIDO_ESTADOS_DASHBOARD, entregas__isnull=True)
+        .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS, entregas__isnull=True)
         .annotate(
             comercial_username=F('comercial__username'),
             comercial_first_name=F('comercial__first_name'),
@@ -657,6 +710,13 @@ def resumen_pedidos(request):
                     output_field=IntegerField(),
                 )
             ),
+            confirmed_kg=Sum(
+                Case(
+                    When(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN, then=cantidad_expr),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
         )
     )
 
@@ -665,91 +725,110 @@ def resumen_pedidos(request):
     for row in pedidos_sin_entregas:
         _acumular_fila(row)
 
-    tarjetas_tipo = []
-    tipos_detalle = []
-    for tipo_codigo, tipo_label in TIPO_HUEVO_CHOICES:
-        tipo_data = tipo_map[tipo_codigo]
-        dias_tarjeta = []
-        total_tipo = 0
-        for dia in dias_semana:
-            dia_totales = tipo_data['totales_dia'][dia['key']]
-            total_tipo += dia_totales['total']
-            dias_tarjeta.append({
-                'key': dia['key'],
-                'label': dia['label'],
-                'short_label': dias_semana_corta[dia['key']],
-                'total': dia_totales['total'],
-                'pending': dia_totales['pending'],
-            })
+    resumen_ciudades = []
+    for ciudad_codigo, ciudad_label in CIUDAD_CHOICES:
+        ciudad_data = ciudades_map[ciudad_codigo]
 
-        ciudades_detalle = []
-        for ciudad_codigo, ciudad_label in CIUDAD_CHOICES:
-            ciudad_data = tipo_data['ciudades'][ciudad_codigo]
-            comerciales_detalle = []
-            for comercial in ciudad_data['comerciales'].values():
-                dias_comercial = []
-                total_comercial = 0
-                for dia in dias_semana:
-                    dia_info = comercial['dias'][dia['key']]
-                    total_comercial += dia_info['total']
-                    dias_comercial.append({
-                        'key': dia['key'],
-                        'label': dia['label'],
-                        'total': dia_info['total'],
-                        'pending': dia_info['pending'],
-                    })
-                comerciales_detalle.append({
-                    'nombre': comercial['nombre'],
-                    'dias': dias_comercial,
-                    'total_general': total_comercial,
-                })
-            comerciales_detalle.sort(key=lambda item: item['nombre'].lower())
-
-            totales_ciudad = []
-            total_ciudad = 0
+        tipos_resumen = []
+        for tipo_codigo, tipo_label in TIPO_HUEVO_CHOICES:
+            tipo_data = ciudad_data['tipos'][tipo_codigo]
+            dias_tipo = []
             for dia in dias_semana:
-                dia_totales = ciudad_data['totales_dia'][dia['key']]
-                total_ciudad += dia_totales['total']
-                totales_ciudad.append({
+                dia_info = tipo_data['dias'][dia['key']]
+                dias_tipo.append({
                     'key': dia['key'],
                     'label': dia['label'],
-                    'total': dia_totales['total'],
-                    'pending': dia_totales['pending'],
+                    'total': dia_info['total'],
+                    'pending': dia_info['pending'],
+                    'confirmed': dia_info['confirmed'],
                 })
-
-            ciudades_detalle.append({
-                'codigo': ciudad_codigo,
-                'nombre': ciudad_label,
-                'dias': dias_semana,
-                'comerciales': comerciales_detalle,
-                'totales_dia': totales_ciudad,
-                'total_general': total_ciudad,
+            tipos_resumen.append({
+                'codigo': tipo_codigo,
+                'etiqueta': tipo_label,
+                'dias': dias_tipo,
+                'total_general': tipo_data['total_general'],
+                'total_pending': tipo_data['total_pending'],
+                'total_confirmed': tipo_data['total_confirmed'],
             })
 
-        tarjetas_tipo.append({
-            'codigo': tipo_codigo,
-            'etiqueta': tipo_label,
-            'anchor_id': f"tipo-{tipo_codigo.lower()}",
-            'dias': dias_tarjeta,
-            'total_general': total_tipo,
-        })
-        tipos_detalle.append({
-            'codigo': tipo_codigo,
-            'etiqueta': tipo_label,
-            'anchor_id': f"tipo-{tipo_codigo.lower()}",
-            'ciudades': ciudades_detalle,
-            'total_general': total_tipo,
+        comerciales_resumen = []
+        for comercial in ciudad_data['comerciales'].values():
+            dias_comercial = []
+            total_comercial = 0
+            for dia in dias_semana:
+                dia_info = comercial['dias'][dia['key']]
+                total_comercial += dia_info['total']
+                dias_comercial.append({
+                    'key': dia['key'],
+                    'label': dia['label'],
+                    'total': dia_info['total'],
+                    'pending': dia_info['pending'],
+                    'confirmed': dia_info['confirmed'],
+                })
+            comerciales_resumen.append({
+                'nombre': comercial['nombre'],
+                'dias': dias_comercial,
+                'total_general': total_comercial,
+                'total_pending': comercial['total_pending'],
+                'total_confirmed': comercial['total_confirmed'],
+            })
+        comerciales_resumen.sort(key=lambda item: item['nombre'].lower())
+
+        totales_dia = []
+        for dia in dias_semana:
+            dia_totales = ciudad_data['totales_dia'][dia['key']]
+            totales_dia.append({
+                'key': dia['key'],
+                'label': dia['label'],
+                'total': dia_totales['total'],
+                'pending': dia_totales['pending'],
+                'confirmed': dia_totales['confirmed'],
+            })
+
+        resumen_ciudades.append({
+            'codigo': ciudad_codigo,
+            'nombre': ciudad_label,
+            'dias': dias_semana,
+            'tipos': tipos_resumen,
+            'comerciales': comerciales_resumen,
+            'totales_dia': totales_dia,
+            'total_general': ciudad_data['total_general'],
+            'total_pending': ciudad_data['total_pending'],
+            'total_confirmed': ciudad_data['total_confirmed'],
         })
 
-    tipo_seleccionado = request.GET.get('tipo')
-    if tipo_seleccionado not in tipo_map and tarjetas_tipo:
-        tipo_seleccionado = tarjetas_tipo[0]['codigo']
+    total_general_global = sum(ciudad['total_general'] for ciudad in resumen_ciudades)
+    total_pending_global = sum(ciudad['total_pending'] for ciudad in resumen_ciudades)
+    total_confirmed_global = sum(ciudad['total_confirmed'] for ciudad in resumen_ciudades)
+    ciudades_con_pedidos = sum(1 for ciudad in resumen_ciudades if ciudad['total_general'] > 0)
+
+    tarjetas_resumen = [
+        {
+            'titulo': 'Total general',
+            'valor': f"{total_general_global} kg",
+            'estilo': 'primary',
+        },
+        {
+            'titulo': 'Total pendiente',
+            'valor': f"{total_pending_global} kg",
+            'estilo': 'danger',
+        },
+        {
+            'titulo': 'Total confirmado',
+            'valor': f"{total_confirmed_global} kg",
+            'estilo': 'success',
+        },
+        {
+            'titulo': 'Ciudades con pedidos',
+            'valor': str(ciudades_con_pedidos),
+            'estilo': 'info',
+        },
+    ]
 
     return render(request, 'paginas/resumen_pedidos.html', {
         'dias_semana': dias_semana,
-        'tarjetas_tipo': tarjetas_tipo,
-        'tipos_detalle': tipos_detalle,
-        'tipo_seleccionado': tipo_seleccionado,
+        'resumen_ciudades': resumen_ciudades,
+        'tarjetas_resumen': tarjetas_resumen,
     })
 # vista logica del forscast.
 @login_required
@@ -1001,6 +1080,8 @@ def editarpedido(request, id):
         return HttpResponseForbidden("No tienes permisos para editar pedidos.")
 
     pedido = get_object_or_404(Pedido, id=id)
+    if pedido.estado in PEDIDO_ESTADOS_HISTORIAL and not _usuario_es_admin(request.user):
+        return HttpResponseForbidden("Solo un administrador puede editar pedidos del historial.")
 
     proveedores = Proveedor.objects.filter(activo=True)
     comerciales = User.objects.all()
@@ -1099,6 +1180,7 @@ def editarpedido(request, id):
         pedido.semana = semana_ajustada or None
         pedido.observaciones = request.POST.get('observaciones')
         nuevo_estado = request.POST.get('estado')
+        descripcion_cambio_estado = ''
         if (
             nuevo_estado in PEDIDO_ESTADOS_VALIDOS
             and nuevo_estado != estado_anterior
@@ -1118,12 +1200,40 @@ def editarpedido(request, id):
 
         if (
             nuevo_estado in PEDIDO_ESTADOS_VALIDOS
+            and nuevo_estado != estado_anterior
+            and nuevo_estado in PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION
+        ):
+            descripcion_cambio_estado = (request.POST.get('observaciones') or '').strip()
+            if not descripcion_cambio_estado:
+                context = _build_pedido_form_context(
+                    proveedores,
+                    comerciales,
+                    pedido=pedido,
+                    estado_choices=estado_choices,
+                    entregas=entregas_form,
+                    form_data=request.POST,
+                    error_message=(
+                        'Para marcar el pedido como entregado o devuelto agrega una '
+                        'descripcion en observaciones.'
+                    ),
+                    total_entregas=total_entregas,
+                )
+                return render(request, 'pedidos/editar_pedido.html', context)
+
+        if (
+            nuevo_estado in PEDIDO_ESTADOS_VALIDOS
             and (nuevo_estado in estados_permitidos or nuevo_estado == estado_anterior)
         ):
             pedido.estado = nuevo_estado
 
         pedido.save()
-        _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
+        _registrar_cambio_estado_pedido(
+            pedido,
+            estado_anterior,
+            pedido.estado,
+            request.user,
+            descripcion=descripcion_cambio_estado,
+        )
 
         pedido.entregas.all().delete()
         for fecha, cantidad in entregas:
@@ -1152,11 +1262,21 @@ def eliminarpedido(request, id):
 
 @login_required
 def editartablas(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
+    pedidos_qs = (
+        Pedido.objects
+        .select_related('proveedor')
+        .prefetch_related('entregas')
+        .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
+    )
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
     proveedores = Proveedor.objects.filter(activo=True)
+    estados_activos_choices = [
+        (value, label)
+        for value, label in PEDIDO_ESTADO_CHOICES
+        if value in PEDIDO_ESTADOS_ACTIVOS
+    ]
 
     # SUMAS CORRECTAS (sin duplicar)
     total_liquido = pedidos.filter(
@@ -1176,7 +1296,7 @@ def editartablas(request):
         'proveedores': proveedores,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
+        'PEDIDO_ESTADO_CHOICES': estados_activos_choices,
         'total_liquido': total_liquido,
         'total_mezcla': total_mezcla,
         'total_yema': total_yema,
@@ -1186,7 +1306,16 @@ def editartablas(request):
 
 @login_required
 def historial(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
+    registros_historial_qs = (
+        RegistroEstadoPedido.objects
+        .select_related('usuario')
+        .filter(estado_nuevo__in=PEDIDO_ESTADOS_HISTORIAL)
+        .order_by('-fecha_creacion')
+    )
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related(
+        'entregas',
+        Prefetch('registros_estado', queryset=registros_historial_qs, to_attr='registros_historial')
+    ).filter(
         estado__in=PEDIDO_ESTADOS_HISTORIAL
     )
 
@@ -1220,17 +1349,39 @@ def historial(request):
         if mes:
             historial_chart_data[mes - 1] = row.get('total') or 0
 
+    pedidos = list(pedidos)
+    for pedido in pedidos:
+        registro_historial = pedido.registros_historial[0] if getattr(pedido, 'registros_historial', None) else None
+        pedido.estado_historial = (
+            _estado_pedido_label(registro_historial.estado_nuevo)
+            if registro_historial
+            else pedido.get_estado_display()
+        )
+        pedido.fecha_historial = registro_historial.fecha_creacion if registro_historial else None
+        pedido.usuario_historial = _nombre_usuario(registro_historial.usuario) if registro_historial else 'Sistema'
+        pedido.detalle_historial = (
+            (registro_historial.descripcion or '').strip()
+            if registro_historial
+            else ''
+        )
+
     proveedores = Proveedor.objects.filter(activo=True)
+    estados_historial_choices = [
+        (value, label)
+        for value, label in PEDIDO_ESTADO_CHOICES
+        if value in PEDIDO_ESTADOS_HISTORIAL
+    ]
 
     return render(request, 'pedidos/historial.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
-        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
+        'PEDIDO_ESTADO_CHOICES': estados_historial_choices,
         'anios_disponibles': anios_disponibles,
         'anio': str(anio),
         'historial_chart_labels': meses_labels,
         'historial_chart_data': historial_chart_data,
         'historial_chart_year': anio,
+        'puede_editar_historial': _usuario_es_admin(request.user),
         **filtros
     })
 
@@ -1240,16 +1391,26 @@ def editar_pedidos(request):
     if not _usuario_puede_gestionar_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para editar pedidos.")
 
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
+    pedidos_qs = (
+        Pedido.objects
+        .select_related('proveedor')
+        .prefetch_related('entregas')
+        .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
+    )
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
     proveedores = Proveedor.objects.filter(activo=True)
+    estados_activos_choices = [
+        (value, label)
+        for value, label in PEDIDO_ESTADO_CHOICES
+        if value in PEDIDO_ESTADOS_ACTIVOS
+    ]
 
     return render(request, 'pedidos/editar_pedidos.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
-        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
+        'PEDIDO_ESTADO_CHOICES': estados_activos_choices,
         **filtros
     })
 
@@ -1264,7 +1425,17 @@ def marcar_pedido_realizado(request, id):
     estado_anterior = pedido.estado
     pedido.estado = 'ENTREGADO'
     pedido.save()
-    _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
+    detalle = (
+        f"Pedido entregado por {_nombre_usuario(request.user)} "
+        f"el {date.today().strftime('%d/%m/%Y')}."
+    )
+    _registrar_cambio_estado_pedido(
+        pedido,
+        estado_anterior,
+        pedido.estado,
+        request.user,
+        descripcion=detalle,
+    )
     return redirect('editartablas')
 
 
@@ -1282,20 +1453,34 @@ def editar_estado_pedido(request, id):
     ]
     next_url = _resolver_next_url(request.GET.get('next'))
     error_message = None
+    descripcion_estado = ''
 
     if request.method == 'POST':
         next_url = _resolver_next_url(request.POST.get('next') or request.GET.get('next'))
         estado_anterior = pedido.estado
         nuevo_estado = request.POST.get('estado')
+        descripcion_estado = (request.POST.get('descripcion_estado') or '').strip()
 
         if nuevo_estado not in PEDIDO_ESTADOS_VALIDOS:
             error_message = 'Debes seleccionar un estado valido.'
         elif nuevo_estado != estado_anterior and nuevo_estado not in estados_permitidos:
             error_message = 'No tienes permisos para cambiar el pedido a ese estado.'
+        elif (
+            nuevo_estado != estado_anterior
+            and nuevo_estado in PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION
+            and not descripcion_estado
+        ):
+            error_message = 'Debes agregar una descripcion para cerrar el pedido.'
         else:
             pedido.estado = nuevo_estado
             pedido.save()
-            _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
+            _registrar_cambio_estado_pedido(
+                pedido,
+                estado_anterior,
+                pedido.estado,
+                request.user,
+                descripcion=descripcion_estado,
+            )
             return redirect(next_url)
 
     return render(request, 'pedidos/editar_estado.html', {
@@ -1303,6 +1488,8 @@ def editar_estado_pedido(request, id):
         'estado_choices': estado_choices,
         'next': next_url,
         'error_message': error_message,
+        'descripcion_estado': descripcion_estado,
+        'estados_requieren_descripcion': list(PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION),
     })
 
 
@@ -1394,6 +1581,14 @@ def entregas_calendario(request):
 
 
 @login_required
+@require_POST
+def limpiar_notificaciones(request):
+    Notificacion.objects.filter(usuario=request.user).delete()
+    next_url = _resolver_next_url(request.POST.get('next') or 'inicio', default_name='inicio')
+    return redirect(next_url)
+
+
+@login_required
 def notificaciones_pedidos(request):
     ultimo_evento = (
         Notificacion.objects
@@ -1450,3 +1645,4 @@ def crear_pedido_semanal(request):
         _registrar_evento_creacion_pedido(pedido, request.user)
 
         return redirect('inicio')
+

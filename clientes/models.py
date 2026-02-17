@@ -60,7 +60,8 @@ class PerfilUsuario(models.Model):
     ROL_CHOICES = [
         ('admin', 'Administrador'),
         ('comercial', 'Comercial'),
-        ('logistica', 'Logística'),
+        ('logistica', 'Logistica'),
+        ('produccion', 'Produccion'),
         ('programador', 'Programador'),
     ]
     usuario = models.OneToOneField(User, on_delete=models.CASCADE)
@@ -81,6 +82,7 @@ class Notificacion(models.Model):
             ('PEDIDO_CREADO', 'Pedido creado'),
             ('PEDIDO_CONFIRMADO', 'Pedido confirmado'),
             ('PEDIDO_CANCELADO', 'Pedido cancelado'),
+            ('PEDIDO_DEVUELTO', 'Pedido devuelto'),
             ('PEDIDO_CAMBIO_ESTADO', 'Cambio de estado'),
         ],
         default='INFO',
@@ -102,6 +104,7 @@ class Pedido(models.Model):
         ('DESPACHADO', 'Despachado'),
         ('ENTREGADO', 'Entregado'),
         ('CANCELADO', 'Cancelado'),
+        ('DEVUELTO', 'Devuelto'),
     ]
     
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE)
@@ -178,6 +181,7 @@ class RegistroEstadoPedido(models.Model):
         max_length=20,
         choices=Pedido.ESTADO_CHOICES
     )
+    descripcion = models.TextField(blank=True, null=True)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -188,4 +192,5 @@ class RegistroEstadoPedido(models.Model):
             f"Pedido #{self.pedido_id}: {self.estado_anterior} -> "
             f"{self.estado_nuevo}"
         )
+
 

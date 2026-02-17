@@ -21,21 +21,25 @@ Cambiar estado del pedido
             <div class="alert alert-danger">{{ error_message }}</div>
             {% endif %}
 
-            <form method="post">
+            <form method="post" id="estadoForm">
                 {% csrf_token %}
                 {% if next %}
                 <input type="hidden" name="next" value="{{ next }}">
                 {% endif %}
+                <input type="hidden" name="descripcion_estado" id="descripcionEstadoInput" value="{{ descripcion_estado|default:'' }}">
 
                 <div class="form-group">
                     <label>Estado</label>
-                    <select name="estado" class="form-control" required>
+                    <select name="estado" id="estadoSelect" class="form-control" required>
                         {% for value, label in estado_choices %}
                         <option value="{{ value }}" {% if pedido.estado == value %}selected{% endif %}>
                             {{ label }}
                         </option>
                         {% endfor %}
                     </select>
+                    <small class="form-text text-muted">
+                        Si eliges <strong>Entregado</strong> o <strong>Devuelto</strong>, se pedira una descripcion antes de guardar.
+                    </small>
                 </div>
 
                 <div class="mt-3">
@@ -50,4 +54,97 @@ Cambiar estado del pedido
         </div>
     </div>
 </div>
+
+<div class="modal fade" id="detalleEstadoModal" tabindex="-1" role="dialog" aria-labelledby="detalleEstadoModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="detalleEstadoModalLabel">Detalle de cierre del pedido</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2">
+                    Escribe manualmente el detalle. Ejemplo: "Pedido entregado a Juan Perez el 17/02/2026".
+                </p>
+                <textarea id="detalleEstadoTexto" class="form-control" rows="4"
+                    placeholder="Describe a quien se entrego/devolvio y la fecha...">{{ descripcion_estado|default:'' }}</textarea>
+                <small id="detalleEstadoError" class="text-danger d-none">
+                    Debes escribir una descripcion para continuar.
+                </small>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="guardarDetalleEstadoBtn">Guardar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+{{ estados_requieren_descripcion|json_script:"estados-requieren-descripcion" }}
+<script>
+    (function () {
+        const form = document.getElementById("estadoForm");
+        const estadoSelect = document.getElementById("estadoSelect");
+        const descripcionInput = document.getElementById("descripcionEstadoInput");
+        const detalleTextarea = document.getElementById("detalleEstadoTexto");
+        const detalleError = document.getElementById("detalleEstadoError");
+        const guardarDetalleBtn = document.getElementById("guardarDetalleEstadoBtn");
+        if (!form || !estadoSelect || !descripcionInput || !detalleTextarea || !guardarDetalleBtn) {
+            return;
+        }
+
+        const estadosRequierenDescripcion = JSON.parse(
+            document.getElementById("estados-requieren-descripcion").textContent
+        );
+        const estadoActual = "{{ pedido.estado }}";
+        let submitPermitido = false;
+
+        form.addEventListener("submit", function (event) {
+            if (submitPermitido) {
+                return;
+            }
+
+            const estadoSeleccionado = estadoSelect.value;
+            if (estadoSeleccionado === estadoActual) {
+                descripcionInput.value = "";
+                return;
+            }
+            if (!estadosRequierenDescripcion.includes(estadoSeleccionado)) {
+                descripcionInput.value = "";
+                return;
+            }
+
+            const descripcionActual = (descripcionInput.value || "").trim();
+            if (descripcionActual) {
+                return;
+            }
+
+            event.preventDefault();
+            detalleError.classList.add("d-none");
+            $("#detalleEstadoModal").modal("show");
+        });
+
+        guardarDetalleBtn.addEventListener("click", function () {
+            const descripcion = (detalleTextarea.value || "").trim();
+            if (!descripcion) {
+                detalleError.classList.remove("d-none");
+                return;
+            }
+            detalleError.classList.add("d-none");
+            descripcionInput.value = descripcion;
+            submitPermitido = true;
+            $("#detalleEstadoModal").modal("hide");
+            form.submit();
+        });
+
+        estadoSelect.addEventListener("change", function () {
+            if (!estadosRequierenDescripcion.includes(estadoSelect.value)) {
+                descripcionInput.value = "";
+                detalleError.classList.add("d-none");
+            }
+        });
+    })();
+</script>
 {% endblock %}

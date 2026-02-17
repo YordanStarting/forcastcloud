@@ -6,307 +6,209 @@ Resumen de pedidos
 
 {% block extra_head %}
 <style>
-    .pedidos-resumen-page {
-        padding-bottom: 2rem;
+    .resumen-simple .resumen-kpis {
+        margin-bottom: 1rem;
     }
 
-    .resumen-intro {
-        color: #5f6c80;
-        margin-bottom: 1.25rem;
+    .resumen-simple .resumen-kpi-card {
+        animation: kpi-in 0.35s ease both;
     }
 
-    .tipos-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-        gap: 1rem;
-        margin-bottom: 1.5rem;
+    .resumen-simple .resumen-kpi-card:nth-child(2) {
+        animation-delay: 0.06s;
     }
 
-    .tipo-card {
-        display: block;
-        position: relative;
-        border-radius: 0.9rem;
-        border: 1px solid #cfe3ff;
-        padding: 1rem;
-        color: #1f3557;
-        text-decoration: none;
-        background: linear-gradient(155deg, #ffffff 0%, #ecf5ff 70%, #ddeeff 100%);
-        box-shadow: 0 10px 22px rgba(31, 53, 87, 0.08);
-        transform: translateY(10px);
-        opacity: 0;
-        animation: card-in 0.45s ease forwards;
-        transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    .resumen-simple .resumen-kpi-card:nth-child(3) {
+        animation-delay: 0.12s;
     }
 
-    .tipo-card:nth-child(2) {
-        animation-delay: 0.08s;
+    .resumen-simple .resumen-kpi-card:nth-child(4) {
+        animation-delay: 0.18s;
     }
 
-    .tipo-card:nth-child(3) {
-        animation-delay: 0.16s;
+    .resumen-simple .card + .card {
+        margin-top: 1rem;
     }
 
-    .tipo-card:nth-child(4) {
-        animation-delay: 0.24s;
-    }
-
-    .tipo-card:hover {
-        transform: translateY(-4px);
-        box-shadow: 0 14px 28px rgba(37, 99, 235, 0.18);
-        border-color: #9dc4ff;
-    }
-
-    .tipo-card.is-active {
-        border-color: #2f6de0;
-        box-shadow: 0 14px 32px rgba(37, 99, 235, 0.22);
-    }
-
-    .tipo-card h2 {
-        font-size: 1rem;
-        margin: 0 0 0.2rem;
-        color: #194ea7;
-    }
-
-    .tipo-card .total-kg {
-        font-size: 1.4rem;
-        font-weight: 800;
-        color: #133b80;
+    .resumen-simple .bloque-titulo {
+        font-size: 0.95rem;
+        font-weight: 700;
+        color: #1d4ed8;
         margin-bottom: 0.6rem;
-    }
-
-    .tipo-chip {
-        display: inline-block;
-        font-size: 0.72rem;
-        font-weight: 700;
         text-transform: uppercase;
-        letter-spacing: 0.04em;
-        color: #2d5ca4;
-        background: rgba(66, 133, 244, 0.12);
-        border-radius: 999px;
-        padding: 0.2rem 0.5rem;
-        margin-bottom: 0.45rem;
+        letter-spacing: 0.02em;
     }
 
-    .tipo-days {
-        display: grid;
-        grid-template-columns: repeat(3, minmax(0, 1fr));
-        gap: 0.35rem;
-    }
-
-    .tipo-day {
-        background: #ffffff;
-        border: 1px solid #d7e8ff;
-        border-radius: 0.55rem;
-        padding: 0.35rem 0.45rem;
-        text-align: center;
-        font-size: 0.77rem;
-        color: #42566f;
-    }
-
-    .tipo-day strong {
-        display: block;
-        font-size: 0.83rem;
-        color: #204a8e;
-    }
-
-    .tipo-day.has-pending strong {
-        color: #b91c1c;
-    }
-
-    .tipo-link {
-        display: inline-block;
-        margin-top: 0.65rem;
-        font-size: 0.78rem;
-        font-weight: 700;
-        color: #2f6de0;
-        text-transform: uppercase;
-        letter-spacing: 0.04em;
-    }
-
-    .tipo-detalle {
-        scroll-margin-top: 90px;
-    }
-
-    .tipo-detalle-active .card-header {
-        background: linear-gradient(90deg, rgba(28, 100, 242, 0.14), rgba(13, 148, 136, 0.14));
-    }
-
-    .ciudades-grid {
-        display: grid;
-        grid-template-columns: repeat(auto-fit, minmax(330px, 1fr));
-        gap: 1rem;
-    }
-
-    .ciudad-resumen-card {
-        border: 1px solid #dde6f4;
-        border-radius: 0.7rem;
-        background: #ffffff;
-        box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
-        overflow: hidden;
-    }
-
-    .ciudad-resumen-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        padding: 0.75rem 1rem;
-        border-bottom: 1px solid #e8eef9;
-        background: #f7faff;
-    }
-
-    .ciudad-resumen-header h6 {
-        margin: 0;
-        color: #1f4fa8;
-        font-weight: 700;
-    }
-
-    .ciudad-total {
-        font-size: 0.84rem;
-        font-weight: 700;
-        color: #3a4d69;
-    }
-
-    .resumen-table {
-        margin: 0;
-    }
-
-    .resumen-table thead th,
-    .resumen-table tfoot th {
-        white-space: nowrap;
-        font-size: 0.8rem;
-    }
-
-    .resumen-table td,
-    .resumen-table th {
+    .resumen-simple .resumen-table th,
+    .resumen-simple .resumen-table td {
         vertical-align: middle;
+        white-space: nowrap;
     }
 
-    @keyframes card-in {
+    .resumen-simple .resumen-table tfoot th {
+        background: #f8fafc;
+    }
+
+    .resumen-simple .row-gap {
+        margin-top: 1rem;
+    }
+
+    @keyframes kpi-in {
+        from {
+            transform: translateY(8px);
+            opacity: 0;
+        }
+
         to {
-            opacity: 1;
             transform: translateY(0);
-        }
-    }
-
-    @media (max-width: 767px) {
-        .tipos-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .ciudades-grid {
-            grid-template-columns: 1fr;
-        }
-
-        .tipo-days {
-            grid-template-columns: repeat(2, minmax(0, 1fr));
+            opacity: 1;
         }
     }
 </style>
 {% endblock %}
 
 {% block contenido %}
-<div class="container-fluid pedidos-resumen-page">
+<div class="container-fluid resumen-simple">
     <h1 class="h3 mb-2 text-gray-800">RESUMEN DE PEDIDOS</h1>
-    <p class="resumen-intro mb-4">
-        Vista semanal de <strong>lunes a sabado</strong> por tipo de huevo. Haz clic en una tarjeta para ver el detalle por comerciales.
+    <p class="text-muted mb-4">
+        Vista simplificada de lunes a sabado por ciudad: totales por tipo de huevo y programacion por comercial.
     </p>
 
-    <div class="tipos-grid">
-        {% for tarjeta in tarjetas_tipo %}
-        <a href="?tipo={{ tarjeta.codigo }}#{{ tarjeta.anchor_id }}" class="tipo-card {% if tarjeta.codigo == tipo_seleccionado %}is-active{% endif %}">
-            <span class="tipo-chip">Tipo de huevo</span>
-            <h2>{{ tarjeta.etiqueta }}</h2>
-            <div class="total-kg">{{ tarjeta.total_general }} kg</div>
-            <div class="tipo-days">
-                {% for dia in tarjeta.dias %}
-                <div class="tipo-day {% if dia.pending %}has-pending{% endif %}">
-                    <span>{{ dia.short_label|upper }}</span>
-                    <strong>{{ dia.total }} kg</strong>
+    <div class="row resumen-kpis">
+        {% for tarjeta in tarjetas_resumen %}
+        <div class="col-xl-3 col-md-6 mb-3 resumen-kpi-card">
+            <div class="card border-left-{{ tarjeta.estilo }} shadow h-100 py-2">
+                <div class="card-body">
+                    <div class="text-xs font-weight-bold text-{{ tarjeta.estilo }} text-uppercase mb-1">{{ tarjeta.titulo }}</div>
+                    <div class="h5 mb-0 font-weight-bold text-gray-800">{{ tarjeta.valor }}</div>
                 </div>
-                {% endfor %}
             </div>
-            <span class="tipo-link">Ver detalle</span>
-        </a>
-        {% empty %}
-        <div class="alert alert-light border mb-0">No hay pedidos semanales para mostrar.</div>
+        </div>
         {% endfor %}
     </div>
 
-    {% for tipo in tipos_detalle %}
-    <div id="{{ tipo.anchor_id }}" class="card shadow mb-4 tipo-detalle {% if tipo.codigo == tipo_seleccionado %}tipo-detalle-active{% endif %}">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">
-                {{ tipo.etiqueta|upper }} - TOTAL SEMANAL: {{ tipo.total_general }} KG
-            </h6>
+    {% for ciudad in resumen_ciudades %}
+    <div class="card shadow mb-4">
+        <div class="card-header py-3 d-flex justify-content-between align-items-center">
+            <h6 class="m-0 font-weight-bold text-primary">{{ ciudad.nombre|upper }}</h6>
+            <div>
+                <span class="mr-3"><strong>Total:</strong> {{ ciudad.total_general }} kg</span>
+                <span class="mr-3 text-danger"><strong>Pendiente:</strong> {{ ciudad.total_pending }} kg</span>
+                <span class="text-success"><strong>Confirmado:</strong> {{ ciudad.total_confirmed }} kg</span>
+            </div>
         </div>
         <div class="card-body">
-            <div class="ciudades-grid">
-                {% for ciudad in tipo.ciudades %}
-                <div class="ciudad-resumen-card">
-                    <div class="ciudad-resumen-header">
-                        <h6>{{ ciudad.nombre|upper }}</h6>
-                        <span class="ciudad-total">{{ ciudad.total_general }} kg</span>
-                    </div>
-                    <div class="table-responsive">
-                        <table class="table table-bordered table-responsive-stack resumen-table" width="100%" cellspacing="0">
-                            <thead>
-                                <tr>
-                                    <th>COMERCIAL</th>
-                                    {% for dia in ciudad.dias %}
-                                    <th>{{ dia.label|upper }}</th>
-                                    {% endfor %}
-                                    <th>TOTAL</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for comercial in ciudad.comerciales %}
-                                <tr>
-                                    <td data-label="Comercial">{{ comercial.nombre }}</td>
-                                    {% for dia in comercial.dias %}
-                                    <td data-label="{{ dia.label }}" class="{% if dia.pending %}text-danger font-weight-bold{% endif %}">
-                                        {{ dia.total }} kg
-                                    </td>
-                                    {% endfor %}
-                                    <td data-label="Total">{{ comercial.total_general }} kg</td>
-                                </tr>
-                                {% empty %}
-                                <tr>
-                                    <td colspan="{{ ciudad.dias|length|add:'2' }}" class="text-center text-muted">Sin pedidos</td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                            <tfoot>
-                                <tr>
-                                    <th>TOTAL</th>
-                                    {% for dia in ciudad.totales_dia %}
-                                    <th class="{% if dia.pending %}text-danger{% endif %}">{{ dia.total }} kg</th>
-                                    {% endfor %}
-                                    <th>{{ ciudad.total_general }} kg</th>
-                                </tr>
-                            </tfoot>
-                        </table>
-                    </div>
-                </div>
-                {% endfor %}
+            <p class="bloque-titulo">1. Resumen Total Por Tipo De Huevo</p>
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack resumen-table" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>TIPO</th>
+                            {% for dia in ciudad.dias %}
+                            <th>{{ dia.label|upper }}</th>
+                            {% endfor %}
+                            <th>TOTAL</th>
+                            <th>TOTAL PENDIENTE</th>
+                            <th>TOTAL CONFIRMADO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for tipo in ciudad.tipos %}
+                        <tr>
+                            <td data-label="Tipo">{{ tipo.etiqueta }}</td>
+                            {% for dia in tipo.dias %}
+                            <td data-label="{{ dia.label }}" class="{% if dia.pending %}text-danger font-weight-bold{% endif %}">
+                                {{ dia.total }} kg
+                            </td>
+                            {% endfor %}
+                            <td data-label="Total"><strong>{{ tipo.total_general }} kg</strong></td>
+                            <td data-label="Total pendiente" class="text-danger"><strong>{{ tipo.total_pending }} kg</strong></td>
+                            <td data-label="Total confirmado" class="text-success"><strong>{{ tipo.total_confirmed }} kg</strong></td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>TOTAL CIUDAD</th>
+                            {% for dia in ciudad.totales_dia %}
+                            <th class="{% if dia.pending %}text-danger{% endif %}">{{ dia.total }} kg</th>
+                            {% endfor %}
+                            <th>{{ ciudad.total_general }} kg</th>
+                            <th class="text-danger">{{ ciudad.total_pending }} kg</th>
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                        </tr>
+                        <tr>
+                            <th class="text-success">TOTAL CONFIRMADO</th>
+                            {% for dia in ciudad.totales_dia %}
+                            <th class="text-success">{{ dia.confirmed }} kg</th>
+                            {% endfor %}
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                            <th>-</th>
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                        </tr>
+                    </tfoot>
+                </table>
             </div>
+
+            <p class="bloque-titulo row-gap">2. Programacion Por Comercial</p>
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack resumen-table" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>COMERCIAL</th>
+                            {% for dia in ciudad.dias %}
+                            <th>{{ dia.label|upper }}</th>
+                            {% endfor %}
+                            <th>TOTAL</th>
+                            <th>TOTAL PENDIENTE</th>
+                            <th>TOTAL CONFIRMADO</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for comercial in ciudad.comerciales %}
+                        <tr>
+                            <td data-label="Comercial">{{ comercial.nombre }}</td>
+                            {% for dia in comercial.dias %}
+                            <td data-label="{{ dia.label }}" class="{% if dia.pending %}text-danger font-weight-bold{% endif %}">
+                                {{ dia.total }} kg
+                            </td>
+                            {% endfor %}
+                            <td data-label="Total"><strong>{{ comercial.total_general }} kg</strong></td>
+                            <td data-label="Total pendiente" class="text-danger"><strong>{{ comercial.total_pending }} kg</strong></td>
+                            <td data-label="Total confirmado" class="text-success"><strong>{{ comercial.total_confirmed }} kg</strong></td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="{{ ciudad.dias|length|add:'4' }}" class="text-center text-muted">Sin pedidos programados</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>TOTAL CIUDAD</th>
+                            {% for dia in ciudad.totales_dia %}
+                            <th class="{% if dia.pending %}text-danger{% endif %}">{{ dia.total }} kg</th>
+                            {% endfor %}
+                            <th>{{ ciudad.total_general }} kg</th>
+                            <th class="text-danger">{{ ciudad.total_pending }} kg</th>
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                        </tr>
+                        <tr>
+                            <th class="text-success">TOTAL CONFIRMADO</th>
+                            {% for dia in ciudad.totales_dia %}
+                            <th class="text-success">{{ dia.confirmed }} kg</th>
+                            {% endfor %}
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                            <th>-</th>
+                            <th class="text-success">{{ ciudad.total_confirmed }} kg</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+
             <p class="small text-muted mb-0">Los valores en rojo incluyen pedidos pendientes.</p>
         </div>
     </div>
     {% endfor %}
 </div>
-
-<script>
-    (function () {
-        if (!window.location.hash) {
-            return;
-        }
-        const section = document.querySelector(window.location.hash);
-        if (!section) {
-            return;
-        }
-        setTimeout(function () {
-            section.scrollIntoView({ behavior: "smooth", block: "start" });
-        }, 120);
-    })();
-</script>
 {% endblock %}
