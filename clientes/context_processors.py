@@ -8,6 +8,7 @@ def notificaciones(request):
     can_manage_proveedores = False
     can_manage_usuarios = False
     can_manage_pedidos = False
+    can_change_pedido_status = False
     user_profile_image = static('web/img/diego.webp')
 
     if not request.user.is_authenticated:
@@ -18,15 +19,26 @@ def notificaciones(request):
             'can_manage_proveedores': can_manage_proveedores,
             'can_manage_usuarios': can_manage_usuarios,
             'can_manage_pedidos': can_manage_pedidos,
+            'can_change_pedido_status': can_change_pedido_status,
             'user_profile_image': user_profile_image,
         }
+
+    if request.user.is_superuser:
+        can_manage_proveedores = True
+        can_manage_usuarios = True
+        can_manage_pedidos = True
+        can_change_pedido_status = True
 
     perfil = PerfilUsuario.objects.filter(usuario=request.user).first()
     if perfil:
         user_role = perfil.rol
-        can_manage_proveedores = perfil.rol in {'admin', 'comercial'}
-        can_manage_usuarios = perfil.rol == 'admin'
-        can_manage_pedidos = perfil.rol in {'admin', 'comercial'}
+        can_manage_proveedores = can_manage_proveedores or perfil.rol in {'admin', 'comercial'}
+        can_manage_usuarios = can_manage_usuarios or perfil.rol == 'admin'
+        can_manage_pedidos = can_manage_pedidos or perfil.rol in {'admin', 'comercial'}
+        can_change_pedido_status = (
+            can_change_pedido_status
+            or perfil.rol in {'admin', 'comercial', 'logistica', 'programador'}
+        )
         if perfil.foto_perfil:
             user_profile_image = perfil.foto_perfil.url
 
@@ -42,5 +54,6 @@ def notificaciones(request):
         'can_manage_proveedores': can_manage_proveedores,
         'can_manage_usuarios': can_manage_usuarios,
         'can_manage_pedidos': can_manage_pedidos,
+        'can_change_pedido_status': can_change_pedido_status,
         'user_profile_image': user_profile_image,
     }

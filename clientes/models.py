@@ -74,6 +74,18 @@ class PerfilUsuario(models.Model):
 class Notificacion(models.Model):
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
     mensaje = models.TextField()
+    tipo_evento = models.CharField(
+        max_length=30,
+        choices=[
+            ('INFO', 'Informacion'),
+            ('PEDIDO_CREADO', 'Pedido creado'),
+            ('PEDIDO_CONFIRMADO', 'Pedido confirmado'),
+            ('PEDIDO_CANCELADO', 'Pedido cancelado'),
+            ('PEDIDO_CAMBIO_ESTADO', 'Cambio de estado'),
+        ],
+        default='INFO',
+    )
+    reproducir_sonido = models.BooleanField(default=False)
     leida = models.BooleanField(default=False)
     fecha_creacion = models.DateTimeField(auto_now_add=True)
     
@@ -85,8 +97,10 @@ class Notificacion(models.Model):
 class Pedido(models.Model):
     ESTADO_CHOICES = [
         ('PENDIENTE', 'Pendiente'),
-        ('EN_PROCESO', 'En proceso'),
-        ('REALIZADO', 'Realizado'),  # Coincide con tu views.py
+        ('CONFIRMADO', 'Confirmado'),
+        ('EN_PRODUCCION', 'En produccion'),
+        ('DESPACHADO', 'Despachado'),
+        ('ENTREGADO', 'Entregado'),
         ('CANCELADO', 'Cancelado'),
     ]
     
@@ -110,7 +124,7 @@ class Pedido(models.Model):
     )
     
     estado = models.CharField(
-        max_length=15,
+        max_length=20,
         choices=ESTADO_CHOICES,
         default='PENDIENTE'
     )
@@ -142,4 +156,36 @@ class EntregaPedido(models.Model):
     
     def __str__(self):
         return f"Entrega para Pedido #{self.pedido.id} - {self.fecha_entrega}"
+
+
+class RegistroEstadoPedido(models.Model):
+    pedido = models.ForeignKey(
+        Pedido,
+        related_name='registros_estado',
+        on_delete=models.CASCADE
+    )
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True
+    )
+    estado_anterior = models.CharField(
+        max_length=20,
+        choices=Pedido.ESTADO_CHOICES
+    )
+    estado_nuevo = models.CharField(
+        max_length=20,
+        choices=Pedido.ESTADO_CHOICES
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha_creacion']
+
+    def __str__(self):
+        return (
+            f"Pedido #{self.pedido_id}: {self.estado_anterior} -> "
+            f"{self.estado_nuevo}"
+        )
 

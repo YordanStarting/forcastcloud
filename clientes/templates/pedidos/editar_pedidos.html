@@ -10,7 +10,7 @@ Editar pedidos
 
     <form method="get" class="mb-4">
         <div class="form-row align-items-end">
-            <div class="col-12 col-md-3 mb-2">
+            <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Compania</label>
                 <select class="form-control" name="proveedor">
                     <option value="">Todas</option>
@@ -45,10 +45,21 @@ Editar pedidos
                 </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Estado</label>
+                <select class="form-control" name="estado">
+                    <option value="">Todos</option>
+                    {% for value, label in PEDIDO_ESTADO_CHOICES %}
+                    <option value="{{ value }}" {% if estado == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Fecha creacion</label>
                 <input type="date" class="form-control" name="fecha_creacion" value="{{ fecha_creacion|default:'' }}">
             </div>
-            <div class="col-12 col-md-2 mb-2">
+            <div class="col-12 col-md-1 mb-2">
                 <label class="mb-1">Semana</label>
                 <input type="date" class="form-control" name="semana" value="{{ semana|default:'' }}">
             </div>
@@ -142,11 +153,7 @@ Editar pedidos
                             <td data-label="Fecha/creacion">{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
                             <td data-label="Estado">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
-                                    {% if pedido.estado == 'EN_PROCESO' %}
-                                    Confirmado
-                                    {% else %}
                                     {{ pedido.get_estado_display }}
-                                    {% endif %}
                                 </span>
                             </td>
                             <td data-label="Acciones" class="table-actions">

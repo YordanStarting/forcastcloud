@@ -1,0 +1,113 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Registros de pedidos
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <h1 class="h3 mb-2 text-gray-800">REGISTROS DE CAMBIOS DE ESTADO</h1>
+
+    <form method="get" class="mb-4">
+        <div class="form-row align-items-end">
+            <div class="col-12 col-md-4 mb-2">
+                <label class="mb-1">Usuario</label>
+                <select class="form-control" name="usuario">
+                    <option value="">Todos</option>
+                    {% for u in usuarios %}
+                    <option value="{{ u.id }}" {% if usuario == u.id|stringformat:"s" %}selected{% endif %}>
+                        {{ u.get_full_name|default:u.username }}
+                    </option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2">
+                <label class="mb-1">Fecha</label>
+                <input type="date" class="form-control" name="fecha" value="{{ fecha|default:'' }}">
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
+            </div>
+            <div class="col-12 col-md-2 mb-2">
+                <a class="btn btn-link btn-block" href="{% url 'registros_pedidos' %}">Limpiar</a>
+            </div>
+        </div>
+    </form>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">MOVIMIENTOS</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>PEDIDO</th>
+                            <th>USUARIO</th>
+                            <th>ESTADO ANTERIOR</th>
+                            <th>ESTADO NUEVO</th>
+                            <th>FECHA</th>
+                            <th>HORA</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for registro in page_obj %}
+                        <tr>
+                            <td data-label="Pedido">#{{ registro.pedido_id }}</td>
+                            <td data-label="Usuario">
+                                {% if registro.usuario %}
+                                {{ registro.usuario.get_full_name|default:registro.usuario.username }}
+                                {% else %}
+                                Sistema
+                                {% endif %}
+                            </td>
+                            <td data-label="Estado anterior">{{ registro.get_estado_anterior_display }}</td>
+                            <td data-label="Estado nuevo">{{ registro.get_estado_nuevo_display }}</td>
+                            <td data-label="Fecha">{{ registro.fecha_creacion|date:"d/m/Y" }}</td>
+                            <td data-label="Hora">{{ registro.fecha_creacion|date:"H:i:s" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">No hay registros para los filtros seleccionados.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+
+            {% if page_obj.paginator.num_pages > 1 %}
+            <nav aria-label="Paginacion de registros">
+                <ul class="pagination justify-content-end mb-0">
+                    {% if page_obj.has_previous %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.previous_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">
+                            Anterior
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Anterior</span></li>
+                    {% endif %}
+
+                    <li class="page-item active">
+                        <span class="page-link">
+                            Pagina {{ page_obj.number }} de {{ page_obj.paginator.num_pages }}
+                        </span>
+                    </li>
+
+                    {% if page_obj.has_next %}
+                    <li class="page-item">
+                        <a class="page-link" href="?page={{ page_obj.next_page_number }}{% if query_string %}&{{ query_string }}{% endif %}">
+                            Siguiente
+                        </a>
+                    </li>
+                    {% else %}
+                    <li class="page-item disabled"><span class="page-link">Siguiente</span></li>
+                    {% endif %}
+                </ul>
+            </nav>
+            {% endif %}
+        </div>
+    </div>
+</div>
+{% endblock %}

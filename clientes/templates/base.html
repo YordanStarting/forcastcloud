@@ -148,6 +148,26 @@
             color: #1d4ed8;
         }
 
+        .badge-estado-confirmado {
+            background: #dbeafe;
+            color: #1d4ed8;
+        }
+
+        .badge-estado-en_produccion {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        .badge-estado-despachado {
+            background: #cffafe;
+            color: #155e75;
+        }
+
+        .badge-estado-entregado {
+            background: #d1fae5;
+            color: #065f46;
+        }
+
         .badge-estado-realizado {
             background: #d1fae5;
             color: #065f46;
@@ -249,15 +269,15 @@
 
             <!-- Nav Item - Pages Collapse Menu -->
             {% with current_url=request.resolver_match.url_name %}
-            <li class="nav-item active {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}section-active{% endif %}">
-                <a class="nav-link {% if current_url != 'editartablas' and current_url != 'resumen_pedidos' and current_url != 'historial' %}collapsed{% endif %}"
+            <li class="nav-item active {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' or current_url == 'registros_pedidos' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'editartablas' and current_url != 'resumen_pedidos' and current_url != 'historial' and current_url != 'registros_pedidos' %}collapsed{% endif %}"
                     href="#" data-toggle="collapse" data-target="#collapseTwo"
-                    aria-expanded="{% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}true{% else %}false{% endif %}"
+                    aria-expanded="{% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' or current_url == 'registros_pedidos' %}true{% else %}false{% endif %}"
                     aria-controls="collapseTwo">
                     <i class="fas fa-fw fa-cog"></i>
                     <span>Pedidos</span>
                 </a>
-                <div id="collapseTwo" class="collapse {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' %}show{% endif %}"
+                <div id="collapseTwo" class="collapse {% if current_url == 'editartablas' or current_url == 'resumen_pedidos' or current_url == 'historial' or current_url == 'registros_pedidos' %}show{% endif %}"
                     aria-labelledby="headingTwo"
                     data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
@@ -269,6 +289,7 @@
                         <a class="collapse-item" href="{% url 'editartablas' %}">Listado de Pedidos</a>
                         <a class="collapse-item" href="{% url 'resumen_pedidos' %}">Resumen de pedidos</a>
                         <a class="collapse-item" href="{% url 'historial' %}">Historial de Pedidos</a>
+                        <a class="collapse-item" href="{% url 'registros_pedidos' %}">Registros</a>
                     </div>
                 </div>
             </li>
@@ -522,7 +543,7 @@
         {% if request.user.is_authenticated %}
         <script>
             (function () {
-                const bellStateKey = "ultimoPedidoId";
+                const bellStateKey = "ultimoEventoSonidoId:{{ request.user.id }}";
                 const bellIntervalMs = 15000;
                 let audioContext = null;
                 let audioUnlocked = false;
@@ -574,15 +595,15 @@
                     fetch("{% url 'notificaciones_pedidos' %}", { credentials: "same-origin" })
                         .then((response) => response.json())
                         .then((data) => {
-                            if (!data || data.last_pedido_id === null) {
+                            if (!data || data.last_event_id === null) {
                                 return;
                             }
                             const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
-                            if (lastSeen && data.last_pedido_id > lastSeen) {
+                            if (lastSeen && data.last_event_id > lastSeen) {
                                 playBell();
                             }
-                            if (!lastSeen || data.last_pedido_id > lastSeen) {
-                                localStorage.setItem(bellStateKey, String(data.last_pedido_id));
+                            if (!lastSeen || data.last_event_id > lastSeen) {
+                                localStorage.setItem(bellStateKey, String(data.last_event_id));
                             }
                         })
                         .catch(() => {});

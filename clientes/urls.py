@@ -35,6 +35,7 @@ urlpatterns = [
 
     path('pedidos/realizado/<int:id>/', views.marcar_pedido_realizado, name='marcar_realizado'),
     path('pedidos/historial/', views.historial, name='historial'),
+    path('pedidos/registros/', views.registros_pedidos, name='registros_pedidos'),
 
     
  

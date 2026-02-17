@@ -17,6 +17,9 @@ Cambiar estado del pedido
             <p class="mb-4 text-muted">
                 {{ pedido.get_tipo_huevo_display }} · {{ pedido.get_presentacion_display }}
             </p>
+            {% if error_message %}
+            <div class="alert alert-danger">{{ error_message }}</div>
+            {% endif %}
 
             <form method="post">
                 {% csrf_token %}

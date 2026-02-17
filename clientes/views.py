@@ -1,11 +1,14 @@
 from datetime import date, timedelta
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse, HttpResponseForbidden
+from django.core.paginator import Paginator
+from django.urls import NoReverseMatch, reverse
 from .models import (
     Cliente,
     EntregaPedido,
     Notificacion,
     Pedido,
+    RegistroEstadoPedido,
     PerfilUsuario,
     Proveedor,
     CIUDAD_CHOICES,
@@ -27,6 +30,115 @@ from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm
 
 PEDIDO_ESTADO_CHOICES = list(Pedido.ESTADO_CHOICES)
+PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
+PEDIDO_ESTADO_LABELS = dict(PEDIDO_ESTADO_CHOICES)
+PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE', 'CONFIRMADO']
+PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO']
+ROL_ESTADOS_PERMITIDOS = {
+    'admin': PEDIDO_ESTADOS_VALIDOS,
+    'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
+    'programador': {'EN_PRODUCCION'},
+    'logistica': {'DESPACHADO', 'ENTREGADO'},
+}
+
+
+def _estado_pedido_label(estado):
+    return PEDIDO_ESTADO_LABELS.get(estado, estado)
+
+
+def _nombre_usuario(usuario):
+    if not usuario:
+        return 'Sistema'
+    nombre_completo = f"{usuario.first_name} {usuario.last_name}".strip()
+    if nombre_completo:
+        return nombre_completo
+    return usuario.username
+
+
+def _resolver_next_url(next_value, default_name='editartablas'):
+    if not next_value:
+        return reverse(default_name)
+    if next_value.startswith('/'):
+        return next_value
+    try:
+        return reverse(next_value)
+    except NoReverseMatch:
+        return reverse(default_name)
+
+
+def _estados_permitidos_para_usuario(user):
+    if not user.is_authenticated:
+        return set()
+    if user.is_superuser:
+        return set(PEDIDO_ESTADOS_VALIDOS)
+    rol = _obtener_rol_usuario(user)
+    return set(ROL_ESTADOS_PERMITIDOS.get(rol, set()))
+
+
+def _usuario_puede_cambiar_estado_pedidos(user):
+    return bool(_estados_permitidos_para_usuario(user))
+
+
+def _crear_notificaciones_globales(mensaje, *, tipo_evento='INFO', reproducir_sonido=False):
+    usuarios_activos = User.objects.filter(is_active=True).only('id')
+    notificaciones = [
+        Notificacion(
+            usuario=usuario,
+            mensaje=mensaje,
+            tipo_evento=tipo_evento,
+            reproducir_sonido=reproducir_sonido,
+        )
+        for usuario in usuarios_activos
+    ]
+    if notificaciones:
+        Notificacion.objects.bulk_create(notificaciones)
+
+
+def _registrar_evento_creacion_pedido(pedido, usuario):
+    nombre_usuario = _nombre_usuario(usuario)
+    _crear_notificaciones_globales(
+        f"Pedido #{pedido.id} creado por {nombre_usuario}",
+        tipo_evento='PEDIDO_CREADO',
+        reproducir_sonido=True,
+    )
+
+
+def _registrar_cambio_estado_pedido(pedido, estado_anterior, estado_nuevo, usuario):
+    if not estado_anterior or estado_anterior == estado_nuevo:
+        return
+
+    RegistroEstadoPedido.objects.create(
+        pedido=pedido,
+        usuario=usuario,
+        estado_anterior=estado_anterior,
+        estado_nuevo=estado_nuevo,
+    )
+
+    nombre_usuario = _nombre_usuario(usuario)
+    estado_nuevo_label = _estado_pedido_label(estado_nuevo)
+    estado_anterior_label = _estado_pedido_label(estado_anterior)
+    tipo_evento = 'PEDIDO_CAMBIO_ESTADO'
+    reproducir_sonido = False
+
+    if estado_nuevo == 'CONFIRMADO':
+        mensaje = f"Pedido #{pedido.id} confirmado por {nombre_usuario}"
+        tipo_evento = 'PEDIDO_CONFIRMADO'
+        reproducir_sonido = True
+    elif estado_nuevo == 'CANCELADO':
+        mensaje = f"Pedido #{pedido.id} cancelado por {nombre_usuario}"
+        tipo_evento = 'PEDIDO_CANCELADO'
+        reproducir_sonido = True
+    else:
+        mensaje = (
+            f"Pedido #{pedido.id} cambio de {estado_anterior_label} "
+            f"a {estado_nuevo_label} por {nombre_usuario}"
+        )
+
+    _crear_notificaciones_globales(
+        mensaje,
+        tipo_evento=tipo_evento,
+        reproducir_sonido=reproducir_sonido,
+    )
 
 def _cantidad_pedido_expr():
     return Case(
@@ -278,13 +390,13 @@ def inicio(request):
     pedidos = (
         pedidos_qs
         .select_related('proveedor')
-        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
+        .filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
         .order_by('semana', 'fecha_entrega')
     )
-    pedidos_activos = pedidos_qs.filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
+    pedidos_activos = pedidos_qs.filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
 
     pedidos_pendientes = pedidos.filter(estado='PENDIENTE').count()
-    pedidos_confirmados = pedidos.filter(estado='EN_PROCESO').count()
+    pedidos_confirmados = pedidos.filter(estado='CONFIRMADO').count()
     proveedores = Proveedor.objects.filter(activo=True)
 
     meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -295,7 +407,7 @@ def inicio(request):
     resumen_estados = (
         pedidos_qs
         .filter(
-            estado__in=['PENDIENTE', 'EN_PROCESO'],
+            estado__in=PEDIDO_ESTADOS_DASHBOARD,
             fecha_creacion__year=date.today().year,
         )
         .annotate(mes=ExtractMonth('fecha_creacion'))
@@ -312,7 +424,7 @@ def inicio(request):
         total = row.get('total') or 0
         if row.get('estado') == 'PENDIENTE':
             chart_pendientes_data[indice] = total
-        elif row.get('estado') == 'EN_PROCESO':
+        elif row.get('estado') == 'CONFIRMADO':
             chart_confirmados_data[indice] = total
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
@@ -482,7 +594,7 @@ def resumen_pedidos(request):
 
     entregas_resumen = (
         EntregaPedido.objects
-        .filter(pedido__estado__in=['PENDIENTE', 'EN_PROCESO'])
+        .filter(pedido__estado__in=PEDIDO_ESTADOS_DASHBOARD)
         .annotate(
             tipo_huevo=F('pedido__tipo_huevo'),
             ciudad=F('pedido__ciudad'),
@@ -517,7 +629,7 @@ def resumen_pedidos(request):
     cantidad_expr = _cantidad_pedido_expr()
     pedidos_sin_entregas = (
         Pedido.objects
-        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'], entregas__isnull=True)
+        .filter(estado__in=PEDIDO_ESTADOS_DASHBOARD, entregas__isnull=True)
         .annotate(
             comercial_username=F('comercial__username'),
             comercial_first_name=F('comercial__first_name'),
@@ -874,10 +986,7 @@ def crear_pedido(request):
                 cantidad=cantidad
             )
 
-        Notificacion.objects.create(
-            usuario=pedido.comercial,
-            mensaje=f"Nuevo pedido creado por {pedido.comercial.username}"
-        )
+        _registrar_evento_creacion_pedido(pedido, request.user)
 
         return redirect('inicio')
 
@@ -895,7 +1004,14 @@ def editarpedido(request, id):
 
     proveedores = Proveedor.objects.filter(activo=True)
     comerciales = User.objects.all()
-    estado_choices = PEDIDO_ESTADO_CHOICES
+    estados_permitidos = _estados_permitidos_para_usuario(request.user)
+    estado_choices = [
+        (value, label)
+        for value, label in PEDIDO_ESTADO_CHOICES
+        if value in estados_permitidos
+    ]
+    if pedido.estado in PEDIDO_ESTADOS_VALIDOS and pedido.estado not in {value for value, _ in estado_choices}:
+        estado_choices.insert(0, (pedido.estado, _estado_pedido_label(pedido.estado)))
 
     if request.method == 'POST':
         estado_anterior = pedido.estado
@@ -983,15 +1099,31 @@ def editarpedido(request, id):
         pedido.semana = semana_ajustada or None
         pedido.observaciones = request.POST.get('observaciones')
         nuevo_estado = request.POST.get('estado')
-        if nuevo_estado in {value for value, _ in estado_choices}:
-            pedido.estado = nuevo_estado
-        pedido.save()
-
-        if estado_anterior != pedido.estado and pedido.estado == 'CANCELADO':
-            Notificacion.objects.create(
-                usuario=pedido.comercial,
-                mensaje=f"Pedido #{pedido.id} cancelado por {request.user.username}"
+        if (
+            nuevo_estado in PEDIDO_ESTADOS_VALIDOS
+            and nuevo_estado != estado_anterior
+            and nuevo_estado not in estados_permitidos
+        ):
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message='No tienes permisos para cambiar el pedido a ese estado.',
+                total_entregas=total_entregas,
             )
+            return render(request, 'pedidos/editar_pedido.html', context)
+
+        if (
+            nuevo_estado in PEDIDO_ESTADOS_VALIDOS
+            and (nuevo_estado in estados_permitidos or nuevo_estado == estado_anterior)
+        ):
+            pedido.estado = nuevo_estado
+
+        pedido.save()
+        _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
 
         pedido.entregas.all().delete()
         for fecha, cantidad in entregas:
@@ -1020,9 +1152,7 @@ def eliminarpedido(request, id):
 
 @login_required
 def editartablas(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
-        estado__in=['PENDIENTE', 'EN_PROCESO']
-    )
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
@@ -1046,6 +1176,7 @@ def editartablas(request):
         'proveedores': proveedores,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
         'total_liquido': total_liquido,
         'total_mezcla': total_mezcla,
         'total_yema': total_yema,
@@ -1055,7 +1186,9 @@ def editartablas(request):
 
 @login_required
 def historial(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(estado='REALIZADO')
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
+        estado__in=PEDIDO_ESTADOS_HISTORIAL
+    )
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
     meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
@@ -1092,6 +1225,7 @@ def historial(request):
     return render(request, 'pedidos/historial.html', {
         'pedidos': pedidos,
         'proveedores': proveedores,
+        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
         'anios_disponibles': anios_disponibles,
         'anio': str(anio),
         'historial_chart_labels': meses_labels,
@@ -1106,9 +1240,7 @@ def editar_pedidos(request):
     if not _usuario_puede_gestionar_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para editar pedidos.")
 
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas').filter(
-        estado__in=['PENDIENTE', 'EN_PROCESO']
-    )
+    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
     proveedores = Proveedor.objects.filter(activo=True)
 
@@ -1117,43 +1249,90 @@ def editar_pedidos(request):
         'proveedores': proveedores,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
+        'PEDIDO_ESTADO_CHOICES': PEDIDO_ESTADO_CHOICES,
         **filtros
     })
 
 @login_required
 def marcar_pedido_realizado(request, id):
-    if not _usuario_puede_gestionar_pedidos(request.user):
+    if not _usuario_puede_cambiar_estado_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
+    estados_permitidos = _estados_permitidos_para_usuario(request.user)
+    if 'ENTREGADO' not in estados_permitidos:
+        return HttpResponseForbidden("No tienes permisos para cambiar el pedido a entregado.")
     pedido = get_object_or_404(Pedido, id=id)
-    pedido.estado = 'REALIZADO'
+    estado_anterior = pedido.estado
+    pedido.estado = 'ENTREGADO'
     pedido.save()
+    _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
     return redirect('editartablas')
 
 
 @login_required
 def editar_estado_pedido(request, id):
-    if not _usuario_puede_gestionar_pedidos(request.user):
+    if not _usuario_puede_cambiar_estado_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
+
     pedido = get_object_or_404(Pedido, id=id)
-    estado_choices = PEDIDO_ESTADO_CHOICES
+    estados_permitidos = _estados_permitidos_para_usuario(request.user)
+    estado_choices = [
+        (value, label)
+        for value, label in PEDIDO_ESTADO_CHOICES
+        if value in estados_permitidos or value == pedido.estado
+    ]
+    next_url = _resolver_next_url(request.GET.get('next'))
+    error_message = None
+
     if request.method == 'POST':
+        next_url = _resolver_next_url(request.POST.get('next') or request.GET.get('next'))
         estado_anterior = pedido.estado
         nuevo_estado = request.POST.get('estado')
-        if nuevo_estado in {value for value, _ in estado_choices}:
+
+        if nuevo_estado not in PEDIDO_ESTADOS_VALIDOS:
+            error_message = 'Debes seleccionar un estado valido.'
+        elif nuevo_estado != estado_anterior and nuevo_estado not in estados_permitidos:
+            error_message = 'No tienes permisos para cambiar el pedido a ese estado.'
+        else:
             pedido.estado = nuevo_estado
             pedido.save()
-            if estado_anterior != pedido.estado and pedido.estado == 'CANCELADO':
-                Notificacion.objects.create(
-                    usuario=pedido.comercial,
-                    mensaje=f"Pedido #{pedido.id} cancelado por {request.user.username}"
-                )
-            next_url = request.POST.get('next') or request.GET.get('next') or 'editartablas'
+            _registrar_cambio_estado_pedido(pedido, estado_anterior, pedido.estado, request.user)
             return redirect(next_url)
-    next_url = request.GET.get('next', '')
+
     return render(request, 'pedidos/editar_estado.html', {
         'pedido': pedido,
         'estado_choices': estado_choices,
         'next': next_url,
+        'error_message': error_message,
+    })
+
+
+@login_required
+def registros_pedidos(request):
+    registros_qs = RegistroEstadoPedido.objects.select_related('pedido', 'usuario')
+    usuarios = User.objects.filter(
+        id__in=registros_qs.values_list('usuario_id', flat=True).distinct()
+    ).order_by('username')
+
+    filtros = {}
+    if usuario_id := request.GET.get('usuario'):
+        registros_qs = registros_qs.filter(usuario_id=usuario_id)
+        filtros['usuario'] = usuario_id
+
+    if fecha := request.GET.get('fecha'):
+        registros_qs = registros_qs.filter(fecha_creacion__date=fecha)
+        filtros['fecha'] = fecha
+
+    paginator = Paginator(registros_qs, 10)
+    page_obj = paginator.get_page(request.GET.get('page'))
+
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+
+    return render(request, 'pedidos/registros.html', {
+        'page_obj': page_obj,
+        'usuarios': usuarios,
+        'query_string': query_params.urlencode(),
+        **filtros,
     })
 
 
@@ -1171,6 +1350,10 @@ def filtrar_pedidos(request, qs):
     if presentacion := request.GET.get('presentacion'):
         qs = qs.filter(presentacion=presentacion)
         filtros['presentacion'] = presentacion
+
+    if estado := request.GET.get('estado'):
+        qs = qs.filter(estado=estado)
+        filtros['estado'] = estado
 
     if fecha_creacion := request.GET.get('fecha_creacion'):
         qs = qs.filter(fecha_creacion__date=fecha_creacion)
@@ -1212,17 +1395,18 @@ def entregas_calendario(request):
 
 @login_required
 def notificaciones_pedidos(request):
-    ultimo_pedido = (
-        Pedido.objects
-        .filter(estado__in=['PENDIENTE', 'EN_PROCESO'])
+    ultimo_evento = (
+        Notificacion.objects
+        .filter(usuario=request.user, reproducir_sonido=True)
         .order_by('-fecha_creacion')
         .first()
     )
-    if not ultimo_pedido:
-        return JsonResponse({'last_pedido_id': None, 'last_pedido_ts': None})
+    if not ultimo_evento:
+        return JsonResponse({'last_event_id': None, 'last_event_ts': None})
     return JsonResponse({
-        'last_pedido_id': ultimo_pedido.id,
-        'last_pedido_ts': ultimo_pedido.fecha_creacion.isoformat(),
+        'last_event_id': ultimo_evento.id,
+        'last_event_ts': ultimo_evento.fecha_creacion.isoformat(),
+        'last_event_message': ultimo_evento.mensaje,
     })
 
 @login_required
@@ -1263,5 +1447,6 @@ def crear_pedido_semanal(request):
                 fecha_entrega=fecha,
                 cantidad=cantidad
             )
+        _registrar_evento_creacion_pedido(pedido, request.user)
 
         return redirect('inicio')

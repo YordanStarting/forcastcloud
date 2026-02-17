@@ -15,6 +15,18 @@
         </div>
 
         <div class="col-12 col-md-2 mb-2">
+            <label>Estado</label>
+            <select name="estado" class="form-control">
+                <option value="">Todos</option>
+                {% for value, label in PEDIDO_ESTADO_CHOICES %}
+                <option value="{{ value }}" {% if estado == value %}selected{% endif %}>
+                    {{ label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        <div class="col-12 col-md-2 mb-2">
             <label>Desde</label>
             <input type="date" name="fecha_desde" class="form-control" value="{{ fecha_desde }}">
         </div>

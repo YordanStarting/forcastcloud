@@ -246,11 +246,7 @@ Inicio
                             <td data-label="Fecha/creacion">{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
                             <td data-label="Estado">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
-                                    {% if pedido.estado == 'EN_PROCESO' %}
-                                    Confirmado
-                                    {% else %}
                                     {{ pedido.get_estado_display }}
-                                    {% endif %}
                                 </span>
                             </td>
                         </tr>
