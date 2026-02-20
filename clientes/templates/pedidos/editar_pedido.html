@@ -171,6 +171,7 @@ Editar pedido semanal
                 const proveedorSelect = document.querySelector('select[name="proveedor"]');
                 const presentacionDisplay = document.getElementById('presentacion_display');
                 const presentacionHidden = document.getElementById('presentacion_hidden');
+                const entregaPickers = [];
 
                 const syncPresentacionConProveedor = () => {
                     if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
@@ -182,12 +183,67 @@ Editar pedido semanal
                     presentacionHidden.value = presentacion;
                 };
 
+                const parseIsoDate = (value) => {
+                    if (!value) {
+                        return null;
+                    }
+                    const parts = value.split('-');
+                    if (parts.length !== 3) {
+                        return null;
+                    }
+                    const year = parseInt(parts[0], 10);
+                    const month = parseInt(parts[1], 10);
+                    const day = parseInt(parts[2], 10);
+                    if (!year || !month || !day) {
+                        return null;
+                    }
+                    return new Date(year, month - 1, day);
+                };
+
+                const getSemanaRange = () => {
+                    const monday = parseIsoDate(semanaInput ? semanaInput.value : '');
+                    if (!monday) {
+                        return null;
+                    }
+                    const saturday = new Date(monday);
+                    saturday.setDate(monday.getDate() + 5);
+                    return { monday, saturday };
+                };
+
+                const applyRangeToPicker = (picker) => {
+                    if (!picker) {
+                        return;
+                    }
+                    const range = getSemanaRange();
+                    if (!range) {
+                        picker.set('minDate', null);
+                        picker.set('maxDate', null);
+                        picker.redraw();
+                        return;
+                    }
+                    picker.set('minDate', range.monday);
+                    picker.set('maxDate', range.saturday);
+                    picker.redraw();
+                    const selectedDate = picker.selectedDates && picker.selectedDates.length
+                        ? picker.selectedDates[0]
+                        : parseIsoDate(picker.input.value);
+                    const currentDate = selectedDate
+                        ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
+                        : null;
+                    if (currentDate && (currentDate < range.monday || currentDate > range.saturday)) {
+                        picker.clear();
+                    }
+                };
+
                 if (semanaInput && window.flatpickr) {
                     flatpickr(semanaInput, {
                         dateFormat: "Y-m-d",
                         allowInput: false,
                         disableMobile: true,
                         locale: "es",
+                        onChange: function () {
+                            entregaPickers.forEach(applyRangeToPicker);
+                        },
                         enable: [function (fecha) {
                             return fecha.getDay() === 1;
                         }]
@@ -198,12 +254,22 @@ Editar pedido semanal
                     if (!input || !window.flatpickr) {
                         return;
                     }
-                    flatpickr(input, {
+                    if (input._flatpickr) {
+                        entregaPickers.push(input._flatpickr);
+                        applyRangeToPicker(input._flatpickr);
+                        return;
+                    }
+                    const picker = flatpickr(input, {
                         dateFormat: "Y-m-d",
                         allowInput: false,
                         disableMobile: true,
-                        locale: "es"
+                        locale: "es",
+                        onOpen: function (selectedDates, dateStr, instance) {
+                            applyRangeToPicker(instance);
+                        }
                     });
+                    entregaPickers.push(picker);
+                    applyRangeToPicker(picker);
                 };
 
                 const updateTotal = () => {
@@ -246,10 +312,14 @@ Editar pedido semanal
                 });
 
                 container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
-                container.querySelectorAll('.js-fecha-entrega').forEach(initEntregaDatepicker);
                 if (proveedorSelect) {
                     proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
                     syncPresentacionConProveedor();
+                }
+                if (semanaInput) {
+                    semanaInput.addEventListener('change', () => {
+                        entregaPickers.forEach(applyRangeToPicker);
+                    });
                 }
                 updateTotal();
             })();

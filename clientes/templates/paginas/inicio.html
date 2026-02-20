@@ -124,6 +124,30 @@ Inicio
         </div>
     </div>
 
+    <div class="row">
+        <div class="col-12">
+            <div class="card shadow mb-4">
+                <div class="card-header dashboard-card-header">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        Materia prima vs creado por comerciales {{ chart_year }} (kg)
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="chart-area">
+                        {{ chart_materia_prima_data|json_script:"chart-materia-prima-data" }}
+                        {{ chart_comerciales_data|json_script:"chart-comerciales-data" }}
+                        {{ chart_balance_data|json_script:"chart-balance-data" }}
+                        <canvas id="mpVsComercialesChart"></canvas>
+                    </div>
+                    <p class="small text-muted mb-0">
+                        El balance se calcula como <strong>materia prima - pedidos creados por comerciales</strong>.
+                        Si es negativo, se marca en rojo.
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES Y CONFIRMADOS</h1>
 
     {% for tabla in tablas_ciudades %}
@@ -342,6 +366,68 @@ Inicio
                 interaction: { mode: "index", intersect: false },
                 scales: {
                     y: { beginAtZero: true }
+                }
+            }
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const labels = JSON.parse(document.getElementById("chart-labels").textContent);
+        const materiaPrima = JSON.parse(document.getElementById("chart-materia-prima-data").textContent);
+        const comerciales = JSON.parse(document.getElementById("chart-comerciales-data").textContent);
+        const balance = JSON.parse(document.getElementById("chart-balance-data").textContent);
+        const chartCanvas = document.getElementById("mpVsComercialesChart");
+        if (!chartCanvas) {
+            return;
+        }
+
+        const cssVars = getComputedStyle(document.documentElement);
+        const mpColor = cssVars.getPropertyValue("--dashboard-primary").trim() || "#2563eb";
+        const comercialColor = cssVars.getPropertyValue("--dashboard-warning").trim() || "#f59e0b";
+        const balancePositive = "rgba(16, 185, 129, 0.65)";
+        const balanceNegative = "rgba(239, 68, 68, 0.65)";
+        const balanceColors = balance.map((valor) => (valor < 0 ? balanceNegative : balancePositive));
+
+        new Chart(chartCanvas.getContext("2d"), {
+            data: {
+                labels: labels,
+                datasets: [
+                    {
+                        type: "line",
+                        label: "Materia prima (kg)",
+                        data: materiaPrima,
+                        borderColor: mpColor,
+                        backgroundColor: "rgba(37, 99, 235, 0.12)",
+                        fill: false,
+                        tension: 0.3
+                    },
+                    {
+                        type: "line",
+                        label: "Creado por comerciales (kg)",
+                        data: comerciales,
+                        borderColor: comercialColor,
+                        backgroundColor: "rgba(245, 158, 11, 0.12)",
+                        fill: false,
+                        tension: 0.3
+                    },
+                    {
+                        type: "bar",
+                        label: "Balance (kg)",
+                        data: balance,
+                        backgroundColor: balanceColors,
+                        borderColor: balanceColors,
+                        borderWidth: 1
+                    }
+                ]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: "index", intersect: false },
+                scales: {
+                    y: {
+                        beginAtZero: false
+                    }
                 }
             }
         });
