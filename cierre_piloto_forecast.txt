@@ -1,0 +1,94 @@
+﻿DOCUMENTO CONSOLIDADO DE CIERRE DE PILOTO - SOFTWARE FORECAST
+
+Fecha de elaboracion: 2026-02-18
+Periodo de piloto documentado: 2026-02-09 a 2026-02-17
+Fuentes usadas para este consolidado:
+- Historial de commits del repositorio (rama main).
+- Estado actual del codigo en modulos forecast/clientes.
+- Snapshot de datos en db.sqlite3 (consultado el 2026-02-18).
+
+1) OBJETIVO DEL PILOTO
+Validar en un entorno controlado el funcionamiento integral del software de forecast para la gestion de pedidos, desde la creacion hasta el cierre operativo, verificando:
+- Registro y edicion de pedidos por semana.
+- Programacion de entregas.
+- Control por ciudad, tipo de producto y presentacion.
+- Flujo de estados del pedido por rol.
+- Visualizacion de resumenes e historial para seguimiento.
+
+2) ALCANCE EVALUADO
+Durante el piloto se evaluaron los siguientes componentes:
+- Autenticacion y acceso por roles (admin, comercial, logistica, produccion/programador).
+- Gestion de proveedores (altas, edicion, activacion, filtros por ciudad).
+- Gestion de pedidos:
+  creacion, edicion, cambio de estado, historial, registro de cambios.
+- Calendario de entregas multiples y validaciones de cantidades.
+- Dashboard de inicio y resumen semanal por ciudad/tipo/comercial.
+- Modulo de notificaciones y limpieza de notificaciones.
+
+Datos generados en la evidencia actual (db.sqlite3):
+- Usuarios: 6
+- Perfiles: 6
+- Proveedores: 1 (1 activo)
+- Pedidos: 4
+- Entregas: 8
+- Notificaciones: 30
+- Registros de cambio de estado: 5
+- Estados de pedidos presentes: PENDIENTE, CONFIRMADO, ENTREGADO, CANCELADO
+- Ciudad con pedidos en muestra actual: BOGOTA
+
+3) AJUSTES REALIZADOS DURANTE LA PRUEBA
+Principales ajustes implementados en el periodo de piloto:
+- 2026-02-09:
+  login y acceso a proveedores por rol.
+- 2026-02-10:
+  filtros y totales de pedidos pendientes, mejoras de UI en login,
+  calendario para multiples entregas, validacion de entregas,
+  refactor de vistas y limpieza de plantillas.
+- 2026-02-11:
+  incorporacion de ciudad y presentacion en proveedores/pedidos,
+  calendario en espanol y mejoras de resumenes.
+- 2026-02-16:
+  correccion del resumen semanal por entregas,
+  mejora de dashboard, historial y gestion de perfil.
+- 2026-02-17:
+  mejoras en notificaciones, filtros y busquedas,
+  ajuste del flujo de pedidos/historial/resumen,
+  filtro por ciudad en listados de pedidos y proveedores.
+
+4) ERRORES DETECTADOS Y COMO FUERON SOLUCIONADOS
+Durante el piloto se identificaron y atendieron los siguientes puntos:
+- Inconsistencia en resumen semanal por entregas.
+  Solucion: se corrigio la logica de agregacion para tomar entregas reales y contemplar pedidos sin entregas programadas.
+- Riesgo de inconsistencia entre cantidad total semanal y suma de entregas.
+  Solucion: validaciones en creacion/edicion que bloquean guardado cuando no coincide la suma.
+- Casos de pedido con proveedor invalido/inactivo o comercial sin ciudad asignada.
+  Solucion: validaciones explicitas y filtrado de proveedores disponibles por ciudad del usuario comercial.
+- Cambios de estado sin trazabilidad suficiente.
+  Solucion: registro de transiciones en RegistroEstadoPedido, incluyendo descripcion para estados criticos (entregado/devuelto).
+- Notificaciones excesivas en interfaz.
+  Solucion: limitacion de notificaciones por usuario y limpieza controlada.
+
+5) MEJORAS IDENTIFICADAS
+Mejoras recomendadas para la siguiente fase:
+- Implementar pruebas automatizadas (actualmente no hay cobertura en clientes/tests.py).
+- Endurecer configuracion de seguridad para entorno productivo:
+  desactivar DEBUG, mover credenciales y SECRET_KEY a variables de entorno.
+- Migrar base de datos operativa de SQLite a PostgreSQL para mayor concurrencia y trazabilidad.
+- Definir indicadores formales de desempeno del proceso (SLA de entrega, tasa de devolucion, tiempo de ciclo por estado).
+- Incorporar bitacora operacional y monitoreo tecnico (errores, tiempos de respuesta, eventos criticos).
+
+6) RIESGOS O PENDIENTES PARA LA SIGUIENTE FASE
+Riesgos/puntos pendientes identificados:
+- Seguridad:
+  existen credenciales sensibles en configuracion y DEBUG activo.
+- Escalabilidad:
+  SQLite limita crecimiento y concurrencia multiusuario.
+- Calidad:
+  ausencia de suite de pruebas aumenta riesgo de regresiones.
+- Cobertura operativa:
+  muestra actual de datos de piloto es reducida (4 pedidos), se requiere validar con mayor volumen.
+- Gobierno de datos:
+  falta formalizar politica de respaldo, recuperacion y auditoria de cambios.
+
+CIERRE DE PILOTO
+Con base en la evidencia de cambios y validaciones realizadas entre el 2026-02-09 y el 2026-02-17, el piloto se considera funcional para continuar a una siguiente fase controlada, condicionada al cierre de los pendientes de seguridad, pruebas y base de datos productiva.
