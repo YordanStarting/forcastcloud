@@ -88,9 +88,15 @@ class Notificacion(models.Model):
         ],
         default='INFO',
     )
-    reproducir_sonido = models.BooleanField(default=False)
-    leida = models.BooleanField(default=False)
-    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    reproducir_sonido = models.BooleanField(default=False, db_index=True)
+    leida = models.BooleanField(default=False, db_index=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['usuario', 'leida', 'fecha_creacion']),
+            models.Index(fields=['usuario', 'reproducir_sonido', 'fecha_creacion']),
+        ]
     
     def __str__(self):
         if self.usuario:
@@ -110,39 +116,49 @@ class Pedido(models.Model):
     
     proveedor = models.ForeignKey(Proveedor, on_delete=models.CASCADE)
     comercial = models.ForeignKey(User, on_delete=models.PROTECT)
-    ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA')
+    ciudad = models.CharField(max_length=20, choices=CIUDAD_CHOICES, default='BOGOTA', db_index=True)
     
-    tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES)
-    presentacion = models.CharField(max_length=20, choices=PRESENTACION_CHOICES)
+    tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES, db_index=True)
+    presentacion = models.CharField(max_length=20, choices=PRESENTACION_CHOICES, db_index=True)
     
     # CAMPOS QUE USAS EN LAS VISTAS:
     cantidad = models.IntegerField(default=0)
-    fecha_entrega = models.DateField(null=True, blank=True)
+    fecha_entrega = models.DateField(null=True, blank=True, db_index=True)
     
     # Campos adicionales (si los necesitas):
     cantidad_total = models.IntegerField(default=0)
     semana = models.DateField(
         help_text="Lunes de la semana", 
         null=True, 
-        blank=True
+        blank=True,
+        db_index=True,
     )
     
     estado = models.CharField(
         max_length=20,
         choices=ESTADO_CHOICES,
-        default='PENDIENTE'
+        default='PENDIENTE',
+        db_index=True,
     )
     
-    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True, db_index=True)
     observaciones = models.TextField(blank=True, null=True)
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['estado', 'fecha_creacion']),
+            models.Index(fields=['semana', 'estado']),
+            models.Index(fields=['ciudad', 'estado']),
+            models.Index(fields=['semana', 'presentacion', 'tipo_huevo']),
+        ]
     
     def __str__(self):
         return f"Pedido #{self.id} - {self.proveedor.nombre}"
 
 
 class MateriaPrima(models.Model):
-    fecha = models.DateField(default=date.today)
-    tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES)
+    fecha = models.DateField(default=date.today, db_index=True)
+    tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES, db_index=True)
     cantidad_kg = models.IntegerField()
     observaciones = models.TextField(blank=True, null=True)
     creado_por = models.ForeignKey(
@@ -156,6 +172,9 @@ class MateriaPrima(models.Model):
 
     class Meta:
         ordering = ['-fecha', '-id']
+        indexes = [
+            models.Index(fields=['fecha', 'tipo_huevo']),
+        ]
 
     def __str__(self):
         return f"{self.get_tipo_huevo_display()} - {self.cantidad_kg} kg ({self.fecha})"
@@ -168,7 +187,7 @@ class EntregaPedido(models.Model):
         on_delete=models.CASCADE
     )
     
-    fecha_entrega = models.DateField()
+    fecha_entrega = models.DateField(db_index=True)
     cantidad = models.IntegerField()
     
     estado = models.CharField(
@@ -177,8 +196,15 @@ class EntregaPedido(models.Model):
             ('PENDIENTE', 'Pendiente'),
             ('ENTREGADO', 'Entregado'),
         ],
-        default='PENDIENTE'
+        default='PENDIENTE',
+        db_index=True,
     )
+
+    class Meta:
+        indexes = [
+            models.Index(fields=['pedido', 'fecha_entrega']),
+            models.Index(fields=['estado', 'fecha_entrega']),
+        ]
     
     def __str__(self):
         return f"Entrega para Pedido #{self.pedido.id} - {self.fecha_entrega}"
@@ -202,13 +228,18 @@ class RegistroEstadoPedido(models.Model):
     )
     estado_nuevo = models.CharField(
         max_length=20,
-        choices=Pedido.ESTADO_CHOICES
+        choices=Pedido.ESTADO_CHOICES,
+        db_index=True,
     )
     descripcion = models.TextField(blank=True, null=True)
-    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_creacion = models.DateTimeField(auto_now_add=True, db_index=True)
 
     class Meta:
         ordering = ['-fecha_creacion']
+        indexes = [
+            models.Index(fields=['estado_nuevo', 'fecha_creacion']),
+            models.Index(fields=['pedido', 'fecha_creacion']),
+        ]
 
     def __str__(self):
         return (

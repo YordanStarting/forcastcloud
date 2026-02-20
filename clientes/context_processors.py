@@ -2,6 +2,9 @@ from django.templatetags.static import static
 
 from .models import Notificacion, PerfilUsuario
 
+PERFIL_CACHE_ATTR = '_perfil_usuario_cache'
+PERFIL_CACHE_LOADED_ATTR = '_perfil_usuario_cache_loaded'
+
 
 def notificaciones(request):
     user_role = None
@@ -29,7 +32,18 @@ def notificaciones(request):
         can_manage_pedidos = True
         can_change_pedido_status = True
 
-    perfil = PerfilUsuario.objects.filter(usuario=request.user).first()
+    if getattr(request.user, PERFIL_CACHE_LOADED_ATTR, False):
+        perfil = getattr(request.user, PERFIL_CACHE_ATTR, None)
+    else:
+        perfil = (
+            PerfilUsuario.objects
+            .only('rol', 'foto_perfil')
+            .filter(usuario_id=request.user.id)
+            .first()
+        )
+        setattr(request.user, PERFIL_CACHE_ATTR, perfil)
+        setattr(request.user, PERFIL_CACHE_LOADED_ATTR, True)
+
     if perfil:
         user_role = perfil.rol
         can_manage_proveedores = can_manage_proveedores or perfil.rol in {'admin', 'comercial'}
@@ -42,10 +56,12 @@ def notificaciones(request):
         if perfil.foto_perfil:
             user_profile_image = perfil.foto_perfil.url
 
-    unread_notifications_qs = Notificacion.objects.filter(
-        usuario=request.user,
-        leida=False
-    ).order_by('-fecha_creacion')[:5]
+    unread_notifications_qs = (
+        Notificacion.objects
+        .only('mensaje', 'fecha_creacion')
+        .filter(usuario=request.user, leida=False)
+        .order_by('-fecha_creacion')[:5]
+    )
     unread_notifications = list(unread_notifications_qs)
 
     return {

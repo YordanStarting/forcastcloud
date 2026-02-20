@@ -24,8 +24,8 @@ from .forms import (
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import F, Prefetch, Sum, Case, When, IntegerField
-from django.db.models.functions import ExtractMonth, ExtractIsoWeekDay, Coalesce
+from django.db.models import Prefetch, Sum, Case, When, IntegerField
+from django.db.models.functions import ExtractMonth
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, update_session_auth_hash
@@ -48,6 +48,27 @@ ROL_ESTADOS_PERMITIDOS = {
     'programador': {'EN_PRODUCCION', 'DEVUELTO'},
     'logistica': {'DESPACHADO', 'ENTREGADO', 'DEVUELTO'},
 }
+
+PERFIL_CACHE_ATTR = '_perfil_usuario_cache'
+PERFIL_CACHE_LOADED_ATTR = '_perfil_usuario_cache_loaded'
+
+
+def _obtener_perfil_usuario(user):
+    if not user.is_authenticated:
+        return None
+
+    if getattr(user, PERFIL_CACHE_LOADED_ATTR, False):
+        return getattr(user, PERFIL_CACHE_ATTR, None)
+
+    perfil = (
+        PerfilUsuario.objects
+        .only('rol', 'ciudad', 'foto_perfil')
+        .filter(usuario_id=user.id)
+        .first()
+    )
+    setattr(user, PERFIL_CACHE_ATTR, perfil)
+    setattr(user, PERFIL_CACHE_LOADED_ATTR, True)
+    return perfil
 
 
 def _estado_pedido_label(estado):
@@ -284,12 +305,13 @@ def _build_pedido_form_context(
 
 
 def _obtener_rol_usuario(user):
-    if not user.is_authenticated:
-        return None
-    perfil = PerfilUsuario.objects.filter(usuario=user).first()
-    if perfil:
-        return perfil.rol
-    return None
+    perfil = _obtener_perfil_usuario(user)
+    return perfil.rol if perfil else None
+
+
+def _obtener_ciudad_usuario(user):
+    perfil = _obtener_perfil_usuario(user)
+    return perfil.ciudad if perfil else None
 
 
 def _obtener_ciudad_usuario_id(usuario_id):
@@ -303,7 +325,7 @@ def _obtener_ciudad_usuario_id(usuario_id):
 
 
 def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
-    proveedores = Proveedor.objects.all()
+    proveedores = Proveedor.objects.only('id', 'nombre', 'ciudad', 'presentacion', 'activo')
     if solo_activos:
         proveedores = proveedores.filter(activo=True)
 
@@ -311,7 +333,7 @@ def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
         return proveedores
 
     if _obtener_rol_usuario(user) == 'comercial':
-        ciudad_usuario = _obtener_ciudad_usuario_id(user.id)
+        ciudad_usuario = _obtener_ciudad_usuario(user)
         if not ciudad_usuario:
             return proveedores.none()
         return proveedores.filter(ciudad=ciudad_usuario)
@@ -475,26 +497,32 @@ def mi_perfil(request):
 
 @login_required
 def inicio(request):
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related('entregas')
+    anio_actual = date.today().year
+    pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
-    ultimos_pedidos = (
+    ultimos_pedidos = list(
         pedidos_qs
-        .select_related('proveedor')
         .filter(estado='PENDIENTE')
         .order_by('-fecha_creacion')[:3]
     )
-
-    pedidos = (
-        pedidos_qs
+    pedidos_activos_qs = pedidos_qs.filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
+    pedidos = list(
+        pedidos_activos_qs
         .select_related('proveedor')
-        .filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
+        .prefetch_related('entregas')
         .order_by('semana', 'fecha_entrega')
     )
-    pedidos_activos = pedidos_qs.filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
 
-    pedidos_pendientes = pedidos.filter(estado='PENDIENTE').count()
-    pedidos_confirmados = pedidos.filter(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD).count()
-    proveedores = Proveedor.objects.filter(activo=True)
+    pedidos_por_ciudad = {value: [] for value, _ in CIUDAD_CHOICES}
+    pedidos_pendientes = 0
+    pedidos_confirmados = 0
+    for pedido in pedidos:
+        if pedido.ciudad in pedidos_por_ciudad:
+            pedidos_por_ciudad[pedido.ciudad].append(pedido)
+        if pedido.estado == 'PENDIENTE':
+            pedidos_pendientes += 1
+        elif pedido.estado in PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD:
+            pedidos_confirmados += 1
 
     meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
                     'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
@@ -508,7 +536,7 @@ def inicio(request):
         pedidos_qs
         .filter(
             estado__in=PEDIDO_ESTADOS_DASHBOARD,
-            fecha_creacion__year=date.today().year,
+            fecha_creacion__year=anio_actual,
         )
         .annotate(mes=ExtractMonth('fecha_creacion'))
         .values('mes', 'estado')
@@ -529,7 +557,7 @@ def inicio(request):
 
     resumen_materia_prima = (
         MateriaPrima.objects
-        .filter(fecha__year=date.today().year)
+        .filter(fecha__year=anio_actual)
         .annotate(mes=ExtractMonth('fecha'))
         .values('mes')
         .annotate(total=Sum('cantidad_kg'))
@@ -543,7 +571,7 @@ def inicio(request):
     resumen_creado_comerciales = (
         pedidos_qs
         .filter(
-            fecha_creacion__year=date.today().year,
+            fecha_creacion__year=anio_actual,
             comercial__perfilusuario__rol='comercial',
         )
         .annotate(mes=ExtractMonth('fecha_creacion'))
@@ -563,7 +591,7 @@ def inicio(request):
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
     resumen_ciudad = (
-        pedidos_activos
+        pedidos_activos_qs
         .values('ciudad')
         .annotate(total=Sum(_cantidad_pedido_expr()))
     )
@@ -577,7 +605,7 @@ def inicio(request):
     total_toneladas = round(sum(ciudad_totales.values()) / 1000, 2)
 
     totales_comerciales = (
-        pedidos
+        pedidos_activos_qs
         .values(
             'ciudad',
             'comercial_id',
@@ -611,7 +639,7 @@ def inicio(request):
         {
             'codigo': value,
             'nombre': label,
-            'pedidos': pedidos.filter(ciudad=value),
+            'pedidos': pedidos_por_ciudad.get(value, []),
             'totales': totales_por_ciudad.get(value, []),
             'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
         }
@@ -630,11 +658,10 @@ def inicio(request):
         'chart_materia_prima_data': chart_materia_prima_data,
         'chart_comerciales_data': chart_comerciales_data,
         'chart_balance_data': chart_balance_data,
-        'chart_year': date.today().year,
+        'chart_year': anio_actual,
         'city_labels': city_labels,
         'city_data': city_data,
         'total_toneladas': total_toneladas,
-        'proveedores': proveedores,
         **filtros
     })
 
@@ -1199,7 +1226,7 @@ def usuario_eliminar(request, id):
 def crear_pedido(request):
 
     proveedores = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
-    comerciales = User.objects.filter(id=request.user.id)
+    comerciales = [request.user]
 
     if request.method == 'POST':
         entregas_form = _obtener_entregas_form_desde_request(request)
@@ -1247,7 +1274,7 @@ def crear_pedido(request):
             return render(request, 'pedidos/crear_pedido.html', context)
 
         comercial_id = request.user.id
-        ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
+        ciudad_comercial = _obtener_ciudad_usuario(request.user)
         if not ciudad_comercial:
             context = _build_pedido_form_context(
                 proveedores,
@@ -1295,12 +1322,15 @@ def crear_pedido(request):
             observaciones=request.POST.get('observaciones'),
         )
 
-        for fecha, cantidad in entregas:
-            EntregaPedido.objects.create(
-                pedido=pedido,
-                fecha_entrega=fecha,
-                cantidad=cantidad
-            )
+        if entregas:
+            EntregaPedido.objects.bulk_create([
+                EntregaPedido(
+                    pedido=pedido,
+                    fecha_entrega=fecha,
+                    cantidad=cantidad,
+                )
+                for fecha, cantidad in entregas
+            ], batch_size=100)
 
         _registrar_evento_creacion_pedido(pedido, request.user)
 
@@ -1392,8 +1422,8 @@ def editarpedido(request, id):
     if pedido.estado in PEDIDO_ESTADOS_HISTORIAL and not _usuario_es_admin(request.user):
         return HttpResponseForbidden("Solo un administrador puede editar pedidos del historial.")
 
-    proveedores = Proveedor.objects.filter(activo=True)
-    comerciales = User.objects.all()
+    proveedores = Proveedor.objects.only('id', 'nombre', 'presentacion', 'activo').filter(activo=True)
+    comerciales = User.objects.only('id', 'username', 'first_name', 'last_name').all()
     estados_permitidos = _estados_permitidos_para_usuario(request.user)
     estado_choices = [
         (value, label)
@@ -1477,7 +1507,11 @@ def editarpedido(request, id):
             )
             return render(request, 'pedidos/editar_pedido.html', context)
 
-        proveedor = _obtener_proveedor_desde_request(request, solo_activos=True)
+        proveedor = _obtener_proveedor_desde_request(
+            request,
+            solo_activos=True,
+            proveedores_queryset=proveedores,
+        )
         if not proveedor:
             context = _build_pedido_form_context(
                 proveedores,
@@ -1558,12 +1592,15 @@ def editarpedido(request, id):
         )
 
         pedido.entregas.all().delete()
-        for fecha, cantidad in entregas:
-            EntregaPedido.objects.create(
-                pedido=pedido,
-                fecha_entrega=fecha,
-                cantidad=cantidad
-            )
+        if entregas:
+            EntregaPedido.objects.bulk_create([
+                EntregaPedido(
+                    pedido=pedido,
+                    fecha_entrega=fecha,
+                    cantidad=cantidad,
+                )
+                for fecha, cantidad in entregas
+            ], batch_size=100)
 
         return redirect('inicio')
 
@@ -1595,7 +1632,7 @@ def editartablas(request):
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
 
-    proveedores = Proveedor.objects.filter(activo=True)
+    proveedores = Proveedor.objects.only('id', 'nombre', 'activo').filter(activo=True)
     estados_activos_choices = [
         (value, label)
         for value, label in PEDIDO_ESTADO_CHOICES
@@ -1690,7 +1727,7 @@ def historial(request):
             else ''
         )
 
-    proveedores = Proveedor.objects.filter(activo=True)
+    proveedores = Proveedor.objects.only('id', 'nombre', 'activo').filter(activo=True)
     estados_historial_choices = [
         (value, label)
         for value, label in PEDIDO_ESTADO_CHOICES
@@ -1947,7 +1984,7 @@ def crear_pedido_semanal(request):
             fecha_principal = max(fecha for fecha, _ in entregas)
 
         comercial_id = request.user.id
-        ciudad_comercial = _obtener_ciudad_usuario_id(comercial_id)
+        ciudad_comercial = _obtener_ciudad_usuario(request.user)
         if not ciudad_comercial:
             return redirect('inicio')
         semana_ajustada = _ajustar_a_lunes(request.POST.get('semana'))
@@ -1972,13 +2009,18 @@ def crear_pedido_semanal(request):
             cantidad_total=cantidad_total_int,
             semana=semana_ajustada,
         )
-        for fecha, cantidad in entregas:
-            EntregaPedido.objects.create(
-                pedido=pedido,
-                fecha_entrega=fecha,
-                cantidad=cantidad
-            )
+        if entregas:
+            EntregaPedido.objects.bulk_create([
+                EntregaPedido(
+                    pedido=pedido,
+                    fecha_entrega=fecha,
+                    cantidad=cantidad,
+                )
+                for fecha, cantidad in entregas
+            ], batch_size=100)
         _registrar_evento_creacion_pedido(pedido, request.user)
 
         return redirect('inicio')
+
+    return redirect('inicio')
 
