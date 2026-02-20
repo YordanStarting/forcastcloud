@@ -69,6 +69,11 @@ class UsuarioCrearForm(UsuarioBaseForm):
         password2 = cleaned_data.get('password2')
         if password1 and password2 and password1 != password2:
             self.add_error('password2', 'Las contrasenas no coinciden.')
+        if password1:
+            try:
+                validate_password(password1)
+            except ValidationError as e:
+                self.add_error('password1', e)
         return cleaned_data
 
     def save(self, commit=True):

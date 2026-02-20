@@ -7,6 +7,10 @@ Editar Pedido
 
 {% endblock %}
 
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+{% endblock %}
+
 {% block contenido %}
 <div class="container-fluid">
 
@@ -75,11 +79,12 @@ Editar Pedido
                 <label class="mb-1">Fecha creacion</label>
                 <input type="date" class="form-control" name="fecha_creacion" value="{{ fecha_creacion|default:'' }}">
             </div>
-            <div class="col-12 col-md-1 mb-2">
-                <label class="mb-1">Semana</label>
-                <input type="date" class="form-control" name="semana" value="{{ semana|default:'' }}">
+            <div class="col-12 col-md-2 mb-2">
+                <label class="mb-1">Semana (lunes)</label>
+                <input type="text" class="form-control js-semana-lunes" name="semana"
+                    value="{{ semana|default:'' }}" autocomplete="off">
             </div>
-            <div class="col-12 col-md-1 mb-2">
+            <div class="col-12 col-md-2 mb-2">
                 <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
                 <a class="btn btn-link btn-block p-0 mt-2" href="{% url 'editartablas' %}">Limpiar</a>
             </div>
@@ -223,6 +228,26 @@ Editar Pedido
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script>
+    (function () {
+        const semanaInput = document.querySelector('.js-semana-lunes');
+        if (!semanaInput || !window.flatpickr) {
+            return;
+        }
+        flatpickr(semanaInput, {
+            dateFormat: "Y-m-d",
+            allowInput: false,
+            disableMobile: true,
+            locale: "es",
+            enable: [function (fecha) {
+                return fecha.getDay() === 1;
+            }]
+        });
+    })();
+</script>
 
 {% endblock %}
 

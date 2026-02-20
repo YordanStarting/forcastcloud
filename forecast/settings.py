@@ -21,10 +21,14 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 # See https://docs.djangoproject.com/en/6.0/howto/deployment/checklist/
 
 # SECURITY WARNING: keep the secret key used in production secret!
-SECRET_KEY = 'django-insecure-nxn2vfnver=%tn_fqk&(&@9ow8!vvh-&g0%3c9l6(e@$m$9$)m'
+# En producción usar variable de entorno DJANGO_SECRET_KEY.
+SECRET_KEY = os.environ.get(
+    'DJANGO_SECRET_KEY',
+    'django-insecure-nxn2vfnver=%tn_fqk&(&@9ow8!vvh-&g0%3c9l6(e@$m$9$)m'
+)
 
 # SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+DEBUG = os.environ.get('DJANGO_DEBUG', 'True').lower() in ('true', '1', 'yes')
 
 ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'YordanStarting.pythonanywhere.com']
 
@@ -81,15 +85,15 @@ DATABASES = {
     }
 }
 
-# Configuración PostgreSQL (comentada)
+# Configuración PostgreSQL (comentada). Usar variables de entorno para PASSWORD.
 # DATABASES = {
 #     'default': {
 #         'ENGINE': 'django.db.backends.postgresql',
-#         'NAME': 'forecastcloud',
-#         'USER': 'postgres',
-#         'PASSWORD': '1234',
-#         'HOST': '127.0.0.1',
-#         'PORT': '5432',
+#         'NAME': os.environ.get('DB_NAME', 'forecastcloud'),
+#         'USER': os.environ.get('DB_USER', 'postgres'),
+#         'PASSWORD': os.environ.get('DB_PASSWORD'),
+#         'HOST': os.environ.get('DB_HOST', '127.0.0.1'),
+#         'PORT': os.environ.get('DB_PORT', '5432'),
 #     }
 # }
 
@@ -133,17 +137,18 @@ USE_I18N = True
 USE_TZ = True
 
 
-MEDIA_ROOT = os.path.join(BASE_DIR, '')
+# Archivos subidos: usar subdirectorio dedicado (no la raíz del proyecto)
+MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 MEDIA_URL = '/Imagenes/'
 
 EMAIL_BACKEND = 'django.core.mail.backends.smtp.EmailBackend'
-EMAIL_HOST = 'smtp.gmail.com'
-EMAIL_PORT = 587
+EMAIL_HOST = os.environ.get('EMAIL_HOST', 'smtp.gmail.com')
+EMAIL_PORT = int(os.environ.get('EMAIL_PORT', '587'))
 EMAIL_USE_TLS = True
-
-EMAIL_HOST_USER = 'certificadosovopacific@gmail.com'
-EMAIL_HOST_PASSWORD = 'mhvv cjtm zxup pnpa'
-DEFAULT_FROM_EMAIL = 'Sistema de Pedidos <certificadosovopacific@gmail.com>'
+# En producción definir EMAIL_HOST_USER y EMAIL_HOST_PASSWORD en variables de entorno
+EMAIL_HOST_USER = os.environ.get('EMAIL_HOST_USER', 'certificadosovopacific@gmail.com')
+EMAIL_HOST_PASSWORD = os.environ.get('EMAIL_HOST_PASSWORD', '')
+DEFAULT_FROM_EMAIL = os.environ.get('DEFAULT_FROM_EMAIL', 'Sistema de Pedidos <certificadosovopacific@gmail.com>')
 
 LOGIN_URL = 'login'
 LOGIN_REDIRECT_URL = 'inicio'

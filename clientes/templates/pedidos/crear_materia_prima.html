@@ -1,0 +1,102 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Agregar materia prima
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <h1 class="h3 mb-2 text-gray-800">AGREGAR MATERIA PRIMA</h1>
+
+    {% if error_message %}
+    <div class="alert alert-danger">{{ error_message }}</div>
+    {% endif %}
+    {% if success_message %}
+    <div class="alert alert-success">{{ success_message }}</div>
+    {% endif %}
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">REGISTRO</h6>
+        </div>
+        <div class="card-body">
+            <form method="post">
+                {% csrf_token %}
+                <div class="form-row">
+                    <div class="form-group col-md-3">
+                        <label>Fecha</label>
+                        <input type="date" name="fecha" class="form-control" required value="{{ form_data.fecha }}">
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>Tipo de huevo</label>
+                        <select name="tipo_huevo" class="form-control" required>
+                            {% for value, label in TIPO_HUEVO_CHOICES %}
+                            <option value="{{ value }}" {% if form_data.tipo_huevo == value %}selected{% endif %}>
+                                {{ label }}
+                            </option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group col-md-3">
+                        <label>Cantidad (kg)</label>
+                        <input type="number" name="cantidad_kg" class="form-control" required value="{{ form_data.cantidad_kg }}">
+                        <small class="form-text text-muted">Puedes usar negativos para ajustes.</small>
+                    </div>
+                    <div class="form-group col-md-3 d-flex align-items-end">
+                        <button type="submit" class="btn btn-primary btn-block">Guardar</button>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label>Observaciones</label>
+                    <textarea name="observaciones" class="form-control" rows="2">{{ form_data.observaciones }}</textarea>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">ULTIMOS REGISTROS</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>FECHA</th>
+                            <th>TIPO DE HUEVO</th>
+                            <th>CANTIDAD (KG)</th>
+                            <th>USUARIO</th>
+                            <th>OBSERVACIONES</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for item in ultimos_registros %}
+                        <tr>
+                            <td data-label="Fecha">{{ item.fecha|date:"d/m/Y" }}</td>
+                            <td data-label="Tipo de huevo">{{ item.get_tipo_huevo_display }}</td>
+                            <td data-label="Cantidad (kg)" class="{% if item.cantidad_kg < 0 %}text-danger font-weight-bold{% endif %}">
+                                {{ item.cantidad_kg }}
+                            </td>
+                            <td data-label="Usuario">
+                                {% if item.creado_por %}
+                                {{ item.creado_por.username }}
+                                {% else %}
+                                -
+                                {% endif %}
+                            </td>
+                            <td data-label="Observaciones">{{ item.observaciones|default:"-" }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="5" class="text-center text-muted">Sin registros de materia prima.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+

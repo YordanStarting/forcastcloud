@@ -1,5 +1,6 @@
 from django.db import models
 from django.contrib.auth.models import User
+from datetime import date
 
 TIPO_HUEVO_CHOICES = [
     ('HELU', 'Huevo Líquido Entero'),
@@ -137,6 +138,28 @@ class Pedido(models.Model):
     
     def __str__(self):
         return f"Pedido #{self.id} - {self.proveedor.nombre}"
+
+
+class MateriaPrima(models.Model):
+    fecha = models.DateField(default=date.today)
+    tipo_huevo = models.CharField(max_length=10, choices=TIPO_HUEVO_CHOICES)
+    cantidad_kg = models.IntegerField()
+    observaciones = models.TextField(blank=True, null=True)
+    creado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='materias_primas_creadas',
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ['-fecha', '-id']
+
+    def __str__(self):
+        return f"{self.get_tipo_huevo_display()} - {self.cantidad_kg} kg ({self.fecha})"
+
 
 class EntregaPedido(models.Model):
     pedido = models.ForeignKey(
