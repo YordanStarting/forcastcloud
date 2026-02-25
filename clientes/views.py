@@ -38,6 +38,7 @@ PEDIDO_ESTADOS_ACTIVOS = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'DESPACHAD
 PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD = ['CONFIRMADO', 'EN_PRODUCCION']
 PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE'] + PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
+PEDIDO_ESTADOS_RESUMEN = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'ENTREGADO']
 PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
 PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
 ROL_ESTADOS_PERMITIDOS = {
@@ -692,7 +693,10 @@ def resumen_pedidos(request):
 
     semanas_disponibles = list(
         Pedido.objects
-        .filter(semana__isnull=False)
+        .filter(
+            semana__isnull=False,
+            estado__in=PEDIDO_ESTADOS_RESUMEN,
+        )
         .values_list('semana', flat=True)
         .distinct()
         .order_by('-semana')[:52]
@@ -750,7 +754,10 @@ def resumen_pedidos(request):
 
     forecast_rows = (
         Pedido.objects
-        .filter(semana=semana_seleccionada)
+        .filter(
+            semana=semana_seleccionada,
+            estado__in=PEDIDO_ESTADOS_RESUMEN,
+        )
         .values('presentacion', 'tipo_huevo')
         .annotate(total_kg=Sum(cantidad_expr))
     )
@@ -768,6 +775,7 @@ def resumen_pedidos(request):
         EntregaPedido.objects
         .filter(
             pedido__semana=semana_seleccionada,
+            pedido__estado__in=PEDIDO_ESTADOS_RESUMEN,
             fecha_entrega__gte=fecha_inicio_semana,
             fecha_entrega__lte=fecha_fin_semana,
         )
@@ -790,6 +798,7 @@ def resumen_pedidos(request):
         Pedido.objects
         .filter(
             semana=semana_seleccionada,
+            estado__in=PEDIDO_ESTADOS_RESUMEN,
             entregas__isnull=True,
             fecha_entrega__gte=fecha_inicio_semana,
             fecha_entrega__lte=fecha_fin_semana,
@@ -917,6 +926,7 @@ def resumen_pedidos(request):
         EntregaPedido.objects
         .filter(
             pedido__semana=semana_seleccionada,
+            pedido__estado__in=PEDIDO_ESTADOS_RESUMEN,
             fecha_entrega=fecha_dia_seleccionado,
         )
         .values('pedido__proveedor__nombre', 'pedido__presentacion', 'pedido__tipo_huevo')
@@ -934,6 +944,7 @@ def resumen_pedidos(request):
         Pedido.objects
         .filter(
             semana=semana_seleccionada,
+            estado__in=PEDIDO_ESTADOS_RESUMEN,
             entregas__isnull=True,
             fecha_entrega=fecha_dia_seleccionado,
         )
@@ -972,7 +983,10 @@ def resumen_pedidos(request):
         Pedido.objects
         .select_related('proveedor')
         .prefetch_related('entregas')
-        .filter(semana=semana_seleccionada)
+        .filter(
+            semana=semana_seleccionada,
+            estado__in=PEDIDO_ESTADOS_RESUMEN,
+        )
         .order_by('fecha_entrega', 'id')
     )
     resumen_ciudad = (
@@ -1616,7 +1630,7 @@ def editarpedido(request, id):
 
 @login_required
 def eliminarpedido(request, id):
-    if not _usuario_puede_gestionar_pedidos(request.user):
+    if not _usuario_es_admin(request.user):
         return HttpResponseForbidden("No tienes permisos para eliminar pedidos.")
     Pedido.objects.filter(id=id).delete()
     return redirect('inicio')
