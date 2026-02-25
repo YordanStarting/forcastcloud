@@ -1263,6 +1263,18 @@ def crear_pedido(request):
             return render(request, 'pedidos/crear_pedido.html', context)
         form_data = request.POST.copy()
         form_data['semana'] = semana_ajustada.isoformat()
+        estado_creacion_permitidos = {'CONFIRMADO', 'PENDIENTE'}
+        estado_seleccionado = (request.POST.get('estado') or 'CONFIRMADO').strip().upper()
+        if estado_seleccionado not in estado_creacion_permitidos:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=form_data,
+                error_message='Estado invalido. Solo puedes crear pedidos en estado confirmado o pendiente.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/crear_pedido.html', context)
         error_entregas_semana = _validar_entregas_en_semana(entregas, semana_ajustada)
         if error_entregas_semana:
             context = _build_pedido_form_context(
@@ -1334,6 +1346,7 @@ def crear_pedido(request):
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
             semana=semana_ajustada,
+            estado=estado_seleccionado,
             observaciones=request.POST.get('observaciones'),
         )
 
@@ -2092,6 +2105,7 @@ def crear_pedido_semanal(request):
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
             semana=semana_ajustada,
+            estado='CONFIRMADO',
         )
         if entregas:
             EntregaPedido.objects.bulk_create([
