@@ -1,0 +1,373 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Crear pedido (beta)
+{% endblock %}
+
+{% block body_class %}crear-beta-screen{% endblock %}
+
+{% block extra_head %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
+<style>
+    .crear-beta-wrap {
+        padding: 0 0.25rem 1.5rem 0.25rem;
+    }
+
+    .beta-header-card {
+        border: 1px solid #d7e3ff;
+        border-radius: 0.8rem;
+        background: linear-gradient(140deg, #f8fbff 0%, #edf4ff 65%, #fef6e6 100%);
+        margin-bottom: 1rem;
+    }
+
+    .beta-header-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.75rem;
+        align-items: flex-end;
+    }
+
+    .beta-header-title {
+        font-size: 1.1rem;
+        font-weight: 800;
+        color: #1f3c88;
+        margin: 0;
+    }
+
+    .beta-header-sub {
+        margin: 0.2rem 0 0 0;
+        color: #5f6f88;
+    }
+
+    .beta-stat {
+        border: 1px solid #dce6fa;
+        border-radius: 0.7rem;
+        background: #ffffff;
+        padding: 0.65rem 0.8rem;
+        min-width: 180px;
+    }
+
+    .beta-stat-label {
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        color: #4e6485;
+        font-weight: 700;
+        margin-bottom: 0.2rem;
+    }
+
+    .beta-stat-value {
+        font-size: 1.15rem;
+        font-weight: 800;
+        color: #1f3c88;
+        line-height: 1.1;
+    }
+
+    .beta-grid-card {
+        border: 1px solid #d7e3ff;
+        border-radius: 0.8rem;
+        overflow: hidden;
+    }
+
+    .beta-grid-toolbar {
+        padding: 0.85rem 1rem;
+        border-bottom: 1px solid #dfe8f7;
+        background: #f8fbff;
+    }
+
+    .beta-grid-scroll {
+        overflow-x: auto;
+        background: #ffffff;
+    }
+
+    .beta-grid {
+        min-width: 2200px;
+        width: 100%;
+        border-collapse: separate;
+        border-spacing: 0;
+    }
+
+    .beta-grid th,
+    .beta-grid td {
+        border: 1px solid #d8e2f4;
+        padding: 0.35rem;
+        vertical-align: middle;
+        white-space: nowrap;
+    }
+
+    .beta-grid thead tr:first-child th {
+        background: #2f7e31;
+        color: #ffffff;
+        border-color: #2f7e31;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.74rem;
+    }
+
+    .beta-grid thead tr:nth-child(2) th {
+        background: #d16206;
+        color: #ffffff;
+        border-color: #c35b05;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.72rem;
+    }
+
+    .beta-grid thead tr:nth-child(3) th {
+        background: #ef8f2f;
+        color: #ffffff;
+        border-color: #df8021;
+        text-align: center;
+        font-weight: 700;
+        font-size: 0.69rem;
+    }
+
+    .beta-cell-presentacion {
+        background: #f6f8fd;
+        font-weight: 700;
+        color: #1f3c88;
+        min-width: 140px;
+    }
+
+    .beta-cell-proveedor {
+        min-width: 220px;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        font-weight: 600;
+        color: #20334e;
+    }
+
+    .beta-cell-total {
+        background: #fff6e9;
+        color: #8a4300;
+        font-weight: 800;
+        text-align: right;
+        min-width: 90px;
+    }
+
+    .beta-grid input[type="number"] {
+        width: 72px;
+        border: 1px solid #cdd8ec;
+        border-radius: 0.35rem;
+        height: 30px;
+        text-align: right;
+        font-size: 0.83rem;
+        padding-right: 0.4rem;
+    }
+
+    .beta-grid input[type="number"]:focus {
+        outline: none;
+        border-color: #2f7e31;
+        box-shadow: 0 0 0 2px rgba(47, 126, 49, 0.15);
+    }
+
+    .beta-grid .is-forecast {
+        background: #f7fbff;
+    }
+
+    .beta-grid .is-programacion {
+        background: #fff8ef;
+    }
+
+    .beta-empty {
+        padding: 1.25rem;
+        text-align: center;
+        color: #67758d;
+    }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid crear-beta-wrap">
+    <div class="beta-header-card">
+        <div class="card-body">
+            <div class="beta-header-row mb-3">
+                <div class="mr-auto">
+                    <h1 class="beta-header-title">CREAR PEDIDO (BETA)</h1>
+                    <p class="beta-header-sub">Interfaz de captura rapida por proveedor para ingresar cantidades.</p>
+                </div>
+                <div class="beta-stat">
+                    <div class="beta-stat-label">Proveedores visibles</div>
+                    <div class="beta-stat-value">{{ total_proveedores }}</div>
+                </div>
+                <div class="beta-stat">
+                    <div class="beta-stat-label">Total forecast</div>
+                    <div class="beta-stat-value"><span id="js-total-forecast">0</span> kg</div>
+                </div>
+                <div class="beta-stat">
+                    <div class="beta-stat-label">Total programado</div>
+                    <div class="beta-stat-value"><span id="js-total-programado">0</span> kg</div>
+                </div>
+            </div>
+
+            <form method="get" class="form-row align-items-end">
+                <div class="col-12 col-md-3 mb-2">
+                    <label class="mb-1">Sucursal</label>
+                    <select class="form-control" name="ciudad">
+                        {% for value, label in ciudades %}
+                        <option value="{{ value }}" {% if value == ciudad_seleccionada %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-3 mb-2">
+                    <label class="mb-1">Semana (lunes)</label>
+                    <input type="text" class="form-control js-semana-lunes" name="semana" value="{{ semana }}" autocomplete="off">
+                </div>
+                <div class="col-12 col-md-2 mb-2">
+                    <button type="submit" class="btn btn-primary btn-block">Cargar grilla</button>
+                </div>
+                <div class="col-12 col-md-4 mb-2 text-md-right text-muted small">
+                    Semana seleccionada: <strong>{{ semana_label }}</strong>
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <div class="beta-grid-card">
+        <div class="beta-grid-toolbar d-flex flex-wrap align-items-center justify-content-between">
+            <div class="small text-muted mb-2 mb-md-0">
+                Solo interfaz beta. Esta pantalla no guarda pedidos aun.
+            </div>
+            <div>
+                <button type="button" class="btn btn-outline-secondary btn-sm" disabled>Guardar beta (proximamente)</button>
+            </div>
+        </div>
+
+        {% if grupos_presentacion %}
+        <div class="beta-grid-scroll">
+            <table class="beta-grid">
+                <thead>
+                    <tr>
+                        <th rowspan="3">Presentacion</th>
+                        <th rowspan="3">Cliente</th>
+                        <th colspan="{{ tipos_huevo|length }}">Forecast</th>
+                        {% for dia in dias_programacion %}
+                        <th colspan="{{ tipos_huevo|length }}">{{ dia.label }}, {{ dia.fecha|date:"d/m" }}</th>
+                        {% endfor %}
+                        <th rowspan="3">Total fila</th>
+                    </tr>
+                    <tr>
+                        {% for tipo in tipos_huevo %}
+                        <th>{{ tipo.codigo }}</th>
+                        {% endfor %}
+                        {% for dia in dias_programacion %}
+                            {% for tipo in tipos_huevo %}
+                            <th>{{ tipo.codigo }}</th>
+                            {% endfor %}
+                        {% endfor %}
+                    </tr>
+                    <tr>
+                        {% for tipo in tipos_huevo %}
+                        <th>{{ tipo.label }}</th>
+                        {% endfor %}
+                        {% for dia in dias_programacion %}
+                            {% for tipo in tipos_huevo %}
+                            <th>{{ tipo.label }}</th>
+                            {% endfor %}
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for grupo in grupos_presentacion %}
+                        {% for proveedor in grupo.proveedores %}
+                        <tr class="js-beta-row">
+                            {% if forloop.first %}
+                            <td class="beta-cell-presentacion" rowspan="{{ grupo.proveedores|length }}">{{ grupo.presentacion_label }}</td>
+                            {% endif %}
+                            <td class="beta-cell-proveedor">{{ proveedor.nombre }}</td>
+                            {% for tipo in tipos_huevo %}
+                            <td>
+                                <input type="number" min="0" step="1" class="is-forecast js-qty" data-kind="forecast">
+                            </td>
+                            {% endfor %}
+                            {% for dia in dias_programacion %}
+                                {% for tipo in tipos_huevo %}
+                                <td>
+                                    <input type="number" min="0" step="1" class="is-programacion js-qty" data-kind="programacion">
+                                </td>
+                                {% endfor %}
+                            {% endfor %}
+                            <td class="beta-cell-total"><span class="js-row-total">0</span> kg</td>
+                        </tr>
+                        {% endfor %}
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <div class="beta-empty">
+            No hay proveedores activos para la ciudad seleccionada.
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
+<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
+<script>
+    (function () {
+        const semanaInput = document.querySelector('.js-semana-lunes');
+        if (semanaInput && window.flatpickr) {
+            flatpickr(semanaInput, {
+                dateFormat: "Y-m-d",
+                allowInput: false,
+                disableMobile: true,
+                locale: "es",
+                enable: [function (fecha) {
+                    return fecha.getDay() === 1;
+                }]
+            });
+        }
+
+        const inputs = Array.from(document.querySelectorAll('.js-qty'));
+        const rows = Array.from(document.querySelectorAll('.js-beta-row'));
+        const forecastSpan = document.getElementById('js-total-forecast');
+        const programadoSpan = document.getElementById('js-total-programado');
+
+        const toInt = (value) => {
+            const parsed = parseInt(value || '0', 10);
+            if (Number.isNaN(parsed) || parsed < 0) {
+                return 0;
+            }
+            return parsed;
+        };
+
+        const actualizarTotales = () => {
+            let totalForecast = 0;
+            let totalProgramado = 0;
+
+            rows.forEach((row) => {
+                let totalFila = 0;
+                const rowInputs = Array.from(row.querySelectorAll('.js-qty'));
+                rowInputs.forEach((input) => {
+                    const valor = toInt(input.value);
+                    totalFila += valor;
+                    if (input.dataset.kind === 'forecast') {
+                        totalForecast += valor;
+                    } else if (input.dataset.kind === 'programacion') {
+                        totalProgramado += valor;
+                    }
+                });
+                const rowTotalSpan = row.querySelector('.js-row-total');
+                if (rowTotalSpan) {
+                    rowTotalSpan.textContent = totalFila;
+                }
+            });
+
+            if (forecastSpan) {
+                forecastSpan.textContent = totalForecast;
+            }
+            if (programadoSpan) {
+                programadoSpan.textContent = totalProgramado;
+            }
+        };
+
+        inputs.forEach((input) => {
+            input.addEventListener('input', actualizarTotales);
+        });
+
+        actualizarTotales();
+    })();
+</script>
+{% endblock %}

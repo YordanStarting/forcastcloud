@@ -1,3 +1,4 @@
+from collections import OrderedDict
 from datetime import date, timedelta
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse, HttpResponseForbidden
@@ -1353,6 +1354,75 @@ def crear_pedido(request):
     context = _build_pedido_form_context(proveedores, comerciales)
 
     return render(request, 'pedidos/crear_pedido.html', context)
+
+
+@login_required
+def crear_pedido_beta(request):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para crear pedidos.")
+
+    ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
+    perfil = _obtener_perfil_usuario(request.user)
+    ciudad_perfil = getattr(perfil, 'ciudad', None)
+    ciudad_default = ciudad_perfil if ciudad_perfil in ciudad_valores else 'CALI'
+    ciudad_param = (request.GET.get('ciudad') or ciudad_default or 'CALI').upper()
+    ciudad_seleccionada = ciudad_param if ciudad_param in ciudad_valores else ciudad_default
+
+    semana_param = request.GET.get('semana')
+    semana_seleccionada = _ajustar_a_lunes(semana_param) if semana_param else None
+    if not semana_seleccionada:
+        hoy = date.today()
+        semana_seleccionada = hoy - timedelta(days=hoy.weekday())
+
+    dias_base = ['Lunes', 'Martes', 'Miercoles', 'Jueves', 'Viernes', 'Sabado']
+    dias_programacion = [
+        {
+            'key': idx + 1,
+            'label': label,
+            'fecha': semana_seleccionada + timedelta(days=idx),
+        }
+        for idx, label in enumerate(dias_base)
+    ]
+
+    tipos_huevo = [
+        {
+            'codigo': codigo,
+            'label': label,
+        }
+        for codigo, label in TIPO_HUEVO_CHOICES
+    ]
+
+    proveedores = list(
+        Proveedor.objects
+        .only('id', 'nombre', 'presentacion', 'ciudad')
+        .filter(activo=True, ciudad=ciudad_seleccionada)
+        .order_by('presentacion', 'nombre')
+    )
+    presentacion_labels = dict(PRESENTACION_CHOICES)
+    grupos_presentacion = OrderedDict()
+    for proveedor in proveedores:
+        if proveedor.presentacion not in grupos_presentacion:
+            grupos_presentacion[proveedor.presentacion] = {
+                'presentacion_codigo': proveedor.presentacion,
+                'presentacion_label': presentacion_labels.get(
+                    proveedor.presentacion,
+                    proveedor.presentacion,
+                ),
+                'proveedores': [],
+            }
+        grupos_presentacion[proveedor.presentacion]['proveedores'].append(proveedor)
+
+    return render(request, 'pedidos/crear_pedido_beta.html', {
+        'hide_sidebar': True,
+        'ciudades': CIUDAD_CHOICES,
+        'ciudad_seleccionada': ciudad_seleccionada,
+        'semana': semana_seleccionada.isoformat(),
+        'semana_label': semana_seleccionada.strftime('%d/%m/%Y'),
+        'dias_programacion': dias_programacion,
+        'tipos_huevo': tipos_huevo,
+        'grupos_presentacion': list(grupos_presentacion.values()),
+        'total_proveedores': len(proveedores),
+    })
 
 
 @login_required

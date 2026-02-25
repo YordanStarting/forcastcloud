@@ -238,11 +238,12 @@
 
 </head>
 
-<body id="page-top">
+<body id="page-top" class="{% block body_class %}{% endblock %}">
 
     <!-- Page Wrapper -->
     <div id="wrapper">
 
+        {% if not hide_sidebar %}
         <!-- Sidebar -->
         <ul class="navbar-nav bg-gradient-primary sidebar sidebar-dark accordion" id="accordionSidebar">
 
@@ -300,19 +301,20 @@
             </li>
 
             {% if can_manage_pedidos %}
-            <li class="nav-item {% if current_url == 'crearpedido' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}section-active{% endif %}">
-                <a class="nav-link {% if current_url != 'crearpedido' and current_url != 'crear_materia_prima' and current_url != 'editar_pedidos' and current_url != 'editarpedido' and current_url != 'editar_estado_pedido' and current_url != 'eliminarpedido' and current_url != 'marcar_realizado' %}collapsed{% endif %}"
+            <li class="nav-item {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'crearpedido' and current_url != 'crear_pedido_beta' and current_url != 'crear_materia_prima' and current_url != 'editar_pedidos' and current_url != 'editarpedido' and current_url != 'editar_estado_pedido' and current_url != 'eliminarpedido' and current_url != 'marcar_realizado' %}collapsed{% endif %}"
                     href="#" data-toggle="collapse" data-target="#collapsePedidosGestion"
-                    aria-expanded="{% if current_url == 'crearpedido' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}true{% else %}false{% endif %}"
+                    aria-expanded="{% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}true{% else %}false{% endif %}"
                     aria-controls="collapsePedidosGestion">
                     <i class="fas fa-fw fa-clipboard-list"></i>
                     <span>Gestion de pedidos</span>
                 </a>
-                <div id="collapsePedidosGestion" class="collapse {% if current_url == 'crearpedido' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}show{% endif %}"
+                <div id="collapsePedidosGestion" class="collapse {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}show{% endif %}"
                     aria-labelledby="headingPedidosGestion" data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'crearpedido' %}">Crear Pedido</a>
+                        <a class="collapse-item" href="{% url 'crear_pedido_beta' %}">Crear pedido (beta)</a>
                         <a class="collapse-item" href="{% url 'crear_materia_prima' %}">Agregar materia prima</a>
                         <a class="collapse-item" href="{% url 'editar_pedidos' %}">Editar Pedidos</a>
                     </div>
@@ -373,9 +375,10 @@
 
         </ul>
         <!-- End of Sidebar -->
+        {% endif %}
 
         <!-- Content Wrapper -->
-        <div id="content-wrapper" class="d-flex flex-column">
+        <div id="content-wrapper" class="d-flex flex-column {% if hide_sidebar %}w-100{% endif %}">
 
             <!-- Main Content -->
             <div id="content">
@@ -384,7 +387,7 @@
                 <nav class="navbar navbar-expand navbar-light bg-white topbar mb-4 static-top shadow">
 
                     <!-- Sidebar Toggle (Topbar) -->
-                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3">
+                    <button id="sidebarToggleTop" class="btn btn-link d-md-none rounded-circle mr-3 {% if hide_sidebar %}d-none{% endif %}">
                         <i class="fa fa-bars"></i>
                     </button>
 
