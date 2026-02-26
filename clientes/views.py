@@ -391,6 +391,28 @@ def _usuario_puede_gestionar_pedidos(user):
     return _obtener_rol_usuario(user) in {'admin', 'comercial'}
 
 
+def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
+    if not user.is_authenticated or not pedido:
+        return False
+    if _usuario_es_admin(user):
+        return True
+    if _obtener_rol_usuario(user) != 'comercial':
+        return False
+    ciudad_usuario = _obtener_ciudad_usuario(user)
+    return bool(ciudad_usuario and pedido.ciudad == ciudad_usuario)
+
+
+def _filtrar_pedidos_editables_por_usuario(user, qs):
+    if _usuario_es_admin(user):
+        return qs
+    if _obtener_rol_usuario(user) != 'comercial':
+        return qs.none()
+    ciudad_usuario = _obtener_ciudad_usuario(user)
+    if not ciudad_usuario:
+        return qs.none()
+    return qs.filter(ciudad=ciudad_usuario)
+
+
 def _aplicar_estilos_form(form):
     for field in form.fields.values():
         input_type = getattr(field.widget, 'input_type', None)
@@ -1578,11 +1600,21 @@ def editarpedido(request, id):
         return HttpResponseForbidden("No tienes permisos para editar pedidos.")
 
     pedido = get_object_or_404(Pedido, id=id)
+    if not _usuario_puede_editar_pedido_por_ciudad(request.user, pedido):
+        return HttpResponseForbidden(
+            "No puedes editar pedidos de otra sucursal. "
+            "Solo administradores o comerciales de la misma ciudad pueden editarlo."
+        )
     if pedido.estado in PEDIDO_ESTADOS_HISTORIAL and not _usuario_es_admin(request.user):
         return HttpResponseForbidden("Solo un administrador puede editar pedidos del historial.")
 
-    proveedores = Proveedor.objects.only('id', 'nombre', 'presentacion', 'activo').filter(activo=True)
-    comerciales = User.objects.only('id', 'username', 'first_name', 'last_name').all()
+    proveedores = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
+    comerciales = User.objects.only('id', 'username', 'first_name', 'last_name')
+    if _usuario_es_admin(request.user):
+        comerciales = comerciales.all()
+    else:
+        ciudad_usuario = _obtener_ciudad_usuario(request.user)
+        comerciales = comerciales.filter(perfilusuario__ciudad=ciudad_usuario)
     estados_permitidos = _estados_permitidos_para_usuario(request.user)
     estado_choices = [
         (value, label)
@@ -1683,6 +1715,23 @@ def editarpedido(request, id):
                 total_entregas=total_entregas,
             )
             return render(request, 'pedidos/editar_pedido.html', context)
+        if not _usuario_es_admin(request.user):
+            ciudad_usuario = _obtener_ciudad_usuario(request.user)
+            if ciudad_comercial != ciudad_usuario:
+                context = _build_pedido_form_context(
+                    proveedores,
+                    comerciales,
+                    pedido=pedido,
+                    estado_choices=estado_choices,
+                    entregas=entregas_form,
+                    form_data=request.POST,
+                    error_message=(
+                        'Solo puedes asignar comerciales de tu misma sucursal '
+                        f'({ciudad_usuario}).'
+                    ),
+                    total_entregas=total_entregas,
+                )
+                return render(request, 'pedidos/editar_pedido.html', context)
 
         presentacion_valida = {value for value, _ in PRESENTACION_CHOICES}
         presentacion_seleccionada = (request.POST.get('presentacion') or '').strip()
@@ -1964,6 +2013,7 @@ def editar_pedidos(request):
         .prefetch_related('entregas')
         .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
     )
+    pedidos_qs = _filtrar_pedidos_editables_por_usuario(request.user, pedidos_qs)
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
     proveedores = Proveedor.objects.filter(activo=True)
     estados_activos_choices = [
