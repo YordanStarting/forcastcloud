@@ -6,6 +6,27 @@ Inicio
 
 {% block page_vendor_scripts %}
 <script src="https://cdn.jsdelivr.net/npm/chart.js@3.9.1/dist/chart.min.js"></script>
+<style>
+    .pedido-row-highlight > td {
+        background-color: rgba(255, 216, 0, 0.25) !important;
+        color: #7a5a00 !important;
+    }
+
+    .pedido-row-highlight .badge,
+    .pedido-row-highlight a,
+    .pedido-row-highlight button,
+    .pedido-row-highlight i {
+        color: #7a5a00 !important;
+    }
+
+    .js-cart-highlight {
+        color: #94a3b8;
+    }
+
+    .js-cart-highlight.is-active {
+        color: #b45309;
+    }
+</style>
 {% endblock %}
 
 {% block contenido %}
@@ -172,11 +193,12 @@ Inicio
                             <th>ENTREGAS</th>
                             <th>FECHA/CREACION</th>
                             <th>ESTADO</th>
+                            <th>CARRITO</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for pedido in tabla.pedidos %}
-                        <tr>
+                        <tr data-pedido-id="{{ pedido.id }}">
                             <td data-label="Presentacion"
                                 class="js-dashboard-filter"
                                 data-filter-param="presentacion"
@@ -184,11 +206,7 @@ Inicio
                                 style="cursor: pointer;">
                                 {{ pedido.get_presentacion_display }}
                             </td>
-                            <td data-label="Compania"
-                                class="js-dashboard-filter"
-                                data-filter-param="proveedor"
-                                data-filter-value="{{ pedido.proveedor_id }}"
-                                style="cursor: pointer;">
+                            <td data-label="Compania">
                                 {% if pedido.observaciones %}
                                 <button type="button" class="btn btn-link p-0" data-toggle="modal"
                                     data-target="#observacionesModal{{ pedido.id }}">
@@ -228,25 +246,13 @@ Inicio
                                 {{ pedido.proveedor.nombre }}
                                 {% endif %}
                             </td>
-                            <td data-label="Tipo de huevo"
-                                class="js-dashboard-filter"
-                                data-filter-param="tipo_huevo"
-                                data-filter-value="{{ pedido.tipo_huevo }}"
-                                style="cursor: pointer;">
+                            <td data-label="Tipo de huevo">
                                 {{ pedido.get_tipo_huevo_display }}
                             </td>
-                            <td data-label="Cantidad total (kg)"
-                                class="js-dashboard-filter"
-                                data-filter-param="cantidad_total"
-                                data-filter-value="{{ pedido.cantidad_total|default:pedido.cantidad }}"
-                                style="cursor: pointer;">
+                            <td data-label="Cantidad total (kg)">
                                 {{ pedido.cantidad_total|default:pedido.cantidad }}
                             </td>
-                            <td data-label="Semana"
-                                class="col-semana js-dashboard-filter"
-                                data-filter-param="semana"
-                                data-filter-value="{{ pedido.semana|date:'Y-m-d' }}"
-                                style="cursor: pointer;">
+                            <td data-label="Semana" class="col-semana">
                                 {{ pedido.semana|date:"d/m/Y" }}
                             </td>
                             <td data-label="Entregas">
@@ -299,26 +305,27 @@ Inicio
                                 {% endwith %}
                                 {% endwith %}
                             </td>
-                            <td data-label="Fecha/creacion"
-                                class="js-dashboard-filter"
-                                data-filter-param="fecha_creacion"
-                                data-filter-value="{{ pedido.fecha_creacion|date:'Y-m-d' }}"
-                                style="cursor: pointer;">
+                            <td data-label="Fecha/creacion">
                                 {{ pedido.fecha_creacion|date:"d/m/Y" }}
                             </td>
-                            <td data-label="Estado"
-                                class="js-dashboard-filter"
-                                data-filter-param="estado"
-                                data-filter-value="{{ pedido.estado }}"
-                                style="cursor: pointer;">
+                            <td data-label="Estado">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
                                     {{ pedido.get_estado_display }}
                                 </span>
                             </td>
+                            <td data-label="Carrito" class="text-center">
+                                <button type="button"
+                                    class="btn btn-link p-0 js-cart-highlight"
+                                    title="Marcar fila"
+                                    aria-label="Marcar fila"
+                                    aria-pressed="false">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="8" class="text-center text-muted">Sin pedidos</td>
+                            <td colspan="9" class="text-center text-muted">Sin pedidos</td>
                         </tr>
                         {% endfor %}
                     </tbody>
@@ -351,7 +358,8 @@ Inicio
                         </tbody>
                         <tfoot>
                             <tr>
-                                <th colspan="2">TOTAL CIUDAD</th>
+                                <th>TOTAL CIUDAD</th>
+                                <th>{{ tabla.total_kg }} kg</th>
                                 <th>{{ tabla.total_toneladas }} toneladas</th>
                             </tr>
                         </tfoot>
@@ -522,14 +530,65 @@ Inicio
                 if (event.target.closest("button, a, [data-toggle='modal']")) {
                     return;
                 }
-                const param = this.dataset.filterParam;
                 const value = this.dataset.filterValue;
-                if (!param || !value) {
+                if (!value) {
                     return;
                 }
-                const url = new URL(window.location.href);
-                url.searchParams.set(param, value);
+                const url = new URL(window.location.origin + window.location.pathname);
+                url.searchParams.set("presentacion", value);
                 window.location.href = url.toString();
+            });
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const userId = "{{ request.user.id|default:'0' }}";
+        const storageKey = `dashboard-highlighted-rows-user-${userId}`;
+        let highlightedRows = {};
+
+        try {
+            highlightedRows = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        } catch (error) {
+            highlightedRows = {};
+        }
+
+        const applyHighlight = (row) => {
+            const pedidoId = row.dataset.pedidoId;
+            if (!pedidoId) {
+                return;
+            }
+            const isActive = Boolean(highlightedRows[pedidoId]);
+            row.classList.toggle("pedido-row-highlight", isActive);
+            const button = row.querySelector(".js-cart-highlight");
+            if (button) {
+                button.classList.toggle("is-active", isActive);
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            }
+        };
+
+        document.querySelectorAll("tr[data-pedido-id]").forEach((row) => {
+            applyHighlight(row);
+        });
+
+        document.querySelectorAll(".js-cart-highlight").forEach((button) => {
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                event.stopPropagation();
+                const row = this.closest("tr[data-pedido-id]");
+                if (!row) {
+                    return;
+                }
+                const pedidoId = row.dataset.pedidoId;
+                if (!pedidoId) {
+                    return;
+                }
+                if (highlightedRows[pedidoId]) {
+                    delete highlightedRows[pedidoId];
+                } else {
+                    highlightedRows[pedidoId] = true;
+                }
+                localStorage.setItem(storageKey, JSON.stringify(highlightedRows));
+                applyHighlight(row);
             });
         });
     });

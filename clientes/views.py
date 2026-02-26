@@ -692,6 +692,7 @@ def inicio(request):
             'nombre': label,
             'pedidos': pedidos_por_ciudad.get(value, []),
             'totales': totales_por_ciudad.get(value, []),
+            'total_kg': ciudad_totales.get(value, 0),
             'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
         }
         for value, label in CIUDAD_CHOICES
