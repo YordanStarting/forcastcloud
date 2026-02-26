@@ -854,6 +854,100 @@ def resumen_pedidos(request):
     total_forecast_semana = sum(total_forecast_tipo.values())
     total_pendiente_semana = total_forecast_semana - total_programado_semana
 
+    programado_dia_presentacion_tipo_map = [{} for _ in dias_programacion]
+
+    def _acumular_programado_dia(presentacion, tipo, fecha_entrega, cantidad):
+        if not presentacion or not tipo:
+            return
+        idx = indice_por_fecha.get(fecha_entrega)
+        if idx is None:
+            return
+        clave = (presentacion, tipo)
+        programado_dia_presentacion_tipo_map[idx][clave] = (
+            programado_dia_presentacion_tipo_map[idx].get(clave, 0) + (cantidad or 0)
+        )
+
+    entregas_presentacion_tipo_dia_rows = (
+        EntregaPedido.objects
+        .filter(
+            pedido__semana=semana_seleccionada,
+            pedido__estado__in=PEDIDO_ESTADOS_RESUMEN,
+            fecha_entrega__gte=fecha_inicio_semana,
+            fecha_entrega__lte=fecha_fin_semana,
+            **(
+                {'pedido__ciudad': ciudad_seleccionada}
+                if ciudad_seleccionada != ciudad_todas_value
+                else {}
+            ),
+        )
+        .values('pedido__presentacion', 'pedido__tipo_huevo', 'fecha_entrega')
+        .annotate(total_kg=Sum('cantidad'))
+    )
+    for row in entregas_presentacion_tipo_dia_rows:
+        _acumular_programado_dia(
+            row.get('pedido__presentacion'),
+            row.get('pedido__tipo_huevo'),
+            row.get('fecha_entrega'),
+            row.get('total_kg'),
+        )
+
+    pedidos_directos_presentacion_tipo_dia_rows = (
+        Pedido.objects
+        .filter(
+            **filtro_semana_ciudad,
+            entregas__isnull=True,
+            fecha_entrega__gte=fecha_inicio_semana,
+            fecha_entrega__lte=fecha_fin_semana,
+        )
+        .values('presentacion', 'tipo_huevo', 'fecha_entrega')
+        .annotate(total_kg=Sum(cantidad_expr))
+    )
+    for row in pedidos_directos_presentacion_tipo_dia_rows:
+        _acumular_programado_dia(
+            row.get('presentacion'),
+            row.get('tipo_huevo'),
+            row.get('fecha_entrega'),
+            row.get('total_kg'),
+        )
+
+    presentacion_order = [codigo for codigo, _ in PRESENTACION_CHOICES]
+    presentacion_labels_map = dict(PRESENTACION_CHOICES)
+    for mapa_dia in programado_dia_presentacion_tipo_map:
+        for presentacion, _tipo in mapa_dia.keys():
+            if presentacion not in presentacion_order:
+                presentacion_order.append(presentacion)
+
+    tablas_diarias_presentacion = []
+    for idx_dia, dia in enumerate(dias_programacion):
+        mapa_dia = programado_dia_presentacion_tipo_map[idx_dia]
+        filas = []
+        totales_tipo = [0 for _ in codigos_tipo]
+        total_dia = 0
+
+        for presentacion in presentacion_order:
+            cantidades = []
+            total_presentacion = 0
+            for tipo_idx, tipo in enumerate(codigos_tipo):
+                cantidad = mapa_dia.get((presentacion, tipo), 0)
+                cantidades.append(cantidad)
+                total_presentacion += cantidad
+                totales_tipo[tipo_idx] += cantidad
+            if not total_presentacion:
+                continue
+            filas.append({
+                'presentacion': presentacion_labels_map.get(presentacion, presentacion),
+                'cantidades': cantidades,
+            })
+            total_dia += total_presentacion
+
+        tablas_diarias_presentacion.append({
+            'label': dia['label'],
+            'fecha': dia['fecha'],
+            'filas': filas,
+            'totales_tipo': totales_tipo,
+            'total_dia': total_dia,
+        })
+
     codigos_liquidos_base = ['HELU', 'YELU', 'CLLU']
     codigos_polvo_base = ['MEPU', 'HEPU', 'YEPU', 'ALBP']
     codigos_liquidos = [codigo for codigo in codigos_liquidos_base if codigo in codigos_tipo]
@@ -1035,6 +1129,7 @@ def resumen_pedidos(request):
             if ciudad_seleccionada == ciudad_todas_value
             else dict(CIUDAD_CHOICES).get(ciudad_seleccionada, ciudad_seleccionada)
         ),
+        'tablas_diarias_presentacion': tablas_diarias_presentacion,
         'ciudades_disponibles': ciudades_selector,
         'semanas_disponibles': semanas_selector,
     })
@@ -1589,11 +1684,28 @@ def editarpedido(request, id):
             )
             return render(request, 'pedidos/editar_pedido.html', context)
 
+        presentacion_valida = {value for value, _ in PRESENTACION_CHOICES}
+        presentacion_seleccionada = (request.POST.get('presentacion') or '').strip()
+        if not presentacion_seleccionada:
+            presentacion_seleccionada = proveedor.presentacion
+        if presentacion_seleccionada not in presentacion_valida:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                pedido=pedido,
+                estado_choices=estado_choices,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message='Debes seleccionar una presentacion valida.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/editar_pedido.html', context)
+
         pedido.proveedor = proveedor
         pedido.comercial_id = comercial_id
         pedido.ciudad = ciudad_comercial
         pedido.tipo_huevo = request.POST.get('tipo_huevo')
-        pedido.presentacion = proveedor.presentacion
+        pedido.presentacion = presentacion_seleccionada
         pedido.cantidad = cantidad_total_int
         pedido.fecha_entrega = fecha_principal
         pedido.cantidad_total = cantidad_total_int
@@ -1668,12 +1780,40 @@ def editarpedido(request, id):
 
         return redirect('inicio')
 
+    entregas_iniciales = list(pedido.entregas.all().order_by('fecha_entrega'))
+    if not entregas_iniciales and pedido.fecha_entrega and pedido.cantidad:
+        entregas_iniciales = [{
+            'fecha': pedido.fecha_entrega.isoformat(),
+            'cantidad': pedido.cantidad,
+        }]
+
+    total_entregas_inicial = 0
+    for entrega in entregas_iniciales:
+        if isinstance(entrega, dict):
+            cantidad = entrega.get('cantidad', 0)
+        else:
+            cantidad = getattr(entrega, 'cantidad', 0)
+        total_entregas_inicial += int(cantidad or 0)
+
+    form_data_inicial = {
+        'proveedor': str(pedido.proveedor_id),
+        'comercial': str(pedido.comercial_id),
+        'tipo_huevo': pedido.tipo_huevo,
+        'presentacion': pedido.presentacion,
+        'semana': pedido.semana.isoformat() if pedido.semana else '',
+        'cantidad_total': pedido.cantidad_total or pedido.cantidad or '',
+        'estado': pedido.estado,
+        'observaciones': pedido.observaciones or '',
+    }
+
     context = _build_pedido_form_context(
         proveedores,
         comerciales,
         pedido=pedido,
         estado_choices=estado_choices,
-        entregas=pedido.entregas.all().order_by('fecha_entrega'),
+        entregas=entregas_iniciales,
+        form_data=form_data_inicial,
+        total_entregas=total_entregas_inicial,
     )
 
     return render(request, 'pedidos/editar_pedido.html', context)

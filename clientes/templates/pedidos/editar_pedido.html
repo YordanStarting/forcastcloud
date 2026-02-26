@@ -14,10 +14,121 @@ Editar pedido semanal
         opacity: 0.25;
         cursor: not-allowed;
     }
+
+    .flatpickr-day.week-hover-middle,
+    .flatpickr-day.week-hover-start,
+    .flatpickr-day.week-hover-end {
+        background: #eef5ff;
+        border-color: #c8dcff;
+        color: #11407a;
+        transform: translateY(-1px);
+        transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease, transform 0.16s ease;
+    }
+
+    .flatpickr-day.week-hover-start {
+        border-top-left-radius: 999px;
+        border-bottom-left-radius: 999px;
+        box-shadow: inset 0 0 0 1px #8cb2f2;
+    }
+
+    .flatpickr-day.week-hover-end {
+        border-top-right-radius: 999px;
+        border-bottom-right-radius: 999px;
+        box-shadow: inset 0 0 0 1px #8cb2f2;
+    }
+
+    .flatpickr-day.week-hover-start.week-hover-end {
+        border-radius: 999px;
+    }
+
+    .proveedor-dropdown {
+        position: relative;
+    }
+
+    .proveedor-toggle {
+        text-align: left;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+    }
+
+    .proveedor-toggle::after {
+        content: "";
+        border-left: 5px solid transparent;
+        border-right: 5px solid transparent;
+        border-top: 6px solid #6c757d;
+        margin-left: 10px;
+    }
+
+    .proveedor-menu {
+        position: absolute;
+        top: calc(100% + 4px);
+        left: 0;
+        right: 0;
+        background: #fff;
+        border: 1px solid #ced4da;
+        border-radius: 0.25rem;
+        box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
+        z-index: 30;
+        display: none;
+    }
+
+    .proveedor-menu.show {
+        display: block;
+    }
+
+    .proveedor-list {
+        max-height: 230px;
+        overflow-y: auto;
+        padding: 0.25rem 0;
+    }
+
+    .proveedor-option {
+        width: 100%;
+        border: none;
+        background: transparent;
+        text-align: left;
+        padding: 0.45rem 0.9rem;
+        cursor: pointer;
+    }
+
+    .proveedor-option:hover,
+    .proveedor-option.active {
+        background: #f1f5ff;
+    }
+
+    .programacion-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.5rem;
+        align-items: center;
+        margin-bottom: 0.6rem;
+    }
+
+    .programacion-resumen {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 1.1rem;
+        margin-top: 0.55rem;
+    }
+
+    .programacion-resumen small {
+        margin: 0;
+    }
+
+    .programacion-table .table td,
+    .programacion-table .table th {
+        vertical-align: middle;
+    }
+
+    .programacion-table .cantidad-entrega {
+        min-width: 120px;
+    }
 </style>
 {% endblock %}
 
 {% block contenido %}
+
 <div class="container-fluid">
     <form method="post">
         {% csrf_token %}
@@ -29,72 +140,63 @@ Editar pedido semanal
         {% endif %}
 
         <div class="form-row">
+
             <div class="form-group col-md-12">
-                <label>Proveedor</label>
-                <select name="proveedor" class="form-control">
-                    {% for proveedor in proveedores %}
-                    <option value="{{ proveedor.id }}" data-presentacion="{{ proveedor.presentacion }}"
-                        {% if form_data.proveedor == proveedor.id|stringformat:"s" or not form_data.proveedor and pedido.proveedor_id == proveedor.id %}selected{% endif %}>
-                        {{ proveedor.nombre }}
-                    </option>
-                    {% endfor %}
-                </select>
+                <label>Cliente</label>
+                <div class="proveedor-dropdown" id="proveedor-dropdown">
+                    <input type="hidden" name="proveedor" id="proveedor_hidden"
+                        value="{{ form_data.proveedor|default:'' }}">
+                    <button type="button" class="form-control proveedor-toggle" id="proveedor-toggle">
+                        <span id="proveedor-selected-label">Escoger</span>
+                    </button>
+                    <div class="proveedor-menu" id="proveedor-menu">
+                        <div class="p-2 border-bottom">
+                            <input type="text" id="proveedor-search" class="form-control"
+                                placeholder="Buscar proveedor por nombre..." autocomplete="off">
+                        </div>
+                        <div class="proveedor-list" id="proveedor-list">
+                            {% for proveedor in proveedores %}
+                            <button type="button" class="proveedor-option" data-id="{{ proveedor.id }}"
+                                data-presentacion="{{ proveedor.presentacion|default:'' }}">
+                                {{ proveedor.nombre }}
+                            </button>
+                            {% endfor %}
+                        </div>
+                    </div>
+                </div>
+                <small id="proveedor-error" class="form-text text-danger mt-1 d-none">
+                    Debes seleccionar un proveedor.
+                </small>
             </div>
 
             <div class="form-group col-md-12">
                 <label>Comercial</label>
-                <select name="comercial" class="form-control">
+                <select name="comercial" class="form-control" required>
+                    <option value="">Escoger</option>
                     {% for user in comerciales %}
                     <option value="{{ user.id }}"
-                        {% if form_data.comercial == user.id|stringformat:"s" or not form_data.comercial and pedido.comercial_id == user.id %}selected{% endif %}>
+                        {% if form_data.comercial == user.id|stringformat:"s" or not form_data.comercial and user.id == pedido.comercial_id %}selected{% endif %}>
                         {{ user.username }}
                     </option>
                     {% endfor %}
                 </select>
             </div>
 
-            <div class="form-group col-md-6">
+            <div class="form-group col-md-4">
                 <label>Tipo de Huevo</label>
-                <select name="tipo_huevo" class="form-control">
+                <select name="tipo_huevo" class="form-control" required>
+                    <option value="">Escoger</option>
                     {% for value, label in TIPO_HUEVO_CHOICES %}
-                    <option value="{{ value }}"
-                        {% if form_data.tipo_huevo == value or not form_data.tipo_huevo and pedido.tipo_huevo == value %}selected{% endif %}>
+                    <option value="{{ value }}" {% if form_data.tipo_huevo == value or not form_data.tipo_huevo and pedido.tipo_huevo == value %}selected{% endif %}>
                         {{ label }}
                     </option>
                     {% endfor %}
                 </select>
             </div>
 
-            <div class="form-group col-md-6">
-                <label>Presentacion (automatica por proveedor)</label>
-                <select id="presentacion_display" class="form-control" disabled>
-                    {% for value, label in PRESENTACION_CHOICES %}
-                    <option value="{{ value }}"
-                        {% if form_data.presentacion == value or not form_data.presentacion and pedido.presentacion == value %}selected{% endif %}>
-                        {{ label }}
-                    </option>
-                    {% endfor %}
-                </select>
-                <input type="hidden" name="presentacion" id="presentacion_hidden"
-                    value="{{ form_data.presentacion|default:pedido.presentacion }}">
-            </div>
-
-            <div class="form-group col-md-6">
-                <label>Semana (lunes)</label>
-                <input type="text" name="semana" class="form-control js-semana-lunes" autocomplete="off"
-                    value="{{ form_data.semana|default:pedido.semana|date:'Y-m-d' }}">
-                <small class="form-text text-muted">Solo se pueden seleccionar lunes.</small>
-            </div>
-
-            <div class="form-group col-md-6">
-                <label>Cantidad total (kg)</label>
-                <input type="number" name="cantidad_total" class="form-control" min="1"
-                    value="{{ form_data.cantidad_total|default:pedido.cantidad_total|default:pedido.cantidad }}">
-            </div>
-
-            <div class="form-group col-md-6">
+            <div class="form-group col-md-4">
                 <label>Estado</label>
-                <select name="estado" class="form-control">
+                <select name="estado" class="form-control" required>
                     {% for value, label in estado_choices %}
                     <option value="{{ value }}"
                         {% if form_data.estado == value or not form_data.estado and pedido.estado == value %}selected{% endif %}>
@@ -104,56 +206,140 @@ Editar pedido semanal
                 </select>
             </div>
 
-            <div class="form-group col-md-12">
-                <label>Entregas programadas</label>
-                <div id="entregas-container">
-                    {% if entregas %}
-                    {% for entrega in entregas %}
-                    <div class="form-row entrega-row mb-2">
-                        <div class="col-md-6">
-                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega"
-                                autocomplete="off"
-                                value="{% if entrega.fecha_entrega %}{{ entrega.fecha_entrega|date:'Y-m-d' }}{% else %}{{ entrega.fecha }}{% endif %}" required>
-                        </div>
-                        <div class="col-md-5">
-                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1"
-                                value="{{ entrega.cantidad }}" required>
-                        </div>
-                        <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
-                        </div>
-                    </div>
+            <div class="form-group col-md-4">
+                <label>Presentacion (editable)</label>
+                <select id="presentacion_select" name="presentacion" class="form-control" required>
+                    <option value="">Escoger</option>
+                    {% for value, label in PRESENTACION_CHOICES %}
+                    <option value="{{ value }}" {% if form_data.presentacion == value or not form_data.presentacion and pedido.presentacion == value %}selected{% endif %}>
+                        {{ label }}
+                    </option>
                     {% endfor %}
-                    {% else %}
-                    <div class="form-row entrega-row mb-2">
-                        <div class="col-md-6">
-                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega"
-                                autocomplete="off"
-                                value="{{ pedido.fecha_entrega|date:'Y-m-d' }}">
-                        </div>
-                        <div class="col-md-5">
-                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1"
-                                value="{{ pedido.cantidad }}">
-                        </div>
-                        <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
-                        </div>
-                    </div>
-                    {% endif %}
+                </select>
+                <small class="form-text text-muted">Puedes cambiar la presentacion al editar el pedido.</small>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>SEMANA</label>
+                <input type="text" name="semana" class="form-control js-semana-lunes" required autocomplete="off"
+                    value="{{ form_data.semana|default:'' }}">
+                <small class="form-text text-muted">Solo se pueden seleccionar lunes.</small>
+            </div>
+
+            <div class="form-group col-md-6">
+                <label>Cantidad total (kg)</label>
+                <input type="number" name="cantidad_total" class="form-control" min="1" required
+                    value="{{ form_data.cantidad_total|default:'' }}">
+            </div>
+
+            <div class="form-group col-md-12">
+                <label>Programacion semanal (Lun-Sab)</label>
+                <div class="programacion-toolbar">
+                    <button type="button" class="btn btn-outline-primary btn-sm" id="distribuir-entregas">
+                        Distribuir automatico
+                    </button>
+                    <button type="button" class="btn btn-outline-secondary btn-sm" id="limpiar-entregas">
+                        Limpiar
+                    </button>
+                    <small id="semana-rango-label" class="text-muted">Selecciona una semana para generar las fechas.</small>
                 </div>
-                <button type="button" class="btn btn-outline-primary btn-sm mt-2" id="add-entrega">
-                    + Agregar entrega
-                </button>
-                <small class="form-text text-muted mt-2">
-                    Total programado: <strong><span id="total-entregas">0</span> kg</strong>
-                </small>
+                <div class="table-responsive programacion-table">
+                    <table class="table table-sm table-bordered mb-0">
+                        <thead class="thead-light">
+                            <tr>
+                                <th style="width: 20%">Dia</th>
+                                <th style="width: 40%">Fecha</th>
+                                <th style="width: 40%">Cantidad (kg)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr class="entrega-dia-row" data-day-offset="0">
+                                <td>Lunes</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                            <tr class="entrega-dia-row" data-day-offset="1">
+                                <td>Martes</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                            <tr class="entrega-dia-row" data-day-offset="2">
+                                <td>Miercoles</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                            <tr class="entrega-dia-row" data-day-offset="3">
+                                <td>Jueves</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                            <tr class="entrega-dia-row" data-day-offset="4">
+                                <td>Viernes</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                            <tr class="entrega-dia-row" data-day-offset="5">
+                                <td>Sabado</td>
+                                <td>
+                                    <span class="fecha-dia-label text-muted">-</span>
+                                    <input type="hidden" name="fecha_entrega[]" class="fecha-entrega-hidden">
+                                </td>
+                                <td>
+                                    <input type="number" name="cantidad[]" class="form-control cantidad-entrega js-cantidad-dia"
+                                        min="0" step="1" placeholder="0">
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="programacion-resumen">
+                    <small class="text-muted">
+                        Total programado: <strong><span id="total-entregas">{{ total_entregas|default:0 }}</span> kg</strong>
+                    </small>
+                    <small class="text-muted">
+                        Dias con entrega: <strong><span id="dias-programados">0</span></strong>
+                    </small>
+                    <small class="text-muted">
+                        Diferencia: <strong id="diferencia-entregas">-</strong>
+                    </small>
+                </div>
+                <small id="entregas-error" class="form-text text-danger mt-1 d-none"></small>
             </div>
 
             <div class="form-group col-md-12">
                 <label>Observaciones</label>
-                <textarea name="observaciones" class="form-control">{{ form_data.observaciones|default:pedido.observaciones }}</textarea>
+                <textarea name="observaciones" class="form-control" rows="3">{{ form_data.observaciones|default:'' }}</textarea>
             </div>
-
             <div class="form-group col-md-12">
                 <button type="submit" class="btn btn-primary">Actualizar</button>
                 <a class="btn btn-danger" href="{% url 'inicio' %}" role="button">Cancelar</a>
@@ -164,23 +350,101 @@ Editar pedido semanal
         <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
         <script>
             (function () {
-                const container = document.getElementById('entregas-container');
-                const addButton = document.getElementById('add-entrega');
                 const totalSpan = document.getElementById('total-entregas');
+                const diasProgramadosSpan = document.getElementById('dias-programados');
+                const diferenciaSpan = document.getElementById('diferencia-entregas');
+                const totalInput = document.querySelector('input[name="cantidad_total"]');
+                const errorSpan = document.getElementById('entregas-error');
                 const semanaInput = document.querySelector('.js-semana-lunes');
-                const proveedorSelect = document.querySelector('select[name="proveedor"]');
-                const presentacionDisplay = document.getElementById('presentacion_display');
-                const presentacionHidden = document.getElementById('presentacion_hidden');
-                const entregaPickers = [];
+                const semanaRangoLabel = document.getElementById('semana-rango-label');
+                const distribuirButton = document.getElementById('distribuir-entregas');
+                const limpiarButton = document.getElementById('limpiar-entregas');
+                const entregaRows = Array.from(document.querySelectorAll('.entrega-dia-row'));
+                const form = document.querySelector('form');
+                const submitButton = form ? form.querySelector('[type="submit"]') : null;
+                const proveedorDropdown = document.getElementById('proveedor-dropdown');
+                const proveedorToggle = document.getElementById('proveedor-toggle');
+                const proveedorMenu = document.getElementById('proveedor-menu');
+                const proveedorSelectedLabel = document.getElementById('proveedor-selected-label');
+                const proveedorHidden = document.getElementById('proveedor_hidden');
+                const proveedorSearch = document.getElementById('proveedor-search');
+                const proveedorError = document.getElementById('proveedor-error');
+                const presentacionSelect = document.getElementById('presentacion_select');
+                const proveedorOptions = Array.from(document.querySelectorAll('.proveedor-option'));
+                let selectedProveedorButton = null;
+                let initialEntregasApplied = false;
+                const entregasIniciales = [
+                    {% for entrega in entregas %}
+                    {
+                        fecha: '{% if entrega.fecha %}{{ entrega.fecha|escapejs }}{% elif entrega.fecha_entrega %}{{ entrega.fecha_entrega|date:"Y-m-d"|escapejs }}{% endif %}',
+                        cantidad: '{{ entrega.cantidad|default_if_none:""|escapejs }}'
+                    },
+                    {% endfor %}
+                ];
 
-                const syncPresentacionConProveedor = () => {
-                    if (!proveedorSelect || !presentacionDisplay || !presentacionHidden) {
+                const syncPresentacionConProveedor = (force = false) => {
+                    if (!presentacionSelect) {
                         return;
                     }
-                    const selectedOption = proveedorSelect.options[proveedorSelect.selectedIndex];
-                    const presentacion = selectedOption ? selectedOption.dataset.presentacion || '' : '';
-                    presentacionDisplay.value = presentacion;
-                    presentacionHidden.value = presentacion;
+                    if (!force && presentacionSelect.value) {
+                        return;
+                    }
+                    const presentacion = selectedProveedorButton
+                        ? selectedProveedorButton.dataset.presentacion || ''
+                        : '';
+                    presentacionSelect.value = presentacion;
+                };
+
+                const closeProveedorMenu = () => {
+                    if (proveedorMenu) {
+                        proveedorMenu.classList.remove('show');
+                    }
+                };
+
+                const openProveedorMenu = () => {
+                    if (!proveedorMenu) {
+                        return;
+                    }
+                    proveedorMenu.classList.add('show');
+                    if (proveedorSearch) {
+                        proveedorSearch.focus();
+                        proveedorSearch.select();
+                    }
+                };
+
+                const setProveedorSeleccion = (id, forcePresentacion = false) => {
+                    selectedProveedorButton = null;
+                    proveedorOptions.forEach((option) => {
+                        const isSelected = option.dataset.id === id;
+                        option.classList.toggle('active', isSelected);
+                        if (isSelected) {
+                            selectedProveedorButton = option;
+                        }
+                    });
+                    if (proveedorHidden) {
+                        proveedorHidden.value = selectedProveedorButton ? selectedProveedorButton.dataset.id : '';
+                    }
+                    if (proveedorSelectedLabel) {
+                        proveedorSelectedLabel.textContent = selectedProveedorButton
+                            ? selectedProveedorButton.textContent.trim()
+                            : 'Escoger';
+                    }
+                    if (proveedorError && proveedorHidden && proveedorHidden.value) {
+                        proveedorError.classList.add('d-none');
+                    }
+                    syncPresentacionConProveedor(forcePresentacion);
+                };
+
+                const filtrarProveedores = () => {
+                    if (!proveedorSearch) {
+                        return;
+                    }
+                    const searchTerm = (proveedorSearch.value || '').trim().toLowerCase();
+                    proveedorOptions.forEach((option) => {
+                        const proveedorNombre = option.textContent.toLowerCase();
+                        const match = !searchTerm || proveedorNombre.includes(searchTerm);
+                        option.classList.toggle('d-none', !match);
+                    });
                 };
 
                 const parseIsoDate = (value) => {
@@ -200,130 +464,371 @@ Editar pedido semanal
                     return new Date(year, month - 1, day);
                 };
 
-                const getSemanaRange = () => {
+                const normalizeDate = (dateValue) => {
+                    if (!dateValue) {
+                        return null;
+                    }
+                    return new Date(
+                        dateValue.getFullYear(),
+                        dateValue.getMonth(),
+                        dateValue.getDate()
+                    );
+                };
+
+                const formatDate = (dateValue) => {
+                    const day = String(dateValue.getDate()).padStart(2, '0');
+                    const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+                    const year = dateValue.getFullYear();
+                    return `${day}/${month}/${year}`;
+                };
+
+                const formatIsoDate = (dateValue) => {
+                    const day = String(dateValue.getDate()).padStart(2, '0');
+                    const month = String(dateValue.getMonth() + 1).padStart(2, '0');
+                    const year = dateValue.getFullYear();
+                    return `${year}-${month}-${day}`;
+                };
+
+                const clearWeekHover = (instance) => {
+                    if (!instance || !instance.daysContainer) {
+                        return;
+                    }
+                    instance.daysContainer
+                        .querySelectorAll('.week-hover-start, .week-hover-middle, .week-hover-end')
+                        .forEach((dayEl) => {
+                            dayEl.classList.remove('week-hover-start', 'week-hover-middle', 'week-hover-end');
+                        });
+                };
+
+                const paintWeekHover = (instance, mondayDate) => {
+                    if (!instance || !instance.daysContainer || !mondayDate) {
+                        return;
+                    }
+                    const monday = normalizeDate(mondayDate);
+                    const saturday = new Date(monday);
+                    saturday.setDate(monday.getDate() + 5);
+                    const mondayTs = monday.getTime();
+                    const saturdayTs = saturday.getTime();
+
+                    clearWeekHover(instance);
+                    instance.daysContainer.querySelectorAll('.flatpickr-day').forEach((dayEl) => {
+                        if (!dayEl.dateObj) {
+                            return;
+                        }
+                        const dayDate = normalizeDate(dayEl.dateObj);
+                        const dayTs = dayDate.getTime();
+                        if (dayTs < mondayTs || dayTs > saturdayTs) {
+                            return;
+                        }
+                        dayEl.classList.add('week-hover-middle');
+                        if (dayTs === mondayTs) {
+                            dayEl.classList.add('week-hover-start');
+                        }
+                        if (dayTs === saturdayTs) {
+                            dayEl.classList.add('week-hover-end');
+                        }
+                    });
+                };
+
+                const bindWeekHoverBehavior = (instance) => {
+                    if (!instance || !instance.daysContainer || instance.daysContainer.dataset.weekHoverBound === '1') {
+                        return;
+                    }
+                    const daysContainer = instance.daysContainer;
+                    daysContainer.dataset.weekHoverBound = '1';
+
+                    daysContainer.addEventListener('mouseover', (event) => {
+                        const dayElement = event.target.closest('.flatpickr-day');
+                        if (!dayElement || !dayElement.dateObj || dayElement.classList.contains('disabled')) {
+                            clearWeekHover(instance);
+                            return;
+                        }
+                        const hoveredDate = normalizeDate(dayElement.dateObj);
+                        if (hoveredDate.getDay() !== 1) {
+                            clearWeekHover(instance);
+                            return;
+                        }
+                        paintWeekHover(instance, hoveredDate);
+                    });
+
+                    daysContainer.addEventListener('mouseleave', () => {
+                        clearWeekHover(instance);
+                    });
+                };
+
+                const toPositiveInt = (value) => {
+                    const parsed = parseInt(value || '0', 10);
+                    if (Number.isNaN(parsed) || parsed < 0) {
+                        return 0;
+                    }
+                    return parsed;
+                };
+
+                const getTotalPedido = () => toPositiveInt(totalInput ? totalInput.value : 0);
+
+                const setDiferencia = (diferencia) => {
+                    if (!diferenciaSpan) {
+                        return;
+                    }
+                    if (diferencia === 0) {
+                        diferenciaSpan.textContent = 'Cuadrado';
+                        diferenciaSpan.classList.add('text-success');
+                        diferenciaSpan.classList.remove('text-danger');
+                        return;
+                    }
+                    const texto = diferencia > 0
+                        ? `Faltan ${diferencia} kg`
+                        : `Sobran ${Math.abs(diferencia)} kg`;
+                    diferenciaSpan.textContent = texto;
+                    diferenciaSpan.classList.add('text-danger');
+                    diferenciaSpan.classList.remove('text-success');
+                };
+
+                const validateTotals = (totalEntregas) => {
+                    const totalPedido = parseInt(totalInput.value || '0', 10);
+                    if (!totalPedido) {
+                        errorSpan.classList.add('d-none');
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                        if (diferenciaSpan) {
+                            diferenciaSpan.textContent = '-';
+                            diferenciaSpan.classList.remove('text-success');
+                            diferenciaSpan.classList.remove('text-danger');
+                        }
+                        return;
+                    }
+
+                    const diferencia = totalPedido - totalEntregas;
+                    setDiferencia(diferencia);
+                    if (totalEntregas !== totalPedido) {
+                        const mensaje = diferencia > 0
+                            ? `Faltan ${diferencia} kg por programar.`
+                            : `Sobran ${Math.abs(diferencia)} kg programados.`;
+                        errorSpan.textContent = `Las entregas deben sumar ${totalPedido} kg. ${mensaje}`;
+                        errorSpan.classList.remove('d-none');
+                        if (submitButton) {
+                            submitButton.disabled = true;
+                        }
+                    } else {
+                        errorSpan.classList.add('d-none');
+                        if (submitButton) {
+                            submitButton.disabled = false;
+                        }
+                    }
+                };
+
+                const updateTotal = () => {
+                    let total = 0;
+                    let diasProgramados = 0;
+                    entregaRows.forEach((row) => {
+                        const cantidadInput = row.querySelector('.cantidad-entrega');
+                        const value = toPositiveInt(cantidadInput ? cantidadInput.value : 0);
+                        total += value;
+                        if (value > 0) {
+                            diasProgramados += 1;
+                        }
+                    });
+                    totalSpan.textContent = total;
+                    if (diasProgramadosSpan) {
+                        diasProgramadosSpan.textContent = diasProgramados;
+                    }
+                    validateTotals(total);
+                };
+
+                const applyWeekDates = () => {
                     const monday = parseIsoDate(semanaInput ? semanaInput.value : '');
                     if (!monday) {
+                        if (semanaRangoLabel) {
+                            semanaRangoLabel.textContent = 'Selecciona una semana para generar las fechas.';
+                        }
+                        entregaRows.forEach((row) => {
+                            const hiddenInput = row.querySelector('.fecha-entrega-hidden');
+                            const fechaLabel = row.querySelector('.fecha-dia-label');
+                            if (hiddenInput) {
+                                hiddenInput.value = '';
+                            }
+                            if (fechaLabel) {
+                                fechaLabel.textContent = '-';
+                            }
+                        });
                         return null;
                     }
                     const saturday = new Date(monday);
                     saturday.setDate(monday.getDate() + 5);
-                    return { monday, saturday };
+                    if (semanaRangoLabel) {
+                        semanaRangoLabel.textContent = `Semana activa: ${formatDate(monday)} - ${formatDate(saturday)}`;
+                    }
+                    entregaRows.forEach((row) => {
+                        const offset = parseInt(row.dataset.dayOffset || '0', 10);
+                        const fechaDia = new Date(monday);
+                        fechaDia.setDate(monday.getDate() + (Number.isNaN(offset) ? 0 : offset));
+                        const hiddenInput = row.querySelector('.fecha-entrega-hidden');
+                        const fechaLabel = row.querySelector('.fecha-dia-label');
+                        if (hiddenInput) {
+                            hiddenInput.value = formatIsoDate(fechaDia);
+                        }
+                        if (fechaLabel) {
+                            fechaLabel.textContent = formatDate(fechaDia);
+                        }
+                    });
+                    return monday;
                 };
 
-                const applyRangeToPicker = (picker) => {
-                    if (!picker) {
+                const cargarEntregasIniciales = () => {
+                    if (initialEntregasApplied || !entregasIniciales.length) {
                         return;
                     }
-                    const range = getSemanaRange();
-                    if (!range) {
-                        picker.set('minDate', null);
-                        picker.set('maxDate', null);
-                        picker.redraw();
-                        return;
-                    }
-                    picker.set('minDate', range.monday);
-                    picker.set('maxDate', range.saturday);
-                    picker.redraw();
-                    const selectedDate = picker.selectedDates && picker.selectedDates.length
-                        ? picker.selectedDates[0]
-                        : parseIsoDate(picker.input.value);
-                    const currentDate = selectedDate
-                        ? new Date(selectedDate.getFullYear(), selectedDate.getMonth(), selectedDate.getDate())
-                        : null;
-                    if (currentDate && (currentDate < range.monday || currentDate > range.saturday)) {
-                        picker.clear();
-                    }
+                    const cantidadesPorFecha = {};
+                    entregasIniciales.forEach((entrega) => {
+                        if (!entrega || !entrega.fecha) {
+                            return;
+                        }
+                        cantidadesPorFecha[entrega.fecha] = entrega.cantidad || '';
+                    });
+
+                    entregaRows.forEach((row) => {
+                        const hiddenInput = row.querySelector('.fecha-entrega-hidden');
+                        const cantidadInput = row.querySelector('.cantidad-entrega');
+                        const fecha = hiddenInput ? hiddenInput.value : '';
+                        if (!fecha || !cantidadInput) {
+                            return;
+                        }
+                        if (Object.prototype.hasOwnProperty.call(cantidadesPorFecha, fecha)) {
+                            cantidadInput.value = cantidadesPorFecha[fecha];
+                        }
+                    });
+                    initialEntregasApplied = true;
                 };
 
+                const distribuirAutomatico = () => {
+                    const totalPedido = getTotalPedido();
+                    if (!totalPedido || !entregaRows.length) {
+                        updateTotal();
+                        return;
+                    }
+
+                    const base = Math.floor(totalPedido / entregaRows.length);
+                    let restante = totalPedido % entregaRows.length;
+                    entregaRows.forEach((row) => {
+                        const input = row.querySelector('.cantidad-entrega');
+                        if (!input) {
+                            return;
+                        }
+                        let value = base;
+                        if (restante > 0) {
+                            value += 1;
+                            restante -= 1;
+                        }
+                        input.value = value > 0 ? String(value) : '';
+                    });
+                    updateTotal();
+                };
+
+                if (proveedorToggle) {
+                    proveedorToggle.addEventListener('click', (event) => {
+                        event.preventDefault();
+                        if (proveedorMenu && proveedorMenu.classList.contains('show')) {
+                            closeProveedorMenu();
+                        } else {
+                            openProveedorMenu();
+                        }
+                    });
+                }
+                proveedorOptions.forEach((option) => {
+                    option.addEventListener('click', () => {
+                        setProveedorSeleccion(option.dataset.id, true);
+                        closeProveedorMenu();
+                    });
+                });
+                if (proveedorSearch) {
+                    proveedorSearch.addEventListener('input', filtrarProveedores);
+                    filtrarProveedores();
+                }
+                document.addEventListener('click', (event) => {
+                    if (proveedorDropdown && !proveedorDropdown.contains(event.target)) {
+                        closeProveedorMenu();
+                    }
+                });
+                document.addEventListener('keydown', (event) => {
+                    if (event.key === 'Escape') {
+                        closeProveedorMenu();
+                    }
+                });
+                if (form) {
+                    form.addEventListener('submit', (event) => {
+                        if (proveedorHidden && !proveedorHidden.value) {
+                            event.preventDefault();
+                            if (proveedorError) {
+                                proveedorError.classList.remove('d-none');
+                            }
+                            openProveedorMenu();
+                        }
+                    });
+                }
+                setProveedorSeleccion(proveedorHidden ? proveedorHidden.value : '', false);
                 if (semanaInput && window.flatpickr) {
                     flatpickr(semanaInput, {
                         dateFormat: "Y-m-d",
                         allowInput: false,
                         disableMobile: true,
                         locale: "es",
+                        onReady: function (selectedDates, dateStr, instance) {
+                            bindWeekHoverBehavior(instance);
+                        },
+                        onOpen: function (selectedDates, dateStr, instance) {
+                            bindWeekHoverBehavior(instance);
+                        },
+                        onMonthChange: function (selectedDates, dateStr, instance) {
+                            clearWeekHover(instance);
+                        },
+                        onYearChange: function (selectedDates, dateStr, instance) {
+                            clearWeekHover(instance);
+                        },
                         onChange: function () {
-                            entregaPickers.forEach(applyRangeToPicker);
+                            applyWeekDates();
+                            updateTotal();
                         },
                         enable: [function (fecha) {
                             return fecha.getDay() === 1;
                         }]
                     });
                 }
-
-                const initEntregaDatepicker = (input) => {
-                    if (!input || !window.flatpickr) {
-                        return;
-                    }
-                    if (input._flatpickr) {
-                        entregaPickers.push(input._flatpickr);
-                        applyRangeToPicker(input._flatpickr);
-                        return;
-                    }
-                    const picker = flatpickr(input, {
-                        dateFormat: "Y-m-d",
-                        allowInput: false,
-                        disableMobile: true,
-                        locale: "es",
-                        onOpen: function (selectedDates, dateStr, instance) {
-                            applyRangeToPicker(instance);
-                        }
-                    });
-                    entregaPickers.push(picker);
-                    applyRangeToPicker(picker);
-                };
-
-                const updateTotal = () => {
-                    const cantidades = Array.from(container.querySelectorAll('.cantidad-entrega'));
-                    const total = cantidades.reduce((sum, input) => {
-                        const value = parseInt(input.value || '0', 10);
-                        return sum + (isNaN(value) ? 0 : value);
-                    }, 0);
-                    totalSpan.textContent = total;
-                };
-
-                const attachRowHandlers = (row) => {
-                    const removeButton = row.querySelector('.remove-entrega');
-                    removeButton.addEventListener('click', () => {
-                        row.remove();
-                        updateTotal();
-                    });
-                    const cantidadInput = row.querySelector('.cantidad-entrega');
-                    cantidadInput.addEventListener('input', updateTotal);
-                    const fechaInput = row.querySelector('.js-fecha-entrega');
-                    initEntregaDatepicker(fechaInput);
-                };
-
-                addButton.addEventListener('click', () => {
-                    const row = document.createElement('div');
-                    row.className = 'form-row entrega-row mb-2';
-                    row.innerHTML = `
-                        <div class="col-md-6">
-                            <input type="text" name="fecha_entrega[]" class="form-control js-fecha-entrega" required autocomplete="off">
-                        </div>
-                        <div class="col-md-5">
-                            <input type="number" name="cantidad[]" class="form-control cantidad-entrega" min="1" required>
-                        </div>
-                        <div class="col-md-1 d-flex align-items-center">
-                            <button type="button" class="btn btn-outline-danger btn-sm remove-entrega">X</button>
-                        </div>
-                    `;
-                    container.appendChild(row);
-                    attachRowHandlers(row);
-                });
-
-                container.querySelectorAll('.entrega-row').forEach(attachRowHandlers);
-                if (proveedorSelect) {
-                    proveedorSelect.addEventListener('change', syncPresentacionConProveedor);
-                    syncPresentacionConProveedor();
-                }
                 if (semanaInput) {
                     semanaInput.addEventListener('change', () => {
-                        entregaPickers.forEach(applyRangeToPicker);
+                        applyWeekDates();
+                        updateTotal();
                     });
                 }
+                entregaRows.forEach((row) => {
+                    const cantidadInput = row.querySelector('.cantidad-entrega');
+                    if (cantidadInput) {
+                        cantidadInput.addEventListener('input', updateTotal);
+                    }
+                });
+                if (distribuirButton) {
+                    distribuirButton.addEventListener('click', distribuirAutomatico);
+                }
+                if (limpiarButton) {
+                    limpiarButton.addEventListener('click', () => {
+                        entregaRows.forEach((row) => {
+                            const cantidadInput = row.querySelector('.cantidad-entrega');
+                            if (cantidadInput) {
+                                cantidadInput.value = '';
+                            }
+                        });
+                        updateTotal();
+                    });
+                }
+                if (totalInput) {
+                    totalInput.addEventListener('input', updateTotal);
+                }
+                applyWeekDates();
+                cargarEntregasIniciales();
                 updateTotal();
             })();
         </script>
     </form>
+
 </div>
 {% endblock %}

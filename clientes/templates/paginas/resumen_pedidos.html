@@ -332,56 +332,57 @@ Resumen de pedidos
         </div>
     </div>
 
-    <div class="card shadow mb-4">
-        <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">TOTAL SEMANAL CONSOLIDADO POR TIPO DE HUEVO</h6>
-        </div>
-        <div class="card-body">
-            <div class="table-responsive">
-                <table class="table table-bordered mb-0">
-                    <thead>
-                        <tr>
-                            <th>TIPO</th>
-                            <th>FORECAST</th>
-                            <th>PROGRAMADO</th>
-                            <th>PENDIENTE</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        {% for tipo in resumen_tipos %}
-                        <tr>
-                            <td>{{ tipo.label }}</td>
-                            <td>{{ tipo.forecast }} kg</td>
-                            <td>{{ tipo.programado }} kg</td>
-                            <td class="{% if tipo.pendiente_programar > 0 %}resumen-pendiente{% else %}resumen-ok{% endif %}">
-                                {{ tipo.pendiente_programar }} kg
-                            </td>
-                        </tr>
-                        {% endfor %}
-                    </tbody>
-                    <tfoot>
-                        <tr>
-                            <th>LIQUIDO SEMANA</th>
-                            <th>-</th>
-                            <th>{{ total_liquido_semana }} kg</th>
-                            <th>-</th>
-                        </tr>
-                        <tr>
-                            <th>POLVO SEMANA</th>
-                            <th>-</th>
-                            <th>{{ total_polvo_semana }} kg</th>
-                            <th>-</th>
-                        </tr>
-                        <tr>
-                            <th>TOTAL SEMANA</th>
-                            <th>{{ total_forecast_semana }} kg</th>
-                            <th>{{ total_programado_semana }} kg</th>
-                            <th class="{% if total_pendiente_semana > 0 %}resumen-pendiente{% else %}resumen-ok{% endif %}">{{ total_pendiente_semana }} kg</th>
-                        </tr>
-                    </tfoot>
-                </table>
+    <h1 class="h3 mb-2 text-gray-800">RESUMEN DIARIO POR PRESENTACION</h1>
+    <div class="row">
+        {% for tabla in tablas_diarias_presentacion %}
+        <div class="col-12 col-xl-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">
+                        {{ tabla.label|upper }}, {{ tabla.fecha|date:"d/m/Y" }} - {{ ciudad_label|upper }}
+                    </h6>
+                </div>
+                <div class="card-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-sm mb-0">
+                            <thead>
+                                <tr>
+                                    <th>PRESENTACION</th>
+                                    {% for tipo in tipos_huevo %}
+                                    <th>{{ tipo.codigo }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for fila in tabla.filas %}
+                                <tr>
+                                    <td>{{ fila.presentacion }}</td>
+                                    {% for cantidad in fila.cantidades %}
+                                    <td>{{ cantidad }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="{{ tipos_huevo|length|add:1 }}" class="text-center text-muted">
+                                        Sin datos para este dia en la semana seleccionada.
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th>TOTAL DIA</th>
+                                    {% for total in tabla.totales_tipo %}
+                                    <th>{{ total }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
             </div>
         </div>
+        {% endfor %}
     </div>
 </div>
 
