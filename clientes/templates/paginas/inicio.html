@@ -177,8 +177,18 @@ Inicio
                     <tbody>
                         {% for pedido in tabla.pedidos %}
                         <tr>
-                            <td data-label="Presentacion">{{ pedido.get_presentacion_display }}</td>
-                            <td data-label="Compania">
+                            <td data-label="Presentacion"
+                                class="js-dashboard-filter"
+                                data-filter-param="presentacion"
+                                data-filter-value="{{ pedido.presentacion }}"
+                                style="cursor: pointer;">
+                                {{ pedido.get_presentacion_display }}
+                            </td>
+                            <td data-label="Compania"
+                                class="js-dashboard-filter"
+                                data-filter-param="proveedor"
+                                data-filter-value="{{ pedido.proveedor_id }}"
+                                style="cursor: pointer;">
                                 {% if pedido.observaciones %}
                                 <button type="button" class="btn btn-link p-0" data-toggle="modal"
                                     data-target="#observacionesModal{{ pedido.id }}">
@@ -218,9 +228,27 @@ Inicio
                                 {{ pedido.proveedor.nombre }}
                                 {% endif %}
                             </td>
-                            <td data-label="Tipo de huevo">{{ pedido.get_tipo_huevo_display }}</td>
-                            <td data-label="Cantidad total (kg)">{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
-                            <td data-label="Semana" class="col-semana">{{ pedido.semana|date:"d/m/Y" }}</td>
+                            <td data-label="Tipo de huevo"
+                                class="js-dashboard-filter"
+                                data-filter-param="tipo_huevo"
+                                data-filter-value="{{ pedido.tipo_huevo }}"
+                                style="cursor: pointer;">
+                                {{ pedido.get_tipo_huevo_display }}
+                            </td>
+                            <td data-label="Cantidad total (kg)"
+                                class="js-dashboard-filter"
+                                data-filter-param="cantidad_total"
+                                data-filter-value="{{ pedido.cantidad_total|default:pedido.cantidad }}"
+                                style="cursor: pointer;">
+                                {{ pedido.cantidad_total|default:pedido.cantidad }}
+                            </td>
+                            <td data-label="Semana"
+                                class="col-semana js-dashboard-filter"
+                                data-filter-param="semana"
+                                data-filter-value="{{ pedido.semana|date:'Y-m-d' }}"
+                                style="cursor: pointer;">
+                                {{ pedido.semana|date:"d/m/Y" }}
+                            </td>
                             <td data-label="Entregas">
                                 {% with entregas=pedido.entregas.all %}
                                 {% with entregas_count=entregas|length %}
@@ -271,8 +299,18 @@ Inicio
                                 {% endwith %}
                                 {% endwith %}
                             </td>
-                            <td data-label="Fecha/creacion">{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
-                            <td data-label="Estado">
+                            <td data-label="Fecha/creacion"
+                                class="js-dashboard-filter"
+                                data-filter-param="fecha_creacion"
+                                data-filter-value="{{ pedido.fecha_creacion|date:'Y-m-d' }}"
+                                style="cursor: pointer;">
+                                {{ pedido.fecha_creacion|date:"d/m/Y" }}
+                            </td>
+                            <td data-label="Estado"
+                                class="js-dashboard-filter"
+                                data-filter-param="estado"
+                                data-filter-value="{{ pedido.estado }}"
+                                style="cursor: pointer;">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
                                     {{ pedido.get_estado_display }}
                                 </span>
@@ -471,6 +509,28 @@ Inicio
                     legend: { display: false }
                 }
             }
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const cells = document.querySelectorAll(".js-dashboard-filter");
+        if (!cells.length) {
+            return;
+        }
+        cells.forEach((cell) => {
+            cell.addEventListener("click", function (event) {
+                if (event.target.closest("button, a, [data-toggle='modal']")) {
+                    return;
+                }
+                const param = this.dataset.filterParam;
+                const value = this.dataset.filterValue;
+                if (!param || !value) {
+                    return;
+                }
+                const url = new URL(window.location.href);
+                url.searchParams.set(param, value);
+                window.location.href = url.toString();
+            });
         });
     });
 </script>

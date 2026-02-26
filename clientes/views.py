@@ -431,6 +431,15 @@ def _filtrar_pedidos_editables_por_usuario(user, qs):
     return qs.filter(ciudad=ciudad_usuario)
 
 
+def _filtrar_pedidos_por_sucursal_para_listados(user, qs):
+    if _usuario_es_admin(user):
+        return qs
+    ciudad_usuario = _obtener_ciudad_usuario(user)
+    if not ciudad_usuario:
+        return qs.none()
+    return qs.filter(ciudad=ciudad_usuario)
+
+
 def _aplicar_estilos_form(form):
     for field in form.fields.values():
         input_type = getattr(field.widget, 'input_type', None)
@@ -542,6 +551,10 @@ def inicio(request):
     anio_actual = date.today().year
     pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
+    pedidos_qs = _filtrar_pedidos_por_sucursal_para_listados(request.user, pedidos_qs)
+    ciudad_usuario = _obtener_ciudad_usuario(request.user)
+    if not _usuario_es_admin(request.user) and ciudad_usuario:
+        filtros['ciudad'] = ciudad_usuario
     ultimos_pedidos = list(
         pedidos_qs
         .filter(estado='PENDIENTE')
@@ -677,6 +690,11 @@ def inicio(request):
         value: round(ciudad_totales.get(value, 0) / 1000, 2)
         for value, _ in CIUDAD_CHOICES
     }
+    ciudades_tabla = list(CIUDAD_CHOICES)
+    if not _usuario_es_admin(request.user) and ciudad_usuario in ciudad_totales:
+        ciudad_label = dict(CIUDAD_CHOICES).get(ciudad_usuario, ciudad_usuario)
+        ciudades_tabla = [(ciudad_usuario, ciudad_label)]
+
     tablas_ciudades = [
         {
             'codigo': value,
@@ -685,7 +703,7 @@ def inicio(request):
             'totales': totales_por_ciudad.get(value, []),
             'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
         }
-        for value, label in CIUDAD_CHOICES
+        for value, label in ciudades_tabla
     ]
 
     return render(request, 'paginas/inicio.html', {
@@ -1908,10 +1926,17 @@ def editartablas(request):
         .prefetch_related('entregas')
         .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
     )
+    pedidos_qs = _filtrar_pedidos_por_sucursal_para_listados(request.user, pedidos_qs)
 
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+    ciudad_usuario = _obtener_ciudad_usuario(request.user)
+    mostrar_filtro_ciudad = _usuario_es_admin(request.user)
+    if not mostrar_filtro_ciudad and ciudad_usuario:
+        filtros['ciudad'] = ciudad_usuario
 
-    proveedores = Proveedor.objects.only('id', 'nombre', 'activo').filter(activo=True)
+    proveedores = Proveedor.objects.only('id', 'nombre', 'activo', 'ciudad').filter(activo=True)
+    if not mostrar_filtro_ciudad and ciudad_usuario:
+        proveedores = proveedores.filter(ciudad=ciudad_usuario)
     estados_activos_choices = [
         (value, label)
         for value, label in PEDIDO_ESTADO_CHOICES
@@ -1941,6 +1966,7 @@ def editartablas(request):
         'total_liquido': total_liquido,
         'total_mezcla': total_mezcla,
         'total_yema': total_yema,
+        'mostrar_filtro_ciudad': mostrar_filtro_ciudad,
         **filtros
     })
 
@@ -2187,6 +2213,15 @@ def filtrar_pedidos(request, qs):
     if estado := request.GET.get('estado'):
         qs = qs.filter(estado=estado)
         filtros['estado'] = estado
+
+    if cantidad_total := request.GET.get('cantidad_total'):
+        try:
+            cantidad_total_int = int(cantidad_total)
+        except (TypeError, ValueError):
+            cantidad_total_int = None
+        if cantidad_total_int is not None:
+            qs = qs.annotate(cantidad_filtro=_cantidad_pedido_expr()).filter(cantidad_filtro=cantidad_total_int)
+            filtros['cantidad_total'] = str(cantidad_total_int)
 
     if fecha_creacion := request.GET.get('fecha_creacion'):
         qs = qs.filter(fecha_creacion__date=fecha_creacion)

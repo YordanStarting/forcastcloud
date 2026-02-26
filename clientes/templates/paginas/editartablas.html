@@ -31,6 +31,7 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
+            {% if mostrar_filtro_ciudad %}
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Ciudad</label>
                 <select class="form-control" name="ciudad">
@@ -42,6 +43,7 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
+            {% endif %}
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Tipo de huevo</label>
                 <select class="form-control" name="tipo_huevo">

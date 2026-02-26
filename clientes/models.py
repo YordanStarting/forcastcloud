@@ -14,6 +14,8 @@ TIPO_HUEVO_CHOICES = [
 
 PRESENTACION_CHOICES = [
     ('OV20_1000', 'OV20 1000'),
+    ('OV20_20', 'OV20 x 20'),
+    ('OV20_15', 'OV20 x 15'),
     ('OV15_200', 'OV15 200'),
     ('OV15_20', 'OV15 20'),
     ('OV15_15', 'OV15 15'),
@@ -22,8 +24,10 @@ PRESENTACION_CHOICES = [
     ('OV30_10', 'OV30-10'),
     ('OV30_5', 'OV30-5'),
     ('OV30_3', 'OV30-3'),
+    ('OV30_3KG', 'OV30 x 3Kg'),
     ('SAC_20', 'Sac x 20'),
     ('BOLSA_4_4KG', 'Bolsa 4,4Kg'),
+    ('POLVO_DOSIF_2KG', 'Polvo dosificado 2 kilos'),
 ]
 
 CIUDAD_CHOICES = [

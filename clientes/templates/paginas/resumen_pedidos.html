@@ -4,6 +4,8 @@
 Resumen de pedidos
 {% endblock %}
 
+{% block body_class %}sidebar-toggled{% endblock %}
+
 {% block extra_head %}
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
 <style>
@@ -389,6 +391,14 @@ Resumen de pedidos
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
 <script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const sidebar = document.getElementById("accordionSidebar");
+        if (sidebar) {
+            document.body.classList.add("sidebar-toggled");
+            sidebar.classList.add("toggled");
+        }
+    });
+
     (function () {
         const semanaInput = document.querySelector('.js-semana-lunes');
         const semanaRapida = document.querySelector('.js-semana-rapida');
