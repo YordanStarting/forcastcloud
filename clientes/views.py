@@ -143,6 +143,24 @@ def _registrar_evento_creacion_pedido(pedido, usuario):
     )
 
 
+def _registrar_evento_edicion_pedido(pedido, usuario):
+    nombre_usuario = _nombre_usuario(usuario)
+    _crear_notificaciones_globales(
+        f"Pedido #{pedido.id} editado por {nombre_usuario}",
+        tipo_evento='INFO',
+        reproducir_sonido=True,
+    )
+
+
+def _registrar_evento_eliminacion_pedido(pedido_id, usuario):
+    nombre_usuario = _nombre_usuario(usuario)
+    _crear_notificaciones_globales(
+        f"Pedido #{pedido_id} eliminado por {nombre_usuario}",
+        tipo_evento='INFO',
+        reproducir_sonido=True,
+    )
+
+
 def _registrar_cambio_estado_pedido(
     pedido,
     estado_anterior,
@@ -1827,6 +1845,7 @@ def editarpedido(request, id):
                 for fecha, cantidad in entregas
             ], batch_size=100)
 
+        _registrar_evento_edicion_pedido(pedido, request.user)
         return redirect('inicio')
 
     entregas_iniciales = list(pedido.entregas.all().order_by('fecha_entrega'))
@@ -1869,9 +1888,15 @@ def editarpedido(request, id):
 
 @login_required
 def eliminarpedido(request, id):
-    if not _usuario_es_admin(request.user):
-        return HttpResponseForbidden("No tienes permisos para eliminar pedidos.")
-    Pedido.objects.filter(id=id).delete()
+    pedido = get_object_or_404(Pedido, id=id)
+    if not _usuario_puede_editar_pedido_por_ciudad(request.user, pedido):
+        return HttpResponseForbidden(
+            "No tienes permisos para eliminar pedidos de otra sucursal."
+        )
+
+    pedido_id = pedido.id
+    pedido.delete()
+    _registrar_evento_eliminacion_pedido(pedido_id, request.user)
     next_url = _resolver_next_url(request.GET.get('next'), default_name='inicio')
     return redirect(next_url)
 
