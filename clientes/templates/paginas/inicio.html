@@ -258,11 +258,13 @@ Inicio
                             <td data-label="Entregas">
                                 {% with entregas=pedido.entregas.all %}
                                 {% with entregas_count=entregas|length %}
-                                {% if entregas_count > 1 %}
+                                {% if entregas_count > 0 or pedido.fecha_entrega %}
                                 <button type="button" class="btn btn-link p-0" data-toggle="modal"
                                     data-target="#entregasModal{{ pedido.id }}" title="Ver calendario de entregas">
                                     <i class="fas fa-calendar-alt text-primary"></i>
-                                    <span class="small text-muted">({{ entregas_count }})</span>
+                                    <span class="small text-muted">
+                                        ({% if entregas_count > 0 %}{{ entregas_count }}{% else %}1{% endif %})
+                                    </span>
                                 </button>
 
                                 <div class="modal fade" id="entregasModal{{ pedido.id }}" tabindex="-1" role="dialog"
@@ -282,7 +284,9 @@ Inicio
                                                     {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
                                                 </p>
                                                 <div class="delivery-calendar"
-                                                    data-entregas='[{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'>
+                                                    data-user-id="{{ request.user.id }}"
+                                                    data-calendar-id="pedido-{{ pedido.id }}"
+                                                    data-entregas='[{% if entregas_count > 0 %}{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}{% elif pedido.fecha_entrega %}{"fecha":"{{ pedido.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ pedido.cantidad_total|default:pedido.cantidad|default:0 }}}{% endif %}]'>
                                                 </div>
                                             </div>
                                             <div class="modal-footer">
@@ -293,12 +297,6 @@ Inicio
                                         </div>
                                     </div>
                                 </div>
-                                {% elif entregas_count == 1 %}
-                                {% for entrega in entregas %}
-                                {{ entrega.fecha_entrega|date:"d/m/Y" }} &middot; {{ entrega.cantidad }} kg
-                                {% endfor %}
-                                {% elif pedido.fecha_entrega %}
-                                {{ pedido.fecha_entrega|date:"d/m/Y" }} &middot; {{ pedido.cantidad }} kg
                                 {% else %}
                                 -
                                 {% endif %}
@@ -369,6 +367,52 @@ Inicio
         </div>
     </div>
     {% endfor %}
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">RESUMEN CONSOLIDADO POR SUCURSAL</h6>
+        </div>
+        <div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                    <thead>
+                        <tr>
+                            <th>SUCURSAL</th>
+                            <th>PRESENTACION</th>
+                            <th>VIDA UTIL</th>
+                            <th>TOTAL (KG)</th>
+                            <th>CONFIRMADO (KG)</th>
+                            <th>PENDIENTE (KG)</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% for row in resumen_dashboard_rows %}
+                        <tr>
+                            <td data-label="Sucursal">{{ row.sucursal|upper }}</td>
+                            <td data-label="Presentacion">{{ row.presentacion }}</td>
+                            <td data-label="Vida util">{{ row.vida_util }}</td>
+                            <td data-label="Total (kg)">{{ row.total_kg }}</td>
+                            <td data-label="Confirmado (kg)">{{ row.confirmado_kg }}</td>
+                            <td data-label="Pendiente (kg)">{{ row.pendiente_kg }}</td>
+                        </tr>
+                        {% empty %}
+                        <tr>
+                            <td colspan="6" class="text-center text-muted">Sin datos para mostrar.</td>
+                        </tr>
+                        {% endfor %}
+                    </tbody>
+                    <tfoot>
+                        <tr>
+                            <th colspan="3">TOTAL GENERAL</th>
+                            <th>{{ resumen_dashboard_totales.total_kg }}</th>
+                            <th>{{ resumen_dashboard_totales.confirmado_kg }}</th>
+                            <th>{{ resumen_dashboard_totales.pendiente_kg }}</th>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+        </div>
+    </div>
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}

@@ -698,10 +698,64 @@ def inicio(request):
         for value, label in CIUDAD_CHOICES
     ]
 
+    ciudad_labels = dict(CIUDAD_CHOICES)
+    presentacion_labels = dict(PRESENTACION_CHOICES)
+    resumen_dashboard_rows = []
+    resumen_dashboard_totales = {
+        'total_kg': 0,
+        'confirmado_kg': 0,
+        'pendiente_kg': 0,
+    }
+    resumen_dashboard_qs = (
+        pedidos_activos_qs
+        .values('ciudad', 'proveedor__nombre', 'presentacion')
+        .annotate(
+            total_kg=Sum(_cantidad_pedido_expr()),
+            confirmado_kg=Sum(
+                Case(
+                    When(
+                        estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD,
+                        then=_cantidad_pedido_expr(),
+                    ),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+            pendiente_kg=Sum(
+                Case(
+                    When(estado='PENDIENTE', then=_cantidad_pedido_expr()),
+                    default=0,
+                    output_field=IntegerField(),
+                )
+            ),
+        )
+        .order_by('ciudad', 'proveedor__nombre', 'presentacion')
+    )
+    for row in resumen_dashboard_qs:
+        total_kg = row.get('total_kg') or 0
+        confirmado_kg = row.get('confirmado_kg') or 0
+        pendiente_kg = row.get('pendiente_kg') or 0
+        resumen_dashboard_rows.append({
+            'sucursal': ciudad_labels.get(row.get('ciudad'), row.get('ciudad') or '-'),
+            'presentacion': row.get('proveedor__nombre') or '-',
+            'vida_util': presentacion_labels.get(
+                row.get('presentacion'),
+                row.get('presentacion') or '-',
+            ),
+            'total_kg': total_kg,
+            'confirmado_kg': confirmado_kg,
+            'pendiente_kg': pendiente_kg,
+        })
+        resumen_dashboard_totales['total_kg'] += total_kg
+        resumen_dashboard_totales['confirmado_kg'] += confirmado_kg
+        resumen_dashboard_totales['pendiente_kg'] += pendiente_kg
+
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'tablas_ciudades': tablas_ciudades,
+        'resumen_dashboard_rows': resumen_dashboard_rows,
+        'resumen_dashboard_totales': resumen_dashboard_totales,
         'pedidos_pendientes': pedidos_pendientes,
         'pedidos_confirmados': pedidos_confirmados,
         'chart_labels': meses_labels,

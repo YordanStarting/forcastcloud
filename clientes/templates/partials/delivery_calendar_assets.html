@@ -50,6 +50,12 @@
         font-weight: 600;
     }
 
+    .delivery-calendar .day.is-marked {
+        border-color: #f9a8d4;
+        background: #fce7f3;
+        color: #9d174d;
+    }
+
     .delivery-calendar .day.has-delivery::after {
         content: "";
         width: 6px;
@@ -65,6 +71,10 @@
     .delivery-calendar .day.is-selected {
         outline: 2px solid #2563eb;
         outline-offset: 1px;
+    }
+
+    .delivery-calendar .day.is-selected.is-marked {
+        outline-color: #db2777;
     }
 
     .delivery-calendar .calendar-details {
@@ -133,6 +143,26 @@
             return date.getFullYear() + "-" + pad(date.getMonth() + 1);
         }
 
+        function markStorageKey(userId) {
+            return "delivery-calendar-marks-user-" + (userId || "0");
+        }
+
+        function loadMarks(userId) {
+            try {
+                return JSON.parse(localStorage.getItem(markStorageKey(userId)) || "{}");
+            } catch (e) {
+                return {};
+            }
+        }
+
+        function saveMarks(userId, marks) {
+            localStorage.setItem(markStorageKey(userId), JSON.stringify(marks));
+        }
+
+        function markKey(calendarId, dateStr) {
+            return (calendarId || "calendar") + "::" + dateStr;
+        }
+
         function buildCalendar(container) {
             var deliveries = [];
             try {
@@ -168,8 +198,18 @@
                 minKey: monthKey(minDate),
                 maxKey: monthKey(maxDate),
                 current: new Date(minDate.getFullYear(), minDate.getMonth(), 1),
-                selected: null
+                selected: null,
+                userId: container.dataset.userId || "{{ request.user.id|default:'0' }}",
+                calendarId: container.dataset.calendarId || "",
+                marks: {}
             };
+            if (!state.calendarId) {
+                var parentModal = container.closest(".modal");
+                state.calendarId = (parentModal && parentModal.id) || (
+                    "calendar-" + deliveries[0].fecha + "-" + deliveries.length
+                );
+            }
+            state.marks = loadMarks(state.userId);
 
             renderCalendar(state);
         }
@@ -256,9 +296,22 @@
                 } else {
                     button.classList.add("is-muted");
                 }
+                if (state.marks[markKey(state.calendarId, dateStr)]) {
+                    button.classList.add("is-marked");
+                }
 
                 button.addEventListener("click", function (event) {
                     var targetDate = event.currentTarget.dataset.date;
+                    if (event.currentTarget.classList.contains("has-delivery")) {
+                        var key = markKey(state.calendarId, targetDate);
+                        if (state.marks[key]) {
+                            delete state.marks[key];
+                        } else {
+                            state.marks[key] = true;
+                        }
+                        saveMarks(state.userId, state.marks);
+                        event.currentTarget.classList.toggle("is-marked", Boolean(state.marks[key]));
+                    }
                     selectDate(targetDate);
                 });
 

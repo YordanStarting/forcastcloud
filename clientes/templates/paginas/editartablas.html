@@ -140,11 +140,13 @@ Editar Pedido
                             <td data-label="Entregas">
                                 {% with entregas=pedido.entregas.all %}
                                 {% with entregas_count=entregas|length %}
-                                {% if entregas_count > 1 %}
+                                {% if entregas_count > 0 or pedido.fecha_entrega %}
                                 <button type="button" class="btn btn-link p-0" data-toggle="modal"
                                     data-target="#entregasModal{{ pedido.id }}" title="Ver calendario de entregas">
                                     <i class="fas fa-calendar-alt text-primary"></i>
-                                    <span class="small text-muted">({{ entregas_count }})</span>
+                                    <span class="small text-muted">
+                                        ({% if entregas_count > 0 %}{{ entregas_count }}{% else %}1{% endif %})
+                                    </span>
                                 </button>
 
                                 <div class="modal fade" id="entregasModal{{ pedido.id }}" tabindex="-1" role="dialog"
@@ -164,7 +166,10 @@ Editar Pedido
                                                 <p class="small text-muted mb-2">
                                                     {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
                                                 </p>
-                                                <div class="delivery-calendar" data-entregas='[{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'></div>
+                                                <div class="delivery-calendar"
+                                                    data-user-id="{{ request.user.id }}"
+                                                    data-calendar-id="pedido-{{ pedido.id }}"
+                                                    data-entregas='[{% if entregas_count > 0 %}{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}{% elif pedido.fecha_entrega %}{"fecha":"{{ pedido.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ pedido.cantidad_total|default:pedido.cantidad|default:0 }}}{% endif %}]'></div>
                                                                                             </div>
                                             <div class="modal-footer">
                                                 <button type="button" class="btn btn-secondary"
@@ -173,12 +178,6 @@ Editar Pedido
                                         </div>
                                     </div>
                                 </div>
-                                {% elif entregas_count == 1 %}
-                                {% for entrega in entregas %}
-                                {{ entrega.fecha_entrega|date:"d/m/Y" }} &middot; {{ entrega.cantidad }} kg
-                                {% endfor %}
-                                {% elif pedido.fecha_entrega %}
-                                {{ pedido.fecha_entrega|date:"d/m/Y" }} &middot; {{ pedido.cantidad }} kg
                                 {% else %}
                                 -
                                 {% endif %}
