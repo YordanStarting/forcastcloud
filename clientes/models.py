@@ -7,6 +7,9 @@ TIPO_HUEVO_CHOICES = [
     ('YELU', 'Yema Líquida'),
     ('CLLU', 'Clara Líquida'),
     ('MEPU', 'Mezcla en Polvo'),
+    ('HEPU', 'Huevo en Polvo'),
+    ('YEPU', 'Yema en Polvo'),
+    ('ALBP', 'Albumina en Polvo'),
 ]
 
 PRESENTACION_CHOICES = [

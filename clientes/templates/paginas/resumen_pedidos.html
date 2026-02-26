@@ -105,6 +105,10 @@ Resumen de pedidos
         margin-top: 0.35rem;
     }
 
+    .tabla-resumen-wrap {
+        overflow-x: auto;
+    }
+
     @media (max-width: 1100px) {
         .tarjetas-dia-grid {
             grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -123,9 +127,9 @@ Resumen de pedidos
 <div class="container-fluid resumen-programacion-page">
     <h1 class="h3 mb-2 text-gray-800">RESUMEN DE PEDIDOS</h1>
     <p class="resumen-intro mb-3">
-        Vista para programacion semanal. Selecciona un dia para ver el detalle por compania, presentacion y tipo de huevo.
+        Vista semanal por sucursal. Filtra por semana y ciudad para ver los totales diarios y consolidado semanal.
     </p>
-    <p class="small text-muted mb-3">El filtro por semana muestra solo pedidos pendientes, confirmados, en produccion y entregados/realizados.</p>
+    <p class="small text-muted mb-3">Estados incluidos: pendiente, confirmado, en produccion y entregado.</p>
 
     <form method="get" class="card shadow-sm mb-4">
         <div class="card-body pb-2">
@@ -143,14 +147,24 @@ Resumen de pedidos
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-12 col-md-3 mb-3">
+                    <label class="mb-1">Sucursal (ciudad)</label>
+                    <select class="form-control" name="ciudad">
+                        {% for item in ciudades_disponibles %}
+                        <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>{{ item.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-12 col-md-2 mb-3">
                     <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
                 </div>
-                <div class="col-12 col-md-2 mb-3">
+                <div class="col-12 col-md-1 mb-3">
                     <a href="{% url 'resumen_pedidos' %}" class="btn btn-link btn-block p-0">Limpiar</a>
                 </div>
             </div>
-            <p class="small text-muted mb-0">Semana seleccionada: <strong>{{ semana_label }}</strong></p>
+            <p class="small text-muted mb-0">
+                Semana: <strong>{{ semana_label }}</strong> | Sucursal: <strong>{{ ciudad_label }}</strong>
+            </p>
         </div>
     </form>
 
@@ -187,7 +201,7 @@ Resumen de pedidos
         <div class="card-body">
             <div class="tarjetas-dia-grid">
                 {% for tarjeta in tarjetas_dia %}
-                <a href="?semana={{ semana }}&dia={{ tarjeta.key }}"
+                <a href="?semana={{ semana }}&ciudad={{ ciudad }}&dia={{ tarjeta.key }}"
                     data-dia="{{ tarjeta.key }}"
                     class="tarjeta-dia js-tarjeta-dia {% if tarjeta.selected %}is-selected{% endif %}">
                     <div class="tarjeta-dia-label">{{ tarjeta.label }}</div>
@@ -237,75 +251,78 @@ Resumen de pedidos
     </div>
 
     <div class="row">
-        <div class="col-12 col-lg-5 mb-4">
+        <div class="col-12 col-xl-6 mb-4">
             <div class="card shadow h-100">
                 <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">TOTAL SEMANAL POR TIPO DE HUEVO</h6>
+                    <h6 class="m-0 font-weight-bold text-primary">TOTAL DIARIO - HUEVO LIQUIDO (TODA LA SEMANA)</h6>
                 </div>
                 <div class="card-body">
-                    <div class="table-responsive">
-                        <table class="table table-bordered mb-0">
-                            <thead>
-                                <tr>
-                                    <th>TIPO</th>
-                                    <th>FORECAST</th>
-                                    <th>PROGRAMADO</th>
-                                    <th>PENDIENTE</th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                {% for tipo in resumen_tipos %}
-                                <tr>
-                                    <td>{{ tipo.label }}</td>
-                                    <td>{{ tipo.forecast }} kg</td>
-                                    <td>{{ tipo.programado }} kg</td>
-                                    <td class="{% if tipo.pendiente_programar > 0 %}resumen-pendiente{% else %}resumen-ok{% endif %}">
-                                        {{ tipo.pendiente_programar }} kg
-                                    </td>
-                                </tr>
-                                {% endfor %}
-                            </tbody>
-                        </table>
-                    </div>
-                </div>
-            </div>
-        </div>
-
-        <div class="col-12 col-lg-7 mb-4">
-            <div class="card shadow h-100">
-                <div class="card-header py-3">
-                    <h6 class="m-0 font-weight-bold text-primary">TOTAL DIARIO (TODA LA SEMANA)</h6>
-                </div>
-                <div class="card-body">
-                    <div class="table-responsive">
+                    <div class="tabla-resumen-wrap">
                         <table class="table table-bordered mb-0">
                             <thead>
                                 <tr>
                                     <th>DIA</th>
-                                    {% for tipo in tipos_huevo %}
+                                    {% for tipo in tabla_totales_liquido.tipos %}
                                     <th>{{ tipo.codigo }}</th>
                                     {% endfor %}
-                                    <th>TOTAL DIA</th>
                                 </tr>
                             </thead>
                             <tbody>
-                                {% for dia in totales_dia %}
+                                {% for dia in tabla_totales_liquido.dias %}
                                 <tr>
                                     <td>{{ dia.label }}, {{ dia.fecha|date:"d/m/Y" }}</td>
                                     {% for cantidad in dia.cantidades %}
                                     <td>{{ cantidad }}</td>
                                     {% endfor %}
-                                    <td class="font-weight-bold">{{ dia.total }}</td>
                                 </tr>
                                 {% endfor %}
                             </tbody>
                             <tfoot>
                                 <tr>
                                     <th>TOTAL SEMANA</th>
-                                    {% for tipo in resumen_tipos %}
-                                    <th>{{ tipo.programado }}</th>
+                                    {% for total in tabla_totales_liquido.totales_semana_por_tipo %}
+                                    <th>{{ total }}</th>
                                     {% endfor %}
-                                    <th>{{ total_programado_semana }}</th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-12 col-xl-6 mb-4">
+            <div class="card shadow h-100">
+                <div class="card-header py-3">
+                    <h6 class="m-0 font-weight-bold text-primary">TOTAL DIARIO - HUEVO EN POLVO (TODA LA SEMANA)</h6>
+                </div>
+                <div class="card-body">
+                    <div class="tabla-resumen-wrap">
+                        <table class="table table-bordered mb-0">
+                            <thead>
+                                <tr>
+                                    <th>DIA</th>
+                                    {% for tipo in tabla_totales_polvo.tipos %}
+                                    <th>{{ tipo.codigo }}</th>
+                                    {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for dia in tabla_totales_polvo.dias %}
+                                <tr>
+                                    <td>{{ dia.label }}, {{ dia.fecha|date:"d/m/Y" }}</td>
+                                    {% for cantidad in dia.cantidades %}
+                                    <td>{{ cantidad }}</td>
+                                    {% endfor %}
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th>TOTAL SEMANA</th>
+                                    {% for total in tabla_totales_polvo.totales_semana_por_tipo %}
+                                    <th>{{ total }}</th>
+                                    {% endfor %}
                                 </tr>
                             </tfoot>
                         </table>
@@ -315,180 +332,58 @@ Resumen de pedidos
         </div>
     </div>
 
-    <h1 class="h3 mb-2 text-gray-800">LISTADO SEMANAL POR SUCURSALES</h1>
-
-    {% for tabla in tablas_ciudades %}
     <div class="card shadow mb-4">
         <div class="card-header py-3">
-            <h6 class="m-0 font-weight-bold text-primary">PEDIDOS SEMANALES - {{ tabla.nombre|upper }}</h6>
+            <h6 class="m-0 font-weight-bold text-primary">TOTAL SEMANAL CONSOLIDADO POR TIPO DE HUEVO</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                <table class="table table-bordered mb-0">
                     <thead>
                         <tr>
-                            <th>PRESENTACION</th>
-                            <th>COMPANIA</th>
-                            <th>TIPO DE HUEVO</th>
-                            <th>CANTIDAD TOTAL (KG)</th>
-                            <th class="col-semana">SEMANA</th>
-                            <th>ENTREGAS</th>
-                            <th>FECHA/CREACION</th>
-                            <th>ESTADO</th>
+                            <th>TIPO</th>
+                            <th>FORECAST</th>
+                            <th>PROGRAMADO</th>
+                            <th>PENDIENTE</th>
                         </tr>
                     </thead>
                     <tbody>
-                        {% for pedido in tabla.pedidos %}
+                        {% for tipo in resumen_tipos %}
                         <tr>
-                            <td data-label="Presentacion">{{ pedido.get_presentacion_display }}</td>
-                            <td data-label="Compania">
-                                {% if pedido.observaciones %}
-                                <button type="button" class="btn btn-link p-0" data-toggle="modal"
-                                    data-target="#observacionesModalResumen{{ pedido.id }}">
-                                    {{ pedido.proveedor.nombre }}
-                                </button>
-
-                                <div class="modal fade" id="observacionesModalResumen{{ pedido.id }}" tabindex="-1" role="dialog"
-                                    aria-labelledby="observacionesModalResumenLabel{{ pedido.id }}" aria-hidden="true">
-                                    <div class="modal-dialog modal-dialog-centered" role="document">
-                                        <div class="modal-content">
-                                            <div class="modal-header"
-                                                style="background: linear-gradient(90deg, rgba(37, 99, 235, 0.12), rgba(14, 165, 163, 0.12));">
-                                                <h5 class="modal-title" id="observacionesModalResumenLabel{{ pedido.id }}">
-                                                    Observaciones del pedido
-                                                </h5>
-                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
-                                                    <span aria-hidden="true">&times;</span>
-                                                </button>
-                                            </div>
-                                            <div class="modal-body">
-                                                <p class="small text-muted mb-2">
-                                                    {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
-                                                </p>
-                                                <div class="p-3" style="background: #f8fafc; border-radius: 0.75rem;">
-                                                    {{ pedido.observaciones|linebreaksbr }}
-                                                </div>
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                                                    Cerrar
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% else %}
-                                {{ pedido.proveedor.nombre }}
-                                {% endif %}
+                            <td>{{ tipo.label }}</td>
+                            <td>{{ tipo.forecast }} kg</td>
+                            <td>{{ tipo.programado }} kg</td>
+                            <td class="{% if tipo.pendiente_programar > 0 %}resumen-pendiente{% else %}resumen-ok{% endif %}">
+                                {{ tipo.pendiente_programar }} kg
                             </td>
-                            <td data-label="Tipo de huevo">{{ pedido.get_tipo_huevo_display }}</td>
-                            <td data-label="Cantidad total (kg)">{{ pedido.cantidad_total|default:pedido.cantidad }}</td>
-                            <td data-label="Semana" class="col-semana">{{ pedido.semana|date:"d/m/Y" }}</td>
-                            <td data-label="Entregas">
-                                {% with entregas=pedido.entregas.all %}
-                                {% with entregas_count=entregas|length %}
-                                {% if entregas_count > 1 %}
-                                <button type="button" class="btn btn-link p-0" data-toggle="modal"
-                                    data-target="#entregasModalResumen{{ pedido.id }}" title="Ver calendario de entregas">
-                                    <i class="fas fa-calendar-alt text-primary"></i>
-                                    <span class="small text-muted">({{ entregas_count }})</span>
-                                </button>
-
-                                <div class="modal fade" id="entregasModalResumen{{ pedido.id }}" tabindex="-1" role="dialog"
-                                    aria-labelledby="entregasModalResumenLabel{{ pedido.id }}" aria-hidden="true">
-                                    <div class="modal-dialog modal-dialog-centered" role="document">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h5 class="modal-title" id="entregasModalResumenLabel{{ pedido.id }}">
-                                                    Calendario de entregas
-                                                </h5>
-                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
-                                                    <span aria-hidden="true">&times;</span>
-                                                </button>
-                                            </div>
-                                            <div class="modal-body">
-                                                <p class="small text-muted mb-2">
-                                                    {{ pedido.proveedor.nombre }} &middot; {{ pedido.get_tipo_huevo_display }}
-                                                </p>
-                                                <div class="delivery-calendar"
-                                                    data-entregas='[{% for entrega in entregas %}{"fecha":"{{ entrega.fecha_entrega|date:"Y-m-d" }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'>
-                                                </div>
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">
-                                                    Cerrar
-                                                </button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
-                                {% elif entregas_count == 1 %}
-                                {% for entrega in entregas %}
-                                {{ entrega.fecha_entrega|date:"d/m/Y" }} &middot; {{ entrega.cantidad }} kg
-                                {% endfor %}
-                                {% elif pedido.fecha_entrega %}
-                                {{ pedido.fecha_entrega|date:"d/m/Y" }} &middot; {{ pedido.cantidad }} kg
-                                {% else %}
-                                -
-                                {% endif %}
-                                {% endwith %}
-                                {% endwith %}
-                            </td>
-                            <td data-label="Fecha/creacion">{{ pedido.fecha_creacion|date:"d/m/Y" }}</td>
-                            <td data-label="Estado">
-                                <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
-                                    {{ pedido.get_estado_display }}
-                                </span>
-                            </td>
-                        </tr>
-                        {% empty %}
-                        <tr>
-                            <td colspan="8" class="text-center text-muted">Sin pedidos para esta sucursal en la semana.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
+                    <tfoot>
+                        <tr>
+                            <th>LIQUIDO SEMANA</th>
+                            <th>-</th>
+                            <th>{{ total_liquido_semana }} kg</th>
+                            <th>-</th>
+                        </tr>
+                        <tr>
+                            <th>POLVO SEMANA</th>
+                            <th>-</th>
+                            <th>{{ total_polvo_semana }} kg</th>
+                            <th>-</th>
+                        </tr>
+                        <tr>
+                            <th>TOTAL SEMANA</th>
+                            <th>{{ total_forecast_semana }} kg</th>
+                            <th>{{ total_programado_semana }} kg</th>
+                            <th class="{% if total_pendiente_semana > 0 %}resumen-pendiente{% else %}resumen-ok{% endif %}">{{ total_pendiente_semana }} kg</th>
+                        </tr>
+                    </tfoot>
                 </table>
-            </div>
-
-            <div class="mt-3">
-                <div class="text-uppercase text-muted small mb-2">Totales por comercial</div>
-                <div class="table-responsive">
-                    <table class="table table-sm table-bordered mb-0">
-                        <thead>
-                            <tr>
-                                <th>COMERCIAL</th>
-                                <th>TOTAL (KG)</th>
-                                <th>TOTAL (TON)</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            {% for total in tabla.totales %}
-                            <tr>
-                                <td>{{ total.comercial }}</td>
-                                <td>{{ total.total_kg }} kg</td>
-                                <td>{{ total.total_toneladas }} toneladas</td>
-                            </tr>
-                            {% empty %}
-                            <tr>
-                                <td colspan="3" class="text-center text-muted">Sin totales</td>
-                            </tr>
-                            {% endfor %}
-                        </tbody>
-                        <tfoot>
-                            <tr>
-                                <th colspan="2">TOTAL CIUDAD</th>
-                                <th>{{ tabla.total_toneladas }} toneladas</th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
             </div>
         </div>
     </div>
-    {% endfor %}
 </div>
-
-{% include "partials/delivery_calendar_assets.html" %}
 
 <script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
 <script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
@@ -496,6 +391,7 @@ Resumen de pedidos
     (function () {
         const semanaInput = document.querySelector('.js-semana-lunes');
         const semanaRapida = document.querySelector('.js-semana-rapida');
+        const ciudadSelect = document.querySelector('select[name="ciudad"]');
         const tarjetasDia = document.querySelectorAll('.js-tarjeta-dia');
 
         if (semanaInput && window.flatpickr) {
@@ -525,7 +421,8 @@ Resumen de pedidos
                     event.preventDefault();
                     const dia = tarjeta.dataset.dia;
                     const semana = semanaInput.value || "{{ semana }}";
-                    const url = `?semana=${encodeURIComponent(semana)}&dia=${encodeURIComponent(dia)}`;
+                    const ciudad = ciudadSelect ? ciudadSelect.value : "{{ ciudad }}";
+                    const url = `?semana=${encodeURIComponent(semana)}&ciudad=${encodeURIComponent(ciudad)}&dia=${encodeURIComponent(dia)}`;
                     window.location.href = url;
                 });
             });

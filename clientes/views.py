@@ -685,18 +685,42 @@ def resumen_pedidos(request):
         {'key': 5, 'label': 'Viernes', 'short_label': 'Vie'},
         {'key': 6, 'label': 'Sabado', 'short_label': 'Sab'},
     ]
+    ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
+    ciudad_todas_value = 'TODAS'
+    ciudad_todas_label = 'Todas las sucursales'
+    rol_usuario = _obtener_rol_usuario(request.user)
+    ciudad_usuario = _obtener_ciudad_usuario(request.user)
+    ciudad_default = 'BOGOTA'
+    if rol_usuario == 'comercial' and ciudad_usuario in ciudad_valores:
+        ciudad_default = ciudad_usuario
+
+    ciudad_param = (request.GET.get('ciudad') or '').strip().upper()
+    if ciudad_param == ciudad_todas_value:
+        ciudad_seleccionada = ciudad_todas_value
+    elif ciudad_param in ciudad_valores:
+        ciudad_seleccionada = ciudad_param
+    else:
+        ciudad_seleccionada = ciudad_default
+
     tipos_huevo = [
         {'codigo': codigo, 'label': label}
         for codigo, label in TIPO_HUEVO_CHOICES
     ]
-    codigos_tipo = [item['codigo'] for item in tipos_huevo]
+    tipo_labels = {codigo: label for codigo, label in TIPO_HUEVO_CHOICES}
+    codigos_tipo = [item['codigo'] for item in tipos_huevo if item['codigo']]
     cantidad_expr = _cantidad_pedido_expr()
+
+    filtro_base = {
+        'estado__in': PEDIDO_ESTADOS_RESUMEN,
+    }
+    if ciudad_seleccionada != ciudad_todas_value:
+        filtro_base['ciudad'] = ciudad_seleccionada
 
     semanas_disponibles = list(
         Pedido.objects
         .filter(
             semana__isnull=False,
-            estado__in=PEDIDO_ESTADOS_RESUMEN,
+            **filtro_base,
         )
         .values_list('semana', flat=True)
         .distinct()
@@ -728,50 +752,27 @@ def resumen_pedidos(request):
         })
         indice_por_fecha[fecha] = idx
 
-    presentaciones_orden = list(PRESENTACION_CHOICES)
-    filas_por_presentacion = {}
-
-    def _crear_fila_presentacion(codigo, etiqueta):
-        return {
-            'codigo': codigo,
-            'presentacion': etiqueta,
-            'forecast_map': {tipo: 0 for tipo in codigos_tipo},
-            'dias_map': [{tipo: 0 for tipo in codigos_tipo} for _ in dias_programacion],
-        }
-
-    def _obtener_fila_presentacion(codigo):
-        fila = filas_por_presentacion.get(codigo)
-        if fila is not None:
-            return fila
-        etiqueta = dict(PRESENTACION_CHOICES).get(codigo, codigo)
-        fila = _crear_fila_presentacion(codigo, etiqueta)
-        filas_por_presentacion[codigo] = fila
-        if not any(valor == codigo for valor, _ in presentaciones_orden):
-            presentaciones_orden.append((codigo, etiqueta))
-        return fila
-
-    for codigo, etiqueta in presentaciones_orden:
-        filas_por_presentacion[codigo] = _crear_fila_presentacion(codigo, etiqueta)
-
+    filtro_semana_ciudad = {
+        **filtro_base,
+        'semana': semana_seleccionada,
+    }
     forecast_rows = (
         Pedido.objects
-        .filter(
-            semana=semana_seleccionada,
-            estado__in=PEDIDO_ESTADOS_RESUMEN,
-        )
-        .values('presentacion', 'tipo_huevo')
+        .filter(**filtro_semana_ciudad)
+        .values('tipo_huevo')
         .annotate(total_kg=Sum(cantidad_expr))
     )
+    total_forecast_tipo = {tipo: 0 for tipo in codigos_tipo}
     for row in forecast_rows:
-        presentacion = row.get('presentacion')
         tipo = row.get('tipo_huevo')
-        if not presentacion or tipo not in codigos_tipo:
+        if tipo not in codigos_tipo:
             continue
-        fila = _obtener_fila_presentacion(presentacion)
-        fila['forecast_map'][tipo] += row.get('total_kg') or 0
+        total_forecast_tipo[tipo] += row.get('total_kg') or 0
 
     fecha_inicio_semana = semana_seleccionada
     fecha_fin_semana = semana_seleccionada + timedelta(days=5)
+    totales_dia_tipo = [{tipo: 0 for tipo in codigos_tipo} for _ in dias_programacion]
+
     entregas_rows = (
         EntregaPedido.objects
         .filter(
@@ -779,89 +780,50 @@ def resumen_pedidos(request):
             pedido__estado__in=PEDIDO_ESTADOS_RESUMEN,
             fecha_entrega__gte=fecha_inicio_semana,
             fecha_entrega__lte=fecha_fin_semana,
+            **(
+                {'pedido__ciudad': ciudad_seleccionada}
+                if ciudad_seleccionada != ciudad_todas_value
+                else {}
+            ),
         )
-        .values('pedido__presentacion', 'pedido__tipo_huevo', 'fecha_entrega')
+        .values('pedido__tipo_huevo', 'fecha_entrega')
         .annotate(total_kg=Sum('cantidad'))
     )
     for row in entregas_rows:
-        presentacion = row.get('pedido__presentacion')
         tipo = row.get('pedido__tipo_huevo')
         fecha_entrega = row.get('fecha_entrega')
-        if not presentacion or tipo not in codigos_tipo:
+        if tipo not in codigos_tipo:
             continue
         idx = indice_por_fecha.get(fecha_entrega)
         if idx is None:
             continue
-        fila = _obtener_fila_presentacion(presentacion)
-        fila['dias_map'][idx][tipo] += row.get('total_kg') or 0
+        totales_dia_tipo[idx][tipo] += row.get('total_kg') or 0
 
     pedidos_directos_rows = (
         Pedido.objects
         .filter(
-            semana=semana_seleccionada,
-            estado__in=PEDIDO_ESTADOS_RESUMEN,
+            **filtro_semana_ciudad,
             entregas__isnull=True,
             fecha_entrega__gte=fecha_inicio_semana,
             fecha_entrega__lte=fecha_fin_semana,
         )
-        .values('presentacion', 'tipo_huevo', 'fecha_entrega')
+        .values('tipo_huevo', 'fecha_entrega')
         .annotate(total_kg=Sum(cantidad_expr))
     )
     for row in pedidos_directos_rows:
-        presentacion = row.get('presentacion')
         tipo = row.get('tipo_huevo')
         fecha_entrega = row.get('fecha_entrega')
-        if not presentacion or tipo not in codigos_tipo:
+        if tipo not in codigos_tipo:
             continue
         idx = indice_por_fecha.get(fecha_entrega)
         if idx is None:
             continue
-        fila = _obtener_fila_presentacion(presentacion)
-        fila['dias_map'][idx][tipo] += row.get('total_kg') or 0
+        totales_dia_tipo[idx][tipo] += row.get('total_kg') or 0
 
-    total_forecast_tipo = {tipo: 0 for tipo in codigos_tipo}
     total_programado_tipo = {tipo: 0 for tipo in codigos_tipo}
-    totales_dia_tipo = [{tipo: 0 for tipo in codigos_tipo} for _ in dias_programacion]
-    filas_presentacion = []
-
-    for codigo, _ in presentaciones_orden:
-        fila = filas_por_presentacion[codigo]
-        forecast = [fila['forecast_map'][tipo] for tipo in codigos_tipo]
-        total_forecast = sum(forecast)
-
-        dias = []
-        total_programado = 0
-        for idx, dia in enumerate(dias_programacion):
-            cantidades = [fila['dias_map'][idx][tipo] for tipo in codigos_tipo]
-            total_dia = sum(cantidades)
-            total_programado += total_dia
-            dias.append({
-                'label': dia['label'],
-                'short_label': dia['short_label'],
-                'fecha': dia['fecha'],
-                'cantidades': cantidades,
-                'total': total_dia,
-            })
-
-        for tipo_idx, tipo in enumerate(codigos_tipo):
-            total_forecast_tipo[tipo] += forecast[tipo_idx]
-        for idx in range(len(dias_programacion)):
-            for tipo in codigos_tipo:
-                cantidad = fila['dias_map'][idx][tipo]
-                totales_dia_tipo[idx][tipo] += cantidad
-                total_programado_tipo[tipo] += cantidad
-
-        pendiente_programar = total_forecast - total_programado
-        if total_forecast or total_programado:
-            filas_presentacion.append({
-                'codigo': fila['codigo'],
-                'presentacion': fila['presentacion'],
-                'forecast': forecast,
-                'dias': dias,
-                'total_forecast': total_forecast,
-                'total_programado': total_programado,
-                'pendiente_programar': pendiente_programar,
-            })
+    for idx in range(len(dias_programacion)):
+        for tipo in codigos_tipo:
+            total_programado_tipo[tipo] += totales_dia_tipo[idx][tipo]
 
     resumen_tipos = []
     for tipo in tipos_huevo:
@@ -892,6 +854,48 @@ def resumen_pedidos(request):
     total_forecast_semana = sum(total_forecast_tipo.values())
     total_pendiente_semana = total_forecast_semana - total_programado_semana
 
+    codigos_liquidos_base = ['HELU', 'YELU', 'CLLU']
+    codigos_polvo_base = ['MEPU', 'HEPU', 'YEPU', 'ALBP']
+    codigos_liquidos = [codigo for codigo in codigos_liquidos_base if codigo in codigos_tipo]
+    codigos_polvo = [codigo for codigo in codigos_polvo_base if codigo in codigos_tipo]
+    codigos_agrupados = set(codigos_liquidos + codigos_polvo)
+    for codigo in codigos_tipo:
+        if codigo in codigos_agrupados:
+            continue
+        if codigo.endswith('LU'):
+            codigos_liquidos.append(codigo)
+        else:
+            codigos_polvo.append(codigo)
+
+    def _construir_tabla_diaria_por_grupo(codigos_grupo):
+        dias = []
+        total_semana = 0
+        for idx, dia in enumerate(dias_programacion):
+            cantidades = [totales_dia_tipo[idx][codigo] for codigo in codigos_grupo]
+            total_dia = sum(cantidades)
+            total_semana += total_dia
+            dias.append({
+                'label': dia['label'],
+                'fecha': dia['fecha'],
+                'cantidades': cantidades,
+                'total': total_dia,
+            })
+        return {
+            'tipos': [
+                {'codigo': codigo, 'label': tipo_labels.get(codigo, codigo)}
+                for codigo in codigos_grupo
+            ],
+            'dias': dias,
+            'totales_semana_por_tipo': [total_programado_tipo[codigo] for codigo in codigos_grupo],
+            'total_semana': total_semana,
+        }
+
+    tabla_totales_liquido = _construir_tabla_diaria_por_grupo(codigos_liquidos)
+    tabla_totales_polvo = _construir_tabla_diaria_por_grupo(codigos_polvo)
+
+    total_liquido_semana = sum(total_programado_tipo.get(codigo, 0) for codigo in codigos_liquidos)
+    total_polvo_semana = sum(total_programado_tipo.get(codigo, 0) for codigo in codigos_polvo)
+
     try:
         dia_seleccionado_key = int(request.GET.get('dia', 1))
     except (TypeError, ValueError):
@@ -906,7 +910,6 @@ def resumen_pedidos(request):
     fecha_dia_seleccionado = dia_seleccionado['fecha']
 
     presentacion_labels = dict(PRESENTACION_CHOICES)
-    tipo_labels = dict(TIPO_HUEVO_CHOICES)
     detalle_dia_map = {}
 
     def _acumular_detalle_dia(proveedor, presentacion, tipo_huevo, cantidad):
@@ -929,6 +932,11 @@ def resumen_pedidos(request):
             pedido__semana=semana_seleccionada,
             pedido__estado__in=PEDIDO_ESTADOS_RESUMEN,
             fecha_entrega=fecha_dia_seleccionado,
+            **(
+                {'pedido__ciudad': ciudad_seleccionada}
+                if ciudad_seleccionada != ciudad_todas_value
+                else {}
+            ),
         )
         .values('pedido__proveedor__nombre', 'pedido__presentacion', 'pedido__tipo_huevo')
         .annotate(total_kg=Sum('cantidad'))
@@ -944,8 +952,7 @@ def resumen_pedidos(request):
     pedidos_directos_detalle = (
         Pedido.objects
         .filter(
-            semana=semana_seleccionada,
-            estado__in=PEDIDO_ESTADOS_RESUMEN,
+            **filtro_semana_ciudad,
             entregas__isnull=True,
             fecha_entrega=fecha_dia_seleccionado,
         )
@@ -980,69 +987,6 @@ def resumen_pedidos(request):
         for dia in dias_programacion
     ]
 
-    pedidos_semana = (
-        Pedido.objects
-        .select_related('proveedor')
-        .prefetch_related('entregas')
-        .filter(
-            semana=semana_seleccionada,
-            estado__in=PEDIDO_ESTADOS_RESUMEN,
-        )
-        .order_by('fecha_entrega', 'id')
-    )
-    resumen_ciudad = (
-        pedidos_semana
-        .values('ciudad')
-        .annotate(total=Sum(cantidad_expr))
-    )
-    ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
-    for row in resumen_ciudad:
-        ciudad = row.get('ciudad')
-        if ciudad in ciudad_totales:
-            ciudad_totales[ciudad] = row.get('total') or 0
-
-    totales_comerciales = (
-        pedidos_semana
-        .values(
-            'ciudad',
-            'comercial_id',
-            'comercial__username',
-            'comercial__first_name',
-            'comercial__last_name',
-        )
-        .annotate(total_kg=Sum(cantidad_expr))
-        .order_by('ciudad', 'comercial__username')
-    )
-    totales_por_ciudad = {value: [] for value, _ in CIUDAD_CHOICES}
-    for row in totales_comerciales:
-        ciudad = row.get('ciudad')
-        if ciudad not in totales_por_ciudad:
-            continue
-        nombre = f"{row.get('comercial__first_name', '')} {row.get('comercial__last_name', '')}".strip()
-        if not nombre:
-            nombre = row.get('comercial__username') or 'Sin comercial'
-        total_kg = row.get('total_kg') or 0
-        totales_por_ciudad[ciudad].append({
-            'comercial': nombre,
-            'total_kg': total_kg,
-            'total_toneladas': round(total_kg / 1000, 2),
-        })
-
-    total_toneladas_por_ciudad = {
-        value: round(ciudad_totales.get(value, 0) / 1000, 2)
-        for value, _ in CIUDAD_CHOICES
-    }
-    tablas_ciudades = [
-        {
-            'codigo': value,
-            'nombre': label,
-            'pedidos': pedidos_semana.filter(ciudad=value),
-            'totales': totales_por_ciudad.get(value, []),
-            'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
-        }
-        for value, label in CIUDAD_CHOICES
-    ]
-
     semanas_selector = [
         {
             'value': semana.isoformat(),
@@ -1051,24 +995,47 @@ def resumen_pedidos(request):
         }
         for semana in semanas_disponibles
     ]
+    ciudades_selector = [
+        {
+            'value': ciudad_todas_value,
+            'label': ciudad_todas_label,
+            'selected': ciudad_seleccionada == ciudad_todas_value,
+        }
+    ] + [
+        {
+            'value': value,
+            'label': label,
+            'selected': value == ciudad_seleccionada,
+        }
+        for value, label in CIUDAD_CHOICES
+    ]
 
     return render(request, 'paginas/resumen_pedidos.html', {
         'tipos_huevo': tipos_huevo,
         'dias_programacion': dias_programacion,
-        'filas_presentacion': filas_presentacion,
         'dia_seleccionado': dia_seleccionado,
         'dia_seleccionado_key': dia_seleccionado_key,
         'tarjetas_dia': tarjetas_dia,
         'detalle_dia_filas': detalle_dia_filas,
         'total_dia_seleccionado': total_dia_seleccionado,
-        'tablas_ciudades': tablas_ciudades,
         'resumen_tipos': resumen_tipos,
         'totales_dia': totales_dia,
+        'tabla_totales_liquido': tabla_totales_liquido,
+        'tabla_totales_polvo': tabla_totales_polvo,
+        'total_liquido_semana': total_liquido_semana,
+        'total_polvo_semana': total_polvo_semana,
         'total_forecast_semana': total_forecast_semana,
         'total_programado_semana': total_programado_semana,
         'total_pendiente_semana': total_pendiente_semana,
         'semana': semana_seleccionada.isoformat(),
         'semana_label': semana_seleccionada.strftime('%d/%m/%Y'),
+        'ciudad': ciudad_seleccionada,
+        'ciudad_label': (
+            ciudad_todas_label
+            if ciudad_seleccionada == ciudad_todas_value
+            else dict(CIUDAD_CHOICES).get(ciudad_seleccionada, ciudad_seleccionada)
+        ),
+        'ciudades_disponibles': ciudades_selector,
         'semanas_disponibles': semanas_selector,
     })
 # vista logica del forscast.
@@ -1716,7 +1683,8 @@ def eliminarpedido(request, id):
     if not _usuario_es_admin(request.user):
         return HttpResponseForbidden("No tienes permisos para eliminar pedidos.")
     Pedido.objects.filter(id=id).delete()
-    return redirect('inicio')
+    next_url = _resolver_next_url(request.GET.get('next'), default_name='inicio')
+    return redirect(next_url)
 
 @login_required
 def editartablas(request):

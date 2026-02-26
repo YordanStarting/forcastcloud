@@ -162,6 +162,11 @@ Historial de pedidos
                                 <a href="{% url 'editarpedido' pedido.id %}" class="btn btn-outline-primary btn-sm">
                                     Editar pedido
                                 </a>
+                                <a href="{% url 'eliminarpedido' pedido.id %}?next=historial"
+                                    class="btn btn-outline-danger btn-sm"
+                                    onclick="return confirm('¿Seguro que quieres eliminar este pedido del historial?');">
+                                    Eliminar
+                                </a>
                                 {% else %}
                                 <span class="text-muted small">Solo admin</span>
                                 {% endif %}
