@@ -551,10 +551,6 @@ def inicio(request):
     anio_actual = date.today().year
     pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
-    pedidos_qs = _filtrar_pedidos_por_sucursal_para_listados(request.user, pedidos_qs)
-    ciudad_usuario = _obtener_ciudad_usuario(request.user)
-    if not _usuario_es_admin(request.user) and ciudad_usuario:
-        filtros['ciudad'] = ciudad_usuario
     ultimos_pedidos = list(
         pedidos_qs
         .filter(estado='PENDIENTE')
@@ -690,11 +686,6 @@ def inicio(request):
         value: round(ciudad_totales.get(value, 0) / 1000, 2)
         for value, _ in CIUDAD_CHOICES
     }
-    ciudades_tabla = list(CIUDAD_CHOICES)
-    if not _usuario_es_admin(request.user) and ciudad_usuario in ciudad_totales:
-        ciudad_label = dict(CIUDAD_CHOICES).get(ciudad_usuario, ciudad_usuario)
-        ciudades_tabla = [(ciudad_usuario, ciudad_label)]
-
     tablas_ciudades = [
         {
             'codigo': value,
@@ -703,7 +694,7 @@ def inicio(request):
             'totales': totales_por_ciudad.get(value, []),
             'total_toneladas': total_toneladas_por_ciudad.get(value, 0),
         }
-        for value, label in ciudades_tabla
+        for value, label in CIUDAD_CHOICES
     ]
 
     return render(request, 'paginas/inicio.html', {
