@@ -99,6 +99,17 @@
         font-weight: 700;
         color: #1d4ed8;
     }
+
+    .calendar-mark-indicator {
+        display: none;
+        margin-left: 0.25rem;
+        color: #db2777;
+        font-weight: 700;
+    }
+
+    .calendar-mark-indicator.is-visible {
+        display: inline-block;
+    }
 </style>
 
 <script id="delivery-calendar-script">
@@ -163,6 +174,32 @@
             return (calendarId || "calendar") + "::" + dateStr;
         }
 
+        function hasMarksForCalendar(state) {
+            var prefix = (state.calendarId || "calendar") + "::";
+            return Object.keys(state.marks || {}).some(function (key) {
+                return key.indexOf(prefix) === 0 && state.marks[key];
+            });
+        }
+
+        function updateTriggerIndicator(state) {
+            var modal = state.container.closest(".modal");
+            if (!modal || !modal.id) {
+                return;
+            }
+            var hasMarks = hasMarksForCalendar(state);
+            var buttons = document.querySelectorAll('[data-target="#' + modal.id + '"]');
+            buttons.forEach(function (button) {
+                var indicator = button.querySelector(".calendar-mark-indicator");
+                if (!indicator) {
+                    indicator = document.createElement("span");
+                    indicator.className = "calendar-mark-indicator";
+                    indicator.textContent = "!";
+                    button.appendChild(indicator);
+                }
+                indicator.classList.toggle("is-visible", hasMarks);
+            });
+        }
+
         function buildCalendar(container) {
             var deliveries = [];
             try {
@@ -210,6 +247,7 @@
                 );
             }
             state.marks = loadMarks(state.userId);
+            updateTriggerIndicator(state);
 
             renderCalendar(state);
         }
@@ -311,6 +349,7 @@
                         }
                         saveMarks(state.userId, state.marks);
                         event.currentTarget.classList.toggle("is-marked", Boolean(state.marks[key]));
+                        updateTriggerIndicator(state);
                     }
                     selectDate(targetDate);
                 });

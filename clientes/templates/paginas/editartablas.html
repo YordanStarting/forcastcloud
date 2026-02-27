@@ -31,7 +31,6 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            {% if mostrar_filtro_ciudad %}
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Ciudad</label>
                 <select class="form-control" name="ciudad">
@@ -43,7 +42,6 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            {% endif %}
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Tipo de huevo</label>
                 <select class="form-control" name="tipo_huevo">
@@ -66,7 +64,7 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-1 mb-2">
+            <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Estado</label>
                 <select class="form-control" name="estado">
                     <option value="">Todos</option>
@@ -77,14 +75,16 @@ Editar Pedido
                     {% endfor %}
                 </select>
             </div>
-            <div class="col-12 col-md-1 mb-2">
-                <label class="mb-1">Fecha creacion</label>
-                <input type="date" class="form-control" name="fecha_creacion" value="{{ fecha_creacion|default:'' }}">
-            </div>
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Semana (lunes)</label>
-                <input type="text" class="form-control js-semana-lunes" name="semana"
-                    value="{{ semana|default:'' }}" autocomplete="off">
+                <select class="form-control" name="semana">
+                    <option value="">Todas</option>
+                    {% for item in semanas_disponibles %}
+                    <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>
+                        {{ item.label }}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
                 <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
@@ -229,26 +229,5 @@ Editar Pedido
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}
-
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-<script>
-    (function () {
-        const semanaInput = document.querySelector('.js-semana-lunes');
-        if (!semanaInput || !window.flatpickr) {
-            return;
-        }
-        flatpickr(semanaInput, {
-            dateFormat: "Y-m-d",
-            allowInput: false,
-            disableMobile: true,
-            locale: "es",
-            enable: [function (fecha) {
-                return fecha.getDay() === 1;
-            }]
-        });
-    })();
-</script>
-
 {% endblock %}
 

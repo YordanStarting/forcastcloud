@@ -198,6 +198,9 @@ def _registrar_cambio_estado_pedido(
         mensaje = f"Pedido #{pedido.id} marcado como devuelto por {nombre_usuario}"
         tipo_evento = 'PEDIDO_DEVUELTO'
         reproducir_sonido = True
+    elif estado_nuevo == 'ENTREGADO':
+        mensaje = f"Pedido #{pedido.id} entregado por {nombre_usuario}"
+        reproducir_sonido = True
     else:
         mensaje = (
             f"Pedido #{pedido.id} cambio de {estado_anterior_label} "
@@ -549,6 +552,8 @@ def mi_perfil(request):
 @login_required
 def inicio(request):
     anio_actual = date.today().year
+    rol_usuario = _obtener_rol_usuario(request.user)
+    puede_ver_resumen_consolidado = rol_usuario in {'logistica', 'produccion'}
     pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
     ultimos_pedidos = list(
@@ -698,62 +703,74 @@ def inicio(request):
         for value, label in CIUDAD_CHOICES
     ]
 
-    ciudad_labels = dict(CIUDAD_CHOICES)
-    presentacion_labels = dict(PRESENTACION_CHOICES)
     resumen_dashboard_rows = []
     resumen_dashboard_totales = {
         'total_kg': 0,
-        'confirmado_kg': 0,
+        'fabricado_kg': 0,
         'pendiente_kg': 0,
     }
-    resumen_dashboard_qs = (
-        pedidos_activos_qs
-        .values('ciudad', 'proveedor__nombre', 'presentacion')
-        .annotate(
-            total_kg=Sum(_cantidad_pedido_expr()),
-            confirmado_kg=Sum(
-                Case(
-                    When(
-                        estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD,
-                        then=_cantidad_pedido_expr(),
-                    ),
-                    default=0,
-                    output_field=IntegerField(),
-                )
-            ),
-            pendiente_kg=Sum(
-                Case(
-                    When(estado='PENDIENTE', then=_cantidad_pedido_expr()),
-                    default=0,
-                    output_field=IntegerField(),
-                )
-            ),
+    if puede_ver_resumen_consolidado:
+        ciudad_labels = dict(CIUDAD_CHOICES)
+        presentacion_labels = dict(PRESENTACION_CHOICES)
+        resumen_dashboard_qs = (
+            pedidos_activos_qs
+            .values('ciudad', 'proveedor__nombre', 'presentacion')
+            .annotate(
+                total_kg=Sum(_cantidad_pedido_expr()),
+                fabricado_kg=Sum(
+                    Case(
+                        When(
+                            estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD,
+                            then=_cantidad_pedido_expr(),
+                        ),
+                        default=0,
+                        output_field=IntegerField(),
+                    )
+                ),
+                pendiente_kg=Sum(
+                    Case(
+                        When(estado='PENDIENTE', then=_cantidad_pedido_expr()),
+                        default=0,
+                        output_field=IntegerField(),
+                    )
+                ),
+            )
+            .order_by('ciudad', 'proveedor__nombre', 'presentacion')
         )
-        .order_by('ciudad', 'proveedor__nombre', 'presentacion')
-    )
-    for row in resumen_dashboard_qs:
-        total_kg = row.get('total_kg') or 0
-        confirmado_kg = row.get('confirmado_kg') or 0
-        pendiente_kg = row.get('pendiente_kg') or 0
-        resumen_dashboard_rows.append({
-            'sucursal': ciudad_labels.get(row.get('ciudad'), row.get('ciudad') or '-'),
-            'presentacion': row.get('proveedor__nombre') or '-',
-            'vida_util': presentacion_labels.get(
-                row.get('presentacion'),
-                row.get('presentacion') or '-',
-            ),
-            'total_kg': total_kg,
-            'confirmado_kg': confirmado_kg,
-            'pendiente_kg': pendiente_kg,
-        })
-        resumen_dashboard_totales['total_kg'] += total_kg
-        resumen_dashboard_totales['confirmado_kg'] += confirmado_kg
-        resumen_dashboard_totales['pendiente_kg'] += pendiente_kg
+        for row in resumen_dashboard_qs:
+            total_kg = row.get('total_kg') or 0
+            fabricado_kg = row.get('fabricado_kg') or 0
+            pendiente_kg = row.get('pendiente_kg') or 0
+            ciudad = row.get('ciudad') or ''
+            proveedor_nombre = row.get('proveedor__nombre') or '-'
+            presentacion_codigo = row.get('presentacion') or ''
+            vida_util = presentacion_labels.get(presentacion_codigo, presentacion_codigo or '-')
+            resumen_dashboard_rows.append({
+                'row_key': f"{ciudad}|{proveedor_nombre}|{presentacion_codigo}",
+                'sucursal': ciudad_labels.get(ciudad, ciudad or '-'),
+                'presentacion': proveedor_nombre,
+                'vida_util': vida_util,
+                'total_kg': total_kg,
+                'fabricado_kg': fabricado_kg,
+                'pendiente_kg': pendiente_kg,
+            })
+            resumen_dashboard_totales['total_kg'] += total_kg
+            resumen_dashboard_totales['fabricado_kg'] += fabricado_kg
+            resumen_dashboard_totales['pendiente_kg'] += pendiente_kg
+
+        resumen_dashboard_rows.sort(
+            key=lambda item: (
+                (item.get('vida_util') or '').lower(),
+                (item.get('sucursal') or '').lower(),
+                (item.get('presentacion') or '').lower(),
+            )
+        )
 
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'tablas_ciudades': tablas_ciudades,
+        'puede_ver_resumen_consolidado': puede_ver_resumen_consolidado,
         'resumen_dashboard_rows': resumen_dashboard_rows,
         'resumen_dashboard_totales': resumen_dashboard_totales,
         'pedidos_pendientes': pedidos_pendientes,
@@ -1966,27 +1983,76 @@ def eliminarpedido(request, id):
 
 @login_required
 def editartablas(request):
-    pedidos_qs = (
+    pedidos_base_qs = (
         Pedido.objects
         .select_related('proveedor')
         .prefetch_related('entregas')
         .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
     )
-    pedidos_qs = _filtrar_pedidos_por_sucursal_para_listados(request.user, pedidos_qs)
-
-    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
     ciudad_usuario = _obtener_ciudad_usuario(request.user)
-    mostrar_filtro_ciudad = _usuario_es_admin(request.user)
-    if not mostrar_filtro_ciudad and ciudad_usuario:
-        filtros['ciudad'] = ciudad_usuario
+    rol_usuario = _obtener_rol_usuario(request.user)
+    ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
+    ciudad_param = (request.GET.get('ciudad') or '').strip().upper()
+    if ciudad_param not in ciudad_valores:
+        ciudad_param = ''
+
+    filtros_forzados = {}
+    if _usuario_es_admin(request.user):
+        pedidos_visibles_qs = pedidos_base_qs
+    else:
+        pedidos_visibles_qs = pedidos_base_qs
+        if ciudad_param:
+            pedidos_visibles_qs = pedidos_visibles_qs.filter(ciudad=ciudad_param)
+            filtros_forzados['ciudad'] = ciudad_param
+        else:
+            if ciudad_usuario:
+                pedidos_visibles_qs = pedidos_visibles_qs.filter(ciudad=ciudad_usuario)
+                filtros_forzados['ciudad'] = ciudad_usuario
+            else:
+                pedidos_visibles_qs = pedidos_visibles_qs.none()
+            # Para comerciales, por defecto ve solo lo que el usuario creo.
+            if rol_usuario == 'comercial':
+                pedidos_visibles_qs = pedidos_visibles_qs.filter(comercial=request.user)
+
+    pedidos_semana_qs, _ = filtrar_pedidos(
+        request,
+        pedidos_visibles_qs,
+        include_fecha_creacion=False,
+        include_semana=False,
+    )
+    semanas_disponibles = list(
+        pedidos_semana_qs
+        .filter(semana__isnull=False)
+        .values_list('semana', flat=True)
+        .distinct()
+        .order_by('-semana')
+    )
+
+    pedidos, filtros = filtrar_pedidos(
+        request,
+        pedidos_visibles_qs,
+        include_fecha_creacion=False,
+    )
+    for key, value in filtros_forzados.items():
+        filtros.setdefault(key, value)
 
     proveedores = Proveedor.objects.only('id', 'nombre', 'activo', 'ciudad').filter(activo=True)
-    if not mostrar_filtro_ciudad and ciudad_usuario:
-        proveedores = proveedores.filter(ciudad=ciudad_usuario)
+    ciudad_filtro_activa = filtros.get('ciudad')
+    if ciudad_filtro_activa in ciudad_valores:
+        proveedores = proveedores.filter(ciudad=ciudad_filtro_activa)
     estados_activos_choices = [
         (value, label)
         for value, label in PEDIDO_ESTADO_CHOICES
         if value in PEDIDO_ESTADOS_ACTIVOS
+    ]
+    semana_seleccionada = filtros.get('semana', '')
+    semanas_selector = [
+        {
+            'value': semana.isoformat(),
+            'label': f"Semana del {semana.strftime('%d/%m/%Y')}",
+            'selected': semana.isoformat() == semana_seleccionada,
+        }
+        for semana in semanas_disponibles
     ]
 
     # SUMAS CORRECTAS (sin duplicar)
@@ -2012,7 +2078,9 @@ def editartablas(request):
         'total_liquido': total_liquido,
         'total_mezcla': total_mezcla,
         'total_yema': total_yema,
-        'mostrar_filtro_ciudad': mostrar_filtro_ciudad,
+        'mostrar_filtro_ciudad': True,
+        'semanas_disponibles': semanas_selector,
+        'can_change_pedido_status': _usuario_puede_cambiar_estado_pedidos(request.user),
         **filtros
     })
 
@@ -2237,7 +2305,13 @@ def registros_pedidos(request):
     })
 
 
-def filtrar_pedidos(request, qs):
+def filtrar_pedidos(
+    request,
+    qs,
+    *,
+    include_fecha_creacion=True,
+    include_semana=True,
+):
     filtros = {}
 
     if proveedor := request.GET.get('proveedor'):
@@ -2269,15 +2343,17 @@ def filtrar_pedidos(request, qs):
             qs = qs.annotate(cantidad_filtro=_cantidad_pedido_expr()).filter(cantidad_filtro=cantidad_total_int)
             filtros['cantidad_total'] = str(cantidad_total_int)
 
-    if fecha_creacion := request.GET.get('fecha_creacion'):
-        qs = qs.filter(fecha_creacion__date=fecha_creacion)
-        filtros['fecha_creacion'] = fecha_creacion
+    if include_fecha_creacion:
+        if fecha_creacion := request.GET.get('fecha_creacion'):
+            qs = qs.filter(fecha_creacion__date=fecha_creacion)
+            filtros['fecha_creacion'] = fecha_creacion
 
-    if semana := request.GET.get('semana'):
-        semana_ajustada = _ajustar_a_lunes(semana)
-        if semana_ajustada:
-            qs = qs.filter(semana=semana_ajustada)
-            filtros['semana'] = semana_ajustada.isoformat()
+    if include_semana:
+        if semana := request.GET.get('semana'):
+            semana_ajustada = _ajustar_a_lunes(semana)
+            if semana_ajustada:
+                qs = qs.filter(semana=semana_ajustada)
+                filtros['semana'] = semana_ajustada.isoformat()
 
     if desde := request.GET.get('fecha_desde'):
         qs = qs.filter(fecha_entrega__gte=desde)

@@ -26,6 +26,18 @@ Inicio
     .js-cart-highlight.is-active {
         color: #b45309;
     }
+
+    .js-consolidado-cart {
+        color: #94a3b8;
+    }
+
+    .js-consolidado-cart.is-active {
+        color: #b45309;
+    }
+
+    .fabricado-input {
+        min-width: 110px;
+    }
 </style>
 {% endblock %}
 
@@ -368,51 +380,73 @@ Inicio
     </div>
     {% endfor %}
 
-    <div class="card shadow mb-4">
+    {% if puede_ver_resumen_consolidado %}
+    <div class="card shadow mb-4" id="resumenConsolidadoCard">
         <div class="card-header py-3">
             <h6 class="m-0 font-weight-bold text-primary">RESUMEN CONSOLIDADO POR SUCURSAL</h6>
         </div>
         <div class="card-body">
             <div class="table-responsive">
-                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
+                <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0" id="resumenConsolidadoTable">
                     <thead>
                         <tr>
                             <th>SUCURSAL</th>
                             <th>PRESENTACION</th>
                             <th>VIDA UTIL</th>
                             <th>TOTAL (KG)</th>
-                            <th>CONFIRMADO (KG)</th>
+                            <th>FABRICADO (KG)</th>
                             <th>PENDIENTE (KG)</th>
+                            <th>CARRITO</th>
                         </tr>
                     </thead>
                     <tbody>
                         {% for row in resumen_dashboard_rows %}
-                        <tr>
+                        <tr data-consolidado-key="{{ row.row_key|escape }}">
                             <td data-label="Sucursal">{{ row.sucursal|upper }}</td>
                             <td data-label="Presentacion">{{ row.presentacion }}</td>
                             <td data-label="Vida util">{{ row.vida_util }}</td>
-                            <td data-label="Total (kg)">{{ row.total_kg }}</td>
-                            <td data-label="Confirmado (kg)">{{ row.confirmado_kg }}</td>
-                            <td data-label="Pendiente (kg)">{{ row.pendiente_kg }}</td>
+                            <td data-label="Total (kg)" class="js-total-cell">{{ row.total_kg }}</td>
+                            <td data-label="Fabricado (kg)">
+                                <input
+                                    type="number"
+                                    class="form-control form-control-sm fabricado-input js-fabricado-input"
+                                    min="0"
+                                    max="{{ row.total_kg }}"
+                                    step="1"
+                                    value="{{ row.fabricado_kg }}"
+                                    data-total="{{ row.total_kg }}">
+                            </td>
+                            <td data-label="Pendiente (kg)" class="js-pendiente-cell">{{ row.pendiente_kg }}</td>
+                            <td data-label="Carrito" class="text-center">
+                                <button type="button"
+                                    class="btn btn-link p-0 js-consolidado-cart"
+                                    title="Marcar fila"
+                                    aria-label="Marcar fila"
+                                    aria-pressed="false">
+                                    <i class="fas fa-shopping-cart"></i>
+                                </button>
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="6" class="text-center text-muted">Sin datos para mostrar.</td>
+                            <td colspan="7" class="text-center text-muted">Sin datos para mostrar.</td>
                         </tr>
                         {% endfor %}
                     </tbody>
                     <tfoot>
                         <tr>
                             <th colspan="3">TOTAL GENERAL</th>
-                            <th>{{ resumen_dashboard_totales.total_kg }}</th>
-                            <th>{{ resumen_dashboard_totales.confirmado_kg }}</th>
-                            <th>{{ resumen_dashboard_totales.pendiente_kg }}</th>
+                            <th id="resumenConsolidadoTotalKg">{{ resumen_dashboard_totales.total_kg }}</th>
+                            <th id="resumenConsolidadoFabricadoKg">{{ resumen_dashboard_totales.fabricado_kg }}</th>
+                            <th id="resumenConsolidadoPendienteKg">{{ resumen_dashboard_totales.pendiente_kg }}</th>
+                            <th></th>
                         </tr>
                     </tfoot>
                 </table>
             </div>
         </div>
     </div>
+    {% endif %}
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}
@@ -635,6 +669,137 @@ Inicio
                 applyHighlight(row);
             });
         });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+        const table = document.getElementById("resumenConsolidadoTable");
+        if (!table) {
+            return;
+        }
+
+        const userId = "{{ request.user.id|default:'0' }}";
+        const fabricadoStorageKey = `dashboard-consolidado-fabricado-user-${userId}`;
+        const highlightStorageKey = `dashboard-consolidado-highlight-user-${userId}`;
+
+        const loadState = (key) => {
+            try {
+                return JSON.parse(localStorage.getItem(key) || "{}");
+            } catch (error) {
+                return {};
+            }
+        };
+
+        const saveState = (key, value) => {
+            localStorage.setItem(key, JSON.stringify(value));
+        };
+
+        const toInt = (value) => {
+            const number = parseInt(value, 10);
+            return Number.isNaN(number) ? 0 : number;
+        };
+
+        const fabricadoState = loadState(fabricadoStorageKey);
+        const highlightState = loadState(highlightStorageKey);
+        const rows = table.querySelectorAll("tbody tr[data-consolidado-key]");
+        const totalKgElement = document.getElementById("resumenConsolidadoTotalKg");
+        const fabricadoKgElement = document.getElementById("resumenConsolidadoFabricadoKg");
+        const pendienteKgElement = document.getElementById("resumenConsolidadoPendienteKg");
+
+        const updateTotals = () => {
+            let totalKg = 0;
+            let fabricadoKg = 0;
+            let pendienteKg = 0;
+
+            rows.forEach((row) => {
+                const input = row.querySelector(".js-fabricado-input");
+                const pendienteCell = row.querySelector(".js-pendiente-cell");
+                totalKg += toInt(input?.dataset.total || 0);
+                fabricadoKg += toInt(input?.value || 0);
+                pendienteKg += toInt(pendienteCell?.textContent || 0);
+            });
+
+            if (totalKgElement) {
+                totalKgElement.textContent = totalKg;
+            }
+            if (fabricadoKgElement) {
+                fabricadoKgElement.textContent = fabricadoKg;
+            }
+            if (pendienteKgElement) {
+                pendienteKgElement.textContent = pendienteKg;
+            }
+        };
+
+        const updatePending = (row) => {
+            const input = row.querySelector(".js-fabricado-input");
+            const pendienteCell = row.querySelector(".js-pendiente-cell");
+            const rowKey = row.dataset.consolidadoKey;
+            if (!input || !pendienteCell || !rowKey) {
+                return;
+            }
+
+            const totalKg = toInt(input.dataset.total);
+            let fabricadoKg = toInt(input.value);
+
+            if (fabricadoKg < 0) {
+                fabricadoKg = 0;
+            }
+            if (fabricadoKg > totalKg) {
+                fabricadoKg = totalKg;
+            }
+
+            input.value = fabricadoKg;
+            pendienteCell.textContent = totalKg - fabricadoKg;
+            fabricadoState[rowKey] = fabricadoKg;
+            saveState(fabricadoStorageKey, fabricadoState);
+            updateTotals();
+        };
+
+        const applyRowHighlight = (row) => {
+            const rowKey = row.dataset.consolidadoKey;
+            const button = row.querySelector(".js-consolidado-cart");
+            if (!rowKey || !button) {
+                return;
+            }
+            const active = Boolean(highlightState[rowKey]);
+            row.classList.toggle("pedido-row-highlight", active);
+            button.classList.toggle("is-active", active);
+            button.setAttribute("aria-pressed", active ? "true" : "false");
+        };
+
+        rows.forEach((row) => {
+            const rowKey = row.dataset.consolidadoKey;
+            const input = row.querySelector(".js-fabricado-input");
+            const button = row.querySelector(".js-consolidado-cart");
+            if (!rowKey || !input) {
+                return;
+            }
+
+            if (Object.prototype.hasOwnProperty.call(fabricadoState, rowKey)) {
+                input.value = fabricadoState[rowKey];
+            }
+            updatePending(row);
+
+            input.addEventListener("input", () => updatePending(row));
+            input.addEventListener("change", () => updatePending(row));
+
+            if (button) {
+                button.addEventListener("click", function (event) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    if (highlightState[rowKey]) {
+                        delete highlightState[rowKey];
+                    } else {
+                        highlightState[rowKey] = true;
+                    }
+                    saveState(highlightStorageKey, highlightState);
+                    applyRowHighlight(row);
+                });
+            }
+
+            applyRowHighlight(row);
+        });
+
+        updateTotals();
     });
 </script>
 {% endblock %}
