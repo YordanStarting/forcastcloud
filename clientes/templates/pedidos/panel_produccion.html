@@ -1,0 +1,487 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Produccion
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .prod-row-highlight > td {
+        background-color: rgba(255, 216, 0, 0.25) !important;
+        color: #7a5a00 !important;
+    }
+
+    .prod-row-highlight .badge,
+    .prod-row-highlight button,
+    .prod-row-highlight i,
+    .prod-row-highlight a {
+        color: #7a5a00 !important;
+    }
+
+    .js-prod-cart {
+        color: #94a3b8;
+    }
+
+    .js-prod-cart.is-active {
+        color: #b45309;
+    }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <h1 class="h3 mb-2 text-gray-800">{{ panel_titulo }}</h1>
+    <p class="text-muted">{{ panel_subtitulo }}</p>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab != 'log' %}active{% endif %}" href="{% url 'panel_produccion' %}?tab=producto">
+                Producto fabricado
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'log' %}active{% endif %}" href="{% url 'panel_produccion' %}?tab=log{% if log_query_string %}&{{ log_query_string }}{% endif %}">
+                Log produccion
+            </a>
+        </li>
+    </ul>
+
+    <div class="{% if active_tab == 'log' %}d-none{% endif %}" id="tabProductoFabricado">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
+            </div>
+            <div class="card-body">
+                <div class="form-row mb-3">
+                    <div class="col-12 col-md-4 mb-2">
+                        <label class="mb-1">Filtrar por sucursal</label>
+                        <select id="panelSucursalFilter" class="form-control form-control-sm">
+                            <option value="">Todas</option>
+                            {% for bloque in bloques_ciudad %}
+                            <option value="{{ bloque.codigo }}">{{ bloque.nombre }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="col-12 col-md-4 mb-2">
+                        <label class="mb-1">Filtrar por vida util</label>
+                        <select id="panelVidaUtilFilter" class="form-control form-control-sm">
+                            <option value="">Todas</option>
+                            {% for item in vida_utiles %}
+                            <option value="{{ item|lower }}">{{ item }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+
+                {% for bloque in bloques_ciudad %}
+                <div class="card border mb-3 js-panel-city-card" data-sucursal="{{ bloque.codigo }}">
+                    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                        <strong class="text-primary mb-0">SUCURSAL - {{ bloque.nombre|upper }}</strong>
+                        <button type="button"
+                            class="btn btn-outline-secondary btn-sm js-toggle-card-body"
+                            data-target="panelTabla{{ bloque.codigo }}"
+                            aria-expanded="true">
+                            Ocultar
+                        </button>
+                    </div>
+                    <div class="card-body p-0" id="panelTabla{{ bloque.codigo }}">
+                        <div class="table-responsive">
+                            <table class="table table-bordered mb-0 js-panel-table" width="100%" cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th>COMPANIA</th>
+                                        <th>TIPO HUEVO</th>
+                                        <th>VIDA UTIL</th>
+                                        <th>TOTAL PROGRAMADO (KG)</th>
+                                        <th>FABRICADO (KG)</th>
+                                        <th>PENDIENTE (KG)</th>
+                                        <th>ESTADO ACTUAL</th>
+                                        <th>CAMBIAR ESTADO</th>
+                                        <th>CARRITO</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% if bloque.rows %}
+                                    {% for row in bloque.rows %}
+                                    <tr data-sucursal="{{ bloque.codigo }}" data-vida-util="{{ row.vida_util|lower }}" data-row-key="{{ row.row_key }}">
+                                        <td>{{ row.compania }}</td>
+                                        <td>{{ row.tipo_huevo }}</td>
+                                        <td>{{ row.vida_util }}</td>
+                                        <td class="js-row-total">{{ row.programado_kg }}</td>
+                                        <td>
+                                            <form method="post" class="form-inline">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="tab" value="producto">
+                                                <input type="hidden" name="action" value="guardar_cantidad">
+                                                <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
+                                                <input type="number"
+                                                    name="gestion_kg"
+                                                    class="form-control form-control-sm mr-2"
+                                                    min="0"
+                                                    max="{{ row.programado_kg }}"
+                                                    step="1"
+                                                    value="{{ row.gestion_kg }}"
+                                                    required>
+                                                <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
+                                            </form>
+                                        </td>
+                                        <td class="js-row-pendiente">{{ row.pendiente_kg }}</td>
+                                        <td>
+                                            <span class="badge badge-estado badge-estado-{{ row.estado|lower }}">
+                                                {{ row.estado_label }}
+                                            </span>
+                                        </td>
+                                        <td>
+                                            <form method="post" class="form-inline">
+                                                {% csrf_token %}
+                                                <input type="hidden" name="tab" value="producto">
+                                                <input type="hidden" name="action" value="cambiar_estado">
+                                                <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
+                                                <select name="estado" class="form-control form-control-sm mr-2">
+                                                    {% for estado_value, estado_label in row.estado_options %}
+                                                    <option value="{{ estado_value }}" {% if row.estado == estado_value %}selected{% endif %}>
+                                                        {{ estado_label }}
+                                                    </option>
+                                                    {% endfor %}
+                                                </select>
+                                                <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
+                                            </form>
+                                        </td>
+                                        <td class="text-center">
+                                            <button type="button" class="btn btn-link p-0 js-prod-cart" aria-label="Marcar fila" aria-pressed="false">
+                                                <i class="fas fa-shopping-cart"></i>
+                                            </button>
+                                        </td>
+                                    </tr>
+                                    {% endfor %}
+                                    <tr class="js-panel-empty d-none">
+                                        <td colspan="9" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    </tr>
+                                    {% else %}
+                                    <tr class="js-panel-empty">
+                                        <td colspan="9" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    </tr>
+                                    {% endif %}
+                                </tbody>
+                                <tfoot>
+                                    <tr>
+                                        <th colspan="3">TOTAL {{ bloque.nombre|upper }}</th>
+                                        <th class="js-city-total">{{ bloque.totales.programado_kg }}</th>
+                                        <th class="js-city-gestion">{{ bloque.totales.gestion_kg }}</th>
+                                        <th class="js-city-pendiente">{{ bloque.totales.pendiente_kg }}</th>
+                                        <th colspan="3"></th>
+                                    </tr>
+                                </tfoot>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endfor %}
+
+                <div class="card border">
+                    <div class="card-header py-2">
+                        <strong class="text-primary">TOTAL GENERAL</strong>
+                    </div>
+                    <div class="card-body p-0">
+                        <div class="table-responsive">
+                            <table class="table table-bordered mb-0" width="100%" cellspacing="0">
+                                <thead>
+                                    <tr>
+                                        <th>TOTAL PEDIDOS PROGRAMADOS (KG)</th>
+                                        <th>FABRICADO (KG)</th>
+                                        <th>PENDIENTE (KG)</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td id="panelTotalProgramado">{{ totales_generales.programado_kg }}</td>
+                                        <td id="panelTotalGestion">{{ totales_generales.gestion_kg }}</td>
+                                        <td id="panelTotalPendiente">{{ totales_generales.pendiente_kg }}</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="{% if active_tab != 'log' %}d-none{% endif %}" id="tabLogProduccion">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">LOG PRODUCCION</h6>
+            </div>
+            <div class="card-body">
+                <form method="get" class="mb-3">
+                    <input type="hidden" name="tab" value="log">
+                    <div class="form-row">
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Accion</label>
+                            <select name="accion" class="form-control form-control-sm">
+                                <option value="">Todas</option>
+                                {% for value, label in produccion_accion_choices %}
+                                <option value="{{ value }}" {% if log_filters.accion == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Sucursal</label>
+                            <select name="sucursal" class="form-control form-control-sm">
+                                <option value="">Todas</option>
+                                {% for value, label in ciudades %}
+                                <option value="{{ value }}" {% if log_filters.sucursal == value %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4 mb-2">
+                            <label class="mb-1">Buscar</label>
+                            <input type="text" name="q" class="form-control form-control-sm" value="{{ log_filters.q }}" placeholder="Compania, tipo, presentacion o usuario">
+                        </div>
+                        <div class="col-12 col-md-2 mb-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary btn-sm mr-2">Filtrar</button>
+                            <a href="{% url 'panel_produccion' %}?tab=log" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+                        </div>
+                    </div>
+                </form>
+
+                <div class="table-responsive">
+                    <table class="table table-bordered" width="100%" cellspacing="0">
+                        <thead>
+                            <tr>
+                                <th>FECHA</th>
+                                <th>ACCION</th>
+                                <th>SUCURSAL</th>
+                                <th>COMPANIA</th>
+                                <th>TIPO HUEVO</th>
+                                <th>PRESENTACION</th>
+                                <th>ANTERIOR</th>
+                                <th>NUEVO</th>
+                                <th>CANTIDAD (KG)</th>
+                                <th>USUARIO</th>
+                                <th>DETALLE</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for registro in log_page_obj %}
+                            <tr>
+                                <td>{{ registro.fecha_creacion|date:"d/m/Y H:i" }}</td>
+                                <td>{{ registro.accion_label }}</td>
+                                <td>{{ registro.sucursal_label|default:"-" }}</td>
+                                <td>{{ registro.compania|default:"-" }}</td>
+                                <td>{{ registro.tipo_huevo|default:"-" }}</td>
+                                <td>{{ registro.presentacion|default:"-" }}</td>
+                                <td>{% if registro.valor_anterior != None %}{{ registro.valor_anterior }}{% else %}-{% endif %}</td>
+                                <td>{% if registro.valor_nuevo != None %}{{ registro.valor_nuevo }}{% else %}-{% endif %}</td>
+                                <td>{% if registro.cantidad_kg != None %}{{ registro.cantidad_kg }}{% else %}-{% endif %}</td>
+                                <td>{{ registro.usuario_nombre }}</td>
+                                <td>{{ registro.detalle|default:"-" }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="11" class="text-center text-muted">Sin registros de produccion.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+
+                {% if log_page_obj and log_page_obj.paginator.num_pages > 1 %}
+                <div class="d-flex align-items-center justify-content-between mt-3">
+                    <div class="small text-muted">
+                        Pagina {{ log_page_obj.number }} de {{ log_page_obj.paginator.num_pages }}
+                    </div>
+                    <div>
+                        {% if log_page_obj.has_previous %}
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel_produccion' %}?tab=log{% if log_query_string %}&{{ log_query_string }}{% endif %}&page={{ log_page_obj.previous_page_number }}">
+                            <i class="fas fa-arrow-left"></i>
+                        </a>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-secondary" disabled>
+                            <i class="fas fa-arrow-left"></i>
+                        </button>
+                        {% endif %}
+
+                        {% if log_page_obj.has_next %}
+                        <a class="btn btn-sm btn-outline-primary" href="{% url 'panel_produccion' %}?tab=log{% if log_query_string %}&{{ log_query_string }}{% endif %}&page={{ log_page_obj.next_page_number }}">
+                            <i class="fas fa-arrow-right"></i>
+                        </a>
+                        {% else %}
+                        <button class="btn btn-sm btn-outline-secondary" disabled>
+                            <i class="fas fa-arrow-right"></i>
+                        </button>
+                        {% endif %}
+                    </div>
+                </div>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        document.querySelectorAll(".js-toggle-card-body").forEach((button) => {
+            button.addEventListener("click", function () {
+                const targetId = this.dataset.target;
+                const target = targetId ? document.getElementById(targetId) : null;
+                if (!target) {
+                    return;
+                }
+                const expanded = this.getAttribute("aria-expanded") !== "false";
+                target.classList.toggle("d-none", expanded);
+                this.setAttribute("aria-expanded", expanded ? "false" : "true");
+                this.textContent = expanded ? "Mostrar" : "Ocultar";
+            });
+        });
+
+        const sucursalFilter = document.getElementById("panelSucursalFilter");
+        const vidaUtilFilter = document.getElementById("panelVidaUtilFilter");
+        const cards = document.querySelectorAll(".js-panel-city-card");
+        const totalProgramado = document.getElementById("panelTotalProgramado");
+        const totalGestion = document.getElementById("panelTotalGestion");
+        const totalPendiente = document.getElementById("panelTotalPendiente");
+
+        const toInt = (value) => {
+            const number = parseInt(value, 10);
+            return Number.isNaN(number) ? 0 : number;
+        };
+
+        const updateTotals = () => {
+            let globalProgramado = 0;
+            let globalGestion = 0;
+            let globalPendiente = 0;
+
+            cards.forEach((card) => {
+                const table = card.querySelector(".js-panel-table");
+                if (!table) {
+                    return;
+                }
+                let cityProgramado = 0;
+                let cityGestion = 0;
+                let cityPendiente = 0;
+                let visibleRows = 0;
+
+                table.querySelectorAll("tbody tr[data-sucursal]").forEach((row) => {
+                    if (row.classList.contains("d-none")) {
+                        return;
+                    }
+                    const programado = toInt(row.querySelector(".js-row-total")?.textContent || 0);
+                    const pendiente = toInt(row.querySelector(".js-row-pendiente")?.textContent || 0);
+                    const gestion = Math.max(programado - pendiente, 0);
+                    cityProgramado += programado;
+                    cityGestion += gestion;
+                    cityPendiente += pendiente;
+                    visibleRows += 1;
+                });
+
+                const emptyRow = table.querySelector(".js-panel-empty");
+                if (emptyRow) {
+                    emptyRow.classList.toggle("d-none", visibleRows > 0);
+                }
+
+                const cityProgramadoCell = table.querySelector(".js-city-total");
+                const cityGestionCell = table.querySelector(".js-city-gestion");
+                const cityPendienteCell = table.querySelector(".js-city-pendiente");
+                if (cityProgramadoCell) {
+                    cityProgramadoCell.textContent = cityProgramado;
+                }
+                if (cityGestionCell) {
+                    cityGestionCell.textContent = cityGestion;
+                }
+                if (cityPendienteCell) {
+                    cityPendienteCell.textContent = cityPendiente;
+                }
+
+                globalProgramado += cityProgramado;
+                globalGestion += cityGestion;
+                globalPendiente += cityPendiente;
+            });
+
+            if (totalProgramado) {
+                totalProgramado.textContent = globalProgramado;
+            }
+            if (totalGestion) {
+                totalGestion.textContent = globalGestion;
+            }
+            if (totalPendiente) {
+                totalPendiente.textContent = globalPendiente;
+            }
+        };
+
+        const applyFilters = () => {
+            const sucursal = (sucursalFilter?.value || "").toUpperCase();
+            const vida = (vidaUtilFilter?.value || "").toLowerCase();
+
+            cards.forEach((card) => {
+                const sucursalCard = (card.dataset.sucursal || "").toUpperCase();
+                const coincideSucursal = !sucursal || sucursalCard === sucursal;
+                card.classList.toggle("d-none", !coincideSucursal);
+
+                card.querySelectorAll("tbody tr[data-sucursal]").forEach((row) => {
+                    const rowVida = (row.dataset.vidaUtil || "").toLowerCase();
+                    const coincideVida = !vida || rowVida === vida;
+                    row.classList.toggle("d-none", !(coincideSucursal && coincideVida));
+                });
+            });
+
+            updateTotals();
+        };
+
+        if (sucursalFilter) {
+            sucursalFilter.addEventListener("change", applyFilters);
+        }
+        if (vidaUtilFilter) {
+            vidaUtilFilter.addEventListener("change", applyFilters);
+        }
+
+        const userId = "{{ request.user.id|default:'0' }}";
+        const storageKey = `panel-produccion-highlight-user-${userId}`;
+        let highlightedRows = {};
+
+        try {
+            highlightedRows = JSON.parse(localStorage.getItem(storageKey) || "{}");
+        } catch (error) {
+            highlightedRows = {};
+        }
+
+        const applyHighlight = (row) => {
+            const rowKey = row.dataset.rowKey;
+            const isActive = Boolean(rowKey && highlightedRows[rowKey]);
+            row.classList.toggle("prod-row-highlight", isActive);
+            const button = row.querySelector(".js-prod-cart");
+            if (button) {
+                button.classList.toggle("is-active", isActive);
+                button.setAttribute("aria-pressed", isActive ? "true" : "false");
+            }
+        };
+
+        document.querySelectorAll("tr[data-row-key]").forEach((row) => {
+            applyHighlight(row);
+        });
+
+        document.querySelectorAll(".js-prod-cart").forEach((button) => {
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                const row = this.closest("tr[data-row-key]");
+                if (!row) {
+                    return;
+                }
+                const rowKey = row.dataset.rowKey;
+                if (!rowKey) {
+                    return;
+                }
+                if (highlightedRows[rowKey]) {
+                    delete highlightedRows[rowKey];
+                } else {
+                    highlightedRows[rowKey] = true;
+                }
+                localStorage.setItem(storageKey, JSON.stringify(highlightedRows));
+                applyHighlight(row);
+            });
+        });
+
+        applyFilters();
+    });
+</script>
+{% endblock %}

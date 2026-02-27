@@ -1,3 +1,4 @@
+import json
 from collections import OrderedDict
 from datetime import date, timedelta
 from django.shortcuts import get_object_or_404, render, redirect
@@ -7,10 +8,12 @@ from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_POST
 from .models import (
     Cliente,
+    DespachoPedido,
     EntregaPedido,
     MateriaPrima,
     Notificacion,
     Pedido,
+    RegistroProduccion,
     RegistroEstadoPedido,
     PerfilUsuario,
     Proveedor,
@@ -25,7 +28,7 @@ from .forms import (
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import Prefetch, Sum, Case, When, IntegerField
+from django.db.models import Prefetch, Sum, Case, When, IntegerField, Q
 from django.db.models.functions import ExtractMonth
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
@@ -41,7 +44,9 @@ PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD = ['CONFIRMADO', 'EN_PRODUCCION']
 PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE'] + PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
 PEDIDO_ESTADOS_RESUMEN = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'ENTREGADO']
 PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
+PEDIDO_ESTADOS_PANELES = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
+PRODUCCION_ACCION_LABELS = dict(RegistroProduccion.ACCION_CHOICES)
 ROL_ESTADOS_PERMITIDOS = {
     'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
@@ -211,6 +216,41 @@ def _registrar_cambio_estado_pedido(
         mensaje,
         tipo_evento=tipo_evento,
         reproducir_sonido=reproducir_sonido,
+    )
+
+
+def _registrar_log_produccion(
+    *,
+    pedido=None,
+    usuario=None,
+    accion='FABRICADO_ACTUALIZADO',
+    sucursal='',
+    compania='',
+    tipo_huevo='',
+    presentacion='',
+    valor_anterior=None,
+    valor_nuevo=None,
+    cantidad_kg=None,
+    detalle='',
+):
+    if pedido is not None:
+        sucursal = sucursal or pedido.ciudad
+        compania = compania or pedido.proveedor.nombre
+        tipo_huevo = tipo_huevo or pedido.get_tipo_huevo_display()
+        presentacion = presentacion or pedido.get_presentacion_display()
+
+    RegistroProduccion.objects.create(
+        pedido=pedido,
+        usuario=usuario,
+        accion=accion,
+        sucursal=sucursal or '',
+        compania=compania or '',
+        tipo_huevo=tipo_huevo or '',
+        presentacion=presentacion or '',
+        valor_anterior=valor_anterior,
+        valor_nuevo=valor_nuevo,
+        cantidad_kg=cantidad_kg,
+        detalle=detalle or '',
     )
 
 def _cantidad_pedido_expr():
@@ -412,6 +452,18 @@ def _usuario_puede_gestionar_pedidos(user):
     return _obtener_rol_usuario(user) in {'admin', 'comercial'}
 
 
+def _usuario_puede_ver_tab_produccion(user):
+    if not user.is_authenticated:
+        return False
+    return _obtener_rol_usuario(user) in {'produccion', 'programador', 'logistica'}
+
+
+def _usuario_puede_ver_tab_logistica(user):
+    if not user.is_authenticated:
+        return False
+    return _obtener_rol_usuario(user) in {'logistica', 'produccion', 'programador'}
+
+
 def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
     if not user.is_authenticated or not pedido:
         return False
@@ -552,8 +604,6 @@ def mi_perfil(request):
 @login_required
 def inicio(request):
     anio_actual = date.today().year
-    rol_usuario = _obtener_rol_usuario(request.user)
-    puede_ver_resumen_consolidado = rol_usuario in {'logistica', 'produccion'}
     pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
     ultimos_pedidos = list(
@@ -703,80 +753,10 @@ def inicio(request):
         for value, label in CIUDAD_CHOICES
     ]
 
-    resumen_dashboard_por_ciudad = []
-    resumen_dashboard_totales = {
-        'total_kg': 0,
-        'fabricado_kg': 0,
-        'pendiente_kg': 0,
-    }
-    resumen_dashboard_vida_utiles = []
-    if puede_ver_resumen_consolidado:
-        ciudad_labels = dict(CIUDAD_CHOICES)
-        presentacion_labels = dict(PRESENTACION_CHOICES)
-        resumen_por_codigo = {
-            value: {
-                'codigo': value,
-                'nombre': label,
-                'rows': [],
-                'totales': {
-                    'total_kg': 0,
-                    'fabricado_kg': 0,
-                    'pendiente_kg': 0,
-                },
-            }
-            for value, label in CIUDAD_CHOICES
-        }
-        vida_utiles = set()
-        resumen_dashboard_qs = (
-            pedidos_activos_qs
-            .values('ciudad', 'proveedor__nombre', 'presentacion')
-            .annotate(total_kg=Sum(_cantidad_pedido_expr()))
-            .order_by('ciudad', 'proveedor__nombre', 'presentacion')
-        )
-        for row in resumen_dashboard_qs:
-            ciudad = row.get('ciudad') or ''
-            if ciudad not in resumen_por_codigo:
-                continue
-            total_kg = row.get('total_kg') or 0
-            proveedor_nombre = row.get('proveedor__nombre') or '-'
-            presentacion_codigo = row.get('presentacion') or ''
-            vida_util = presentacion_labels.get(presentacion_codigo, presentacion_codigo or '-')
-            vida_utiles.add(vida_util)
-            resumen_por_codigo[ciudad]['rows'].append({
-                'row_key': f"{ciudad}|{proveedor_nombre}|{presentacion_codigo}",
-                'sucursal_codigo': ciudad,
-                'sucursal': ciudad_labels.get(ciudad, ciudad or '-'),
-                'presentacion': proveedor_nombre,
-                'vida_util': vida_util,
-                'total_kg': total_kg,
-                # Requisito: iniciar siempre en cero.
-                'fabricado_kg': 0,
-                'pendiente_kg': total_kg,
-            })
-            resumen_por_codigo[ciudad]['totales']['total_kg'] += total_kg
-            resumen_por_codigo[ciudad]['totales']['pendiente_kg'] += total_kg
-            resumen_dashboard_totales['total_kg'] += total_kg
-            resumen_dashboard_totales['pendiente_kg'] += total_kg
-
-        for value, _ in CIUDAD_CHOICES:
-            bloque = resumen_por_codigo[value]
-            bloque['rows'].sort(
-                key=lambda item: (
-                    (item.get('vida_util') or '').lower(),
-                    (item.get('presentacion') or '').lower(),
-                )
-            )
-            resumen_dashboard_por_ciudad.append(bloque)
-        resumen_dashboard_vida_utiles = sorted(vida_utiles, key=lambda item: item.lower())
-
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'tablas_ciudades': tablas_ciudades,
-        'puede_ver_resumen_consolidado': puede_ver_resumen_consolidado,
-        'resumen_dashboard_por_ciudad': resumen_dashboard_por_ciudad,
-        'resumen_dashboard_vida_utiles': resumen_dashboard_vida_utiles,
-        'resumen_dashboard_totales': resumen_dashboard_totales,
         'pedidos_pendientes': pedidos_pendientes,
         'pedidos_confirmados': pedidos_confirmados,
         'chart_labels': meses_labels,
@@ -792,7 +772,396 @@ def inicio(request):
         **filtros
     })
 
-    
+ 
+def _cantidad_total_pedido(pedido):
+    cantidad_total = getattr(pedido, 'cantidad_total', 0) or 0
+    if cantidad_total > 0:
+        return int(cantidad_total)
+    return int(getattr(pedido, 'cantidad', 0) or 0)
+
+
+def _pedidos_panel_operativo_qs():
+    return (
+        Pedido.objects
+        .select_related('proveedor', 'comercial')
+        .prefetch_related(
+            Prefetch('entregas', queryset=EntregaPedido.objects.order_by('fecha_entrega')),
+            Prefetch('despachos', queryset=DespachoPedido.objects.order_by('fecha')),
+        )
+        .filter(estado__in=PEDIDO_ESTADOS_PANELES)
+        .order_by('ciudad', 'presentacion', 'proveedor__nombre', 'id')
+    )
+
+
+def _construir_panel_operativo(pedidos, *, cantidad_attr='fabricado_kg'):
+    ciudad_labels = dict(CIUDAD_CHOICES)
+    bloques = {
+        value: {
+            'codigo': value,
+            'nombre': label,
+            'rows': [],
+            'totales': {
+                'programado_kg': 0,
+                'gestion_kg': 0,
+                'pendiente_kg': 0,
+            },
+        }
+        for value, label in CIUDAD_CHOICES
+    }
+    vida_utiles = set()
+    totales_generales = {
+        'programado_kg': 0,
+        'gestion_kg': 0,
+        'pendiente_kg': 0,
+    }
+
+    for pedido in pedidos:
+        if pedido.ciudad not in bloques:
+            continue
+        total_kg = _cantidad_total_pedido(pedido)
+        fabricado_kg = int(getattr(pedido, 'fabricado_kg', 0) or 0)
+        despachado_kg = int(getattr(pedido, 'despachado_kg', 0) or 0)
+        fabricado_kg = max(0, min(fabricado_kg, total_kg))
+        despachado_kg = max(0, min(despachado_kg, total_kg))
+        gestion_kg = fabricado_kg if cantidad_attr == 'fabricado_kg' else despachado_kg
+        pendiente_kg = max(total_kg - gestion_kg, 0)
+        vida_util = pedido.get_presentacion_display()
+        vida_utiles.add(vida_util)
+
+        entregas_data = [
+            {
+                'fecha': entrega.fecha_entrega.isoformat(),
+                'cantidad': int(entrega.cantidad or 0),
+            }
+            for entrega in pedido.entregas.all()
+        ]
+        if not entregas_data and pedido.fecha_entrega:
+            entregas_data = [{
+                'fecha': pedido.fecha_entrega.isoformat(),
+                'cantidad': total_kg,
+            }]
+
+        despachos_data = [
+            {
+                'fecha': despacho.fecha.isoformat(),
+                'cantidad': int(despacho.cantidad or 0),
+            }
+            for despacho in pedido.despachos.all()
+        ]
+
+        row = {
+            'pedido_id': pedido.id,
+            'row_key': f"pedido-{pedido.id}",
+            'sucursal_codigo': pedido.ciudad,
+            'sucursal': ciudad_labels.get(pedido.ciudad, pedido.ciudad),
+            'compania': pedido.proveedor.nombre,
+            'tipo_huevo': pedido.get_tipo_huevo_display(),
+            'vida_util': vida_util,
+            'programado_kg': total_kg,
+            'fabricado_kg': fabricado_kg,
+            'despachado_kg': despachado_kg,
+            'gestion_kg': gestion_kg,
+            'pendiente_kg': pendiente_kg,
+            'estado': pedido.estado,
+            'estado_label': pedido.get_estado_display(),
+            'entregas_data': entregas_data,
+            'despachos_data': despachos_data,
+            'despachos_count': len(despachos_data),
+        }
+
+        bloque = bloques[pedido.ciudad]
+        bloque['rows'].append(row)
+        bloque['totales']['programado_kg'] += total_kg
+        bloque['totales']['gestion_kg'] += gestion_kg
+        bloque['totales']['pendiente_kg'] += pendiente_kg
+
+        totales_generales['programado_kg'] += total_kg
+        totales_generales['gestion_kg'] += gestion_kg
+        totales_generales['pendiente_kg'] += pendiente_kg
+
+    bloques_ordenados = []
+    for value, _ in CIUDAD_CHOICES:
+        bloque = bloques[value]
+        bloque['rows'].sort(
+            key=lambda item: (
+                (item.get('vida_util') or '').lower(),
+                (item.get('compania') or '').lower(),
+                item.get('pedido_id') or 0,
+            )
+        )
+        bloques_ordenados.append(bloque)
+
+    return {
+        'bloques': bloques_ordenados,
+        'vida_utiles': sorted(vida_utiles, key=lambda item: item.lower()),
+        'totales_generales': totales_generales,
+    }
+
+
+def _opciones_estado_para_panel(pedido_estado, permitidos):
+    opciones = []
+    usados = set()
+    for estado in permitidos:
+        if estado in PEDIDO_ESTADO_LABELS and estado not in usados:
+            opciones.append((estado, PEDIDO_ESTADO_LABELS[estado]))
+            usados.add(estado)
+    if pedido_estado in PEDIDO_ESTADO_LABELS and pedido_estado not in usados:
+        opciones.insert(0, (pedido_estado, PEDIDO_ESTADO_LABELS[pedido_estado]))
+    return opciones
+
+
+def _render_panel_operativo(request, *, tipo):
+    if tipo == 'produccion':
+        if not _usuario_puede_ver_tab_produccion(request.user):
+            return HttpResponseForbidden("No tienes permisos para ver esta seccion.")
+        cantidad_attr = 'fabricado_kg'
+        gestion_label = 'Fabricado'
+        estado_permitidos = ['CONFIRMADO', 'EN_PRODUCCION']
+        template_name = 'pedidos/panel_produccion.html'
+        titulo = 'PRODUCCION'
+        subtitulo = 'Programacion y fabricado por sucursal'
+        puede_editar_cantidad = True
+        mostrar_calendario = False
+    else:
+        if not _usuario_puede_ver_tab_logistica(request.user):
+            return HttpResponseForbidden("No tienes permisos para ver esta seccion.")
+        cantidad_attr = 'despachado_kg'
+        gestion_label = 'Despachado'
+        estado_permitidos = ['CONFIRMADO', 'DESPACHADO']
+        template_name = 'pedidos/panel_logistica.html'
+        titulo = 'LOGISTICA'
+        subtitulo = 'Programacion y despachos por sucursal'
+        puede_editar_cantidad = False
+        mostrar_calendario = True
+
+    if request.method == 'POST':
+        action = (request.POST.get('action') or '').strip()
+        pedido_id = request.POST.get('pedido_id')
+        pedido = get_object_or_404(
+            Pedido.objects.filter(estado__in=PEDIDO_ESTADOS_PANELES),
+            id=pedido_id,
+        )
+        if action == 'guardar_cantidad' and puede_editar_cantidad:
+            valor_anterior = int(getattr(pedido, cantidad_attr, 0) or 0)
+            nuevo_valor = request.POST.get('gestion_kg')
+            try:
+                nuevo_valor_int = int(nuevo_valor)
+            except (TypeError, ValueError):
+                nuevo_valor_int = 0
+            total = _cantidad_total_pedido(pedido)
+            nuevo_valor_int = max(0, min(nuevo_valor_int, total))
+            if nuevo_valor_int != valor_anterior:
+                setattr(pedido, cantidad_attr, nuevo_valor_int)
+                pedido.save(update_fields=[cantidad_attr])
+                _registrar_log_produccion(
+                    pedido=pedido,
+                    usuario=request.user,
+                    accion='FABRICADO_ACTUALIZADO',
+                    valor_anterior=valor_anterior,
+                    valor_nuevo=nuevo_valor_int,
+                    cantidad_kg=nuevo_valor_int,
+                    detalle='Actualizacion de fabricado desde Producto fabricado.',
+                )
+        elif action == 'cambiar_estado':
+            estado_anterior = pedido.estado
+            estado_nuevo = (request.POST.get('estado') or '').strip()
+            if estado_nuevo in set(estado_permitidos):
+                pedido.estado = estado_nuevo
+                pedido.save(update_fields=['estado'])
+                _registrar_cambio_estado_pedido(
+                    pedido,
+                    estado_anterior,
+                    estado_nuevo,
+                    request.user,
+                    descripcion=f"Cambio desde panel {tipo}.",
+                )
+                if (
+                    tipo == 'produccion'
+                    and estado_nuevo == 'EN_PRODUCCION'
+                    and estado_nuevo != estado_anterior
+                ):
+                    _registrar_log_produccion(
+                        pedido=pedido,
+                        usuario=request.user,
+                        accion='ESTADO_EN_PRODUCCION',
+                        detalle='Pedido movido a En produccion desde Producto fabricado.',
+                    )
+        if tipo == 'produccion':
+            return redirect(f"{reverse('panel_produccion')}?tab=producto")
+        return redirect('panel_logistica')
+
+    pedidos = list(_pedidos_panel_operativo_qs())
+    panel_data = _construir_panel_operativo(pedidos, cantidad_attr=cantidad_attr)
+    for bloque in panel_data['bloques']:
+        for row in bloque['rows']:
+            row['estado_options'] = _opciones_estado_para_panel(row['estado'], estado_permitidos)
+
+    despachos_registrados = []
+    active_tab = 'producto'
+    log_page_obj = None
+    log_query_string = ''
+    log_filters = {
+        'accion': '',
+        'sucursal': '',
+        'q': '',
+    }
+    if tipo == 'logistica':
+        despachos_qs = (
+            DespachoPedido.objects
+            .select_related('pedido__proveedor')
+            .filter(pedido__estado__in=PEDIDO_ESTADOS_PANELES, cantidad__gt=0)
+            .order_by('-fecha', '-id')
+        )
+        for item in despachos_qs:
+            despachos_registrados.append({
+                'row_key': f"despacho-{item.id}",
+                'sucursal': dict(CIUDAD_CHOICES).get(item.pedido.ciudad, item.pedido.ciudad),
+                'compania': item.pedido.proveedor.nombre,
+                'vida_util': item.pedido.get_presentacion_display(),
+                'fecha': item.fecha,
+                'cantidad': int(item.cantidad or 0),
+                'pedido_id': item.pedido_id,
+            })
+    else:
+        requested_tab = (request.GET.get('tab') or '').strip().lower()
+        has_log_params = bool(
+            request.GET.get('accion')
+            or request.GET.get('sucursal')
+            or request.GET.get('q')
+            or request.GET.get('page')
+        )
+        if requested_tab in {'producto', 'log'}:
+            active_tab = requested_tab
+        elif has_log_params:
+            active_tab = 'log'
+
+        registros_qs = RegistroProduccion.objects.select_related('usuario', 'pedido')
+        if accion := (request.GET.get('accion') or '').strip():
+            registros_qs = registros_qs.filter(accion=accion)
+            log_filters['accion'] = accion
+        if sucursal := (request.GET.get('sucursal') or '').strip().upper():
+            registros_qs = registros_qs.filter(sucursal=sucursal)
+            log_filters['sucursal'] = sucursal
+        if q_value := (request.GET.get('q') or '').strip():
+            registros_qs = registros_qs.filter(
+                Q(compania__icontains=q_value)
+                | Q(tipo_huevo__icontains=q_value)
+                | Q(presentacion__icontains=q_value)
+                | Q(detalle__icontains=q_value)
+                | Q(usuario__username__icontains=q_value)
+            )
+            log_filters['q'] = q_value
+
+        paginator = Paginator(registros_qs, 10)
+        log_page_obj = paginator.get_page(request.GET.get('page'))
+        for registro in log_page_obj.object_list:
+            registro.accion_label = PRODUCCION_ACCION_LABELS.get(registro.accion, registro.accion)
+            registro.sucursal_label = dict(CIUDAD_CHOICES).get(registro.sucursal, registro.sucursal)
+            registro.usuario_nombre = _nombre_usuario(registro.usuario)
+
+        query_params = request.GET.copy()
+        query_params.pop('page', None)
+        query_params.pop('tab', None)
+        log_query_string = query_params.urlencode()
+
+    return render(request, template_name, {
+        'panel_titulo': titulo,
+        'panel_subtitulo': subtitulo,
+        'panel_tipo': tipo,
+        'gestion_label': gestion_label,
+        'puede_editar_cantidad': puede_editar_cantidad,
+        'mostrar_calendario': mostrar_calendario,
+        'bloques_ciudad': panel_data['bloques'],
+        'vida_utiles': panel_data['vida_utiles'],
+        'totales_generales': panel_data['totales_generales'],
+        'despachos_registrados': despachos_registrados,
+        'active_tab': active_tab,
+        'log_page_obj': log_page_obj,
+        'log_filters': log_filters,
+        'log_query_string': log_query_string,
+        'produccion_accion_choices': RegistroProduccion.ACCION_CHOICES,
+        'ciudades': CIUDAD_CHOICES,
+    })
+
+
+@login_required
+def panel_produccion(request):
+    return _render_panel_operativo(request, tipo='produccion')
+
+
+@login_required
+def panel_logistica(request):
+    return _render_panel_operativo(request, tipo='logistica')
+
+
+@login_required
+@require_POST
+def guardar_despacho_logistica(request):
+    if not _usuario_puede_ver_tab_logistica(request.user):
+        return JsonResponse({'ok': False, 'error': 'Sin permisos.'}, status=403)
+
+    try:
+        payload = json.loads(request.body.decode('utf-8'))
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return JsonResponse({'ok': False, 'error': 'Payload invalido.'}, status=400)
+
+    pedido_id = payload.get('pedido_id')
+    fecha_raw = payload.get('fecha')
+    cantidad_raw = payload.get('cantidad')
+    if not pedido_id or not fecha_raw:
+        return JsonResponse({'ok': False, 'error': 'Faltan datos obligatorios.'}, status=400)
+
+    try:
+        fecha_despacho = date.fromisoformat(str(fecha_raw))
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'error': 'Fecha invalida.'}, status=400)
+
+    try:
+        cantidad = int(cantidad_raw)
+    except (TypeError, ValueError):
+        return JsonResponse({'ok': False, 'error': 'Cantidad invalida.'}, status=400)
+    cantidad = max(cantidad, 0)
+
+    pedido = get_object_or_404(
+        Pedido.objects.filter(estado__in=PEDIDO_ESTADOS_PANELES),
+        id=pedido_id,
+    )
+
+    if cantidad == 0:
+        DespachoPedido.objects.filter(pedido=pedido, fecha=fecha_despacho).delete()
+    else:
+        despacho, creado = DespachoPedido.objects.get_or_create(
+            pedido=pedido,
+            fecha=fecha_despacho,
+            defaults={
+                'cantidad': cantidad,
+                'creado_por': request.user,
+                'actualizado_por': request.user,
+            },
+        )
+        if not creado:
+            despacho.cantidad = cantidad
+            despacho.actualizado_por = request.user
+            despacho.save(update_fields=['cantidad', 'actualizado_por', 'fecha_actualizacion'])
+
+    total_despachado = (
+        DespachoPedido.objects
+        .filter(pedido=pedido, cantidad__gt=0)
+        .aggregate(total=Sum('cantidad'))
+        .get('total')
+        or 0
+    )
+    total_pedido = _cantidad_total_pedido(pedido)
+    pedido.despachado_kg = max(0, min(int(total_despachado), int(total_pedido)))
+    pedido.save(update_fields=['despachado_kg'])
+
+    return JsonResponse({
+        'ok': True,
+        'pedido_id': pedido.id,
+        'despachado_kg': pedido.despachado_kg,
+        'pendiente_kg': max(total_pedido - pedido.despachado_kg, 0),
+    })
+
 
 
 @login_required
@@ -1667,12 +2036,26 @@ def crear_materia_prima(request):
         elif cantidad_kg == 0:
             error_message = 'La cantidad de materia prima no puede ser 0.'
         else:
-            MateriaPrima.objects.create(
+            registro = MateriaPrima.objects.create(
                 fecha=fecha,
                 tipo_huevo=tipo_huevo,
                 cantidad_kg=cantidad_kg,
                 observaciones=observaciones,
                 creado_por=request.user,
+            )
+            _registrar_log_produccion(
+                pedido=None,
+                usuario=request.user,
+                accion='MATERIA_PRIMA_REGISTRADA',
+                sucursal=_obtener_ciudad_usuario(request.user) or '',
+                compania='Materia prima',
+                tipo_huevo=dict(TIPO_HUEVO_CHOICES).get(tipo_huevo, tipo_huevo),
+                presentacion='-',
+                cantidad_kg=cantidad_kg,
+                detalle=(
+                    f"Materia prima registrada para {fecha.strftime('%d/%m/%Y')} "
+                    f"(registro #{registro.id})."
+                ),
             )
             success_message = 'Materia prima registrada correctamente.'
             form_data = {

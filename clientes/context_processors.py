@@ -12,6 +12,8 @@ def notificaciones(request):
     can_manage_usuarios = False
     can_manage_pedidos = False
     can_change_pedido_status = False
+    can_view_produccion_tab = False
+    can_view_logistica_tab = False
     user_profile_image = static('web/img/diego.webp')
 
     if not request.user.is_authenticated:
@@ -23,6 +25,8 @@ def notificaciones(request):
             'can_manage_usuarios': can_manage_usuarios,
             'can_manage_pedidos': can_manage_pedidos,
             'can_change_pedido_status': can_change_pedido_status,
+            'can_view_produccion_tab': can_view_produccion_tab,
+            'can_view_logistica_tab': can_view_logistica_tab,
             'user_profile_image': user_profile_image,
         }
 
@@ -53,6 +57,8 @@ def notificaciones(request):
             can_change_pedido_status
             or perfil.rol in {'admin', 'comercial', 'logistica', 'produccion', 'programador'}
         )
+        can_view_produccion_tab = can_view_produccion_tab or perfil.rol in {'produccion', 'programador', 'logistica'}
+        can_view_logistica_tab = can_view_logistica_tab or perfil.rol in {'logistica', 'produccion', 'programador'}
         if perfil.foto_perfil:
             user_profile_image = perfil.foto_perfil.url
 
@@ -72,5 +78,7 @@ def notificaciones(request):
         'can_manage_usuarios': can_manage_usuarios,
         'can_manage_pedidos': can_manage_pedidos,
         'can_change_pedido_status': can_change_pedido_status,
+        'can_view_produccion_tab': can_view_produccion_tab,
+        'can_view_logistica_tab': can_view_logistica_tab,
         'user_profile_image': user_profile_image,
     }

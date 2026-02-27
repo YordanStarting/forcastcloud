@@ -134,6 +134,8 @@ class Pedido(models.Model):
     
     # Campos adicionales (si los necesitas):
     cantidad_total = models.IntegerField(default=0)
+    fabricado_kg = models.IntegerField(default=0)
+    despachado_kg = models.IntegerField(default=0)
     semana = models.DateField(
         help_text="Lunes de la semana", 
         null=True, 
@@ -253,5 +255,88 @@ class RegistroEstadoPedido(models.Model):
             f"Pedido #{self.pedido_id}: {self.estado_anterior} -> "
             f"{self.estado_nuevo}"
         )
+
+
+class RegistroProduccion(models.Model):
+    ACCION_CHOICES = [
+        ('FABRICADO_ACTUALIZADO', 'Fabricado actualizado'),
+        ('ESTADO_EN_PRODUCCION', 'Cambio a en produccion'),
+        ('MATERIA_PRIMA_REGISTRADA', 'Materia prima registrada'),
+    ]
+
+    pedido = models.ForeignKey(
+        Pedido,
+        related_name='registros_produccion',
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+    )
+    usuario = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='registros_produccion',
+    )
+    accion = models.CharField(max_length=40, choices=ACCION_CHOICES, db_index=True)
+    sucursal = models.CharField(max_length=20, blank=True, default='')
+    compania = models.CharField(max_length=150, blank=True, default='')
+    tipo_huevo = models.CharField(max_length=80, blank=True, default='')
+    presentacion = models.CharField(max_length=80, blank=True, default='')
+    valor_anterior = models.IntegerField(null=True, blank=True)
+    valor_nuevo = models.IntegerField(null=True, blank=True)
+    cantidad_kg = models.IntegerField(null=True, blank=True)
+    detalle = models.TextField(blank=True, default='')
+    fecha_creacion = models.DateTimeField(auto_now_add=True, db_index=True)
+
+    class Meta:
+        ordering = ['-fecha_creacion', '-id']
+        indexes = [
+            models.Index(fields=['accion', 'fecha_creacion']),
+            models.Index(fields=['sucursal', 'fecha_creacion']),
+            models.Index(fields=['pedido', 'fecha_creacion']),
+        ]
+
+    def __str__(self):
+        return f"{self.get_accion_display()} - {self.fecha_creacion:%Y-%m-%d %H:%M}"
+
+
+class DespachoPedido(models.Model):
+    pedido = models.ForeignKey(
+        Pedido,
+        related_name='despachos',
+        on_delete=models.CASCADE,
+    )
+    fecha = models.DateField(db_index=True)
+    cantidad = models.IntegerField(default=0)
+    creado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='despachos_creados',
+    )
+    actualizado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='despachos_actualizados',
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-fecha', '-id']
+        constraints = [
+            models.UniqueConstraint(fields=['pedido', 'fecha'], name='unique_despacho_por_pedido_fecha'),
+        ]
+        indexes = [
+            models.Index(fields=['pedido', 'fecha']),
+            models.Index(fields=['fecha']),
+        ]
+
+    def __str__(self):
+        return f"Despacho Pedido #{self.pedido_id} - {self.fecha}: {self.cantidad} kg"
 
 

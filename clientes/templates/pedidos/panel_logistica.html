@@ -1,0 +1,636 @@
+{% extends 'base.html' %}
+
+{% block titulo %}
+Logistica
+{% endblock %}
+
+{% block extra_head %}
+<style>
+    .dispatch-highlight > td {
+        background-color: rgba(255, 216, 0, 0.25) !important;
+        color: #7a5a00 !important;
+    }
+
+    .dispatch-highlight .btn-link,
+    .dispatch-highlight i {
+        color: #7a5a00 !important;
+    }
+
+    .dispatch-calendar {
+        display: grid;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 0.35rem;
+    }
+
+    .dispatch-calendar-day {
+        border: 1px solid #e2e8f0;
+        border-radius: 6px;
+        padding: 0.5rem 0;
+        text-align: center;
+        cursor: pointer;
+        background: #ffffff;
+    }
+
+    .dispatch-calendar-day.is-muted {
+        color: #cbd5e1;
+        cursor: default;
+        background: #f8fafc;
+    }
+
+    .dispatch-calendar-day.has-delivery {
+        border-color: #93c5fd;
+        background: #eff6ff;
+        font-weight: 600;
+    }
+
+    .dispatch-calendar-day.has-dispatch {
+        border-color: #86efac;
+        background: #ecfdf5;
+    }
+
+    .dispatch-calendar-day.is-selected {
+        outline: 2px solid #2563eb;
+    }
+</style>
+{% endblock %}
+
+{% block contenido %}
+<div class="container-fluid">
+    <h1 class="h3 mb-2 text-gray-800">{{ panel_titulo }}</h1>
+    <p class="text-muted">{{ panel_subtitulo }}</p>
+
+    <div class="card shadow mb-4">
+        <div class="card-header py-3">
+            <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
+        </div>
+        <div class="card-body">
+            <div class="form-row mb-3">
+                <div class="col-12 col-md-4 mb-2">
+                    <label class="mb-1">Filtrar por sucursal</label>
+                    <select id="panelSucursalFilter" class="form-control form-control-sm">
+                        <option value="">Todas</option>
+                        {% for bloque in bloques_ciudad %}
+                        <option value="{{ bloque.codigo }}">{{ bloque.nombre }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-4 mb-2">
+                    <label class="mb-1">Filtrar por vida util</label>
+                    <select id="panelVidaUtilFilter" class="form-control form-control-sm">
+                        <option value="">Todas</option>
+                        {% for item in vida_utiles %}
+                        <option value="{{ item|lower }}">{{ item }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+            </div>
+
+            {% for bloque in bloques_ciudad %}
+            <div class="card border mb-3 js-panel-city-card" data-sucursal="{{ bloque.codigo }}">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong class="text-primary mb-0">SUCURSAL - {{ bloque.nombre|upper }}</strong>
+                    <button type="button"
+                        class="btn btn-outline-secondary btn-sm js-toggle-card-body"
+                        data-target="panelTabla{{ bloque.codigo }}"
+                        aria-expanded="true">
+                        Ocultar
+                    </button>
+                </div>
+                <div class="card-body p-0" id="panelTabla{{ bloque.codigo }}">
+                    <div class="table-responsive">
+                        <table class="table table-bordered mb-0 js-panel-table" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>COMPANIA</th>
+                                    <th>TIPO HUEVO</th>
+                                    <th>VIDA UTIL</th>
+                                    <th>TOTAL PROGRAMADO (KG)</th>
+                                    <th>FABRICADO (KG)</th>
+                                    <th>DESPACHADO (KG)</th>
+                                    <th>PENDIENTE (KG)</th>
+                                    <th>ENTREGAS</th>
+                                    <th>ESTADO ACTUAL</th>
+                                    <th>CAMBIAR ESTADO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% if bloque.rows %}
+                                {% for row in bloque.rows %}
+                                <tr data-sucursal="{{ bloque.codigo }}" data-vida-util="{{ row.vida_util|lower }}">
+                                    <td>{{ row.compania }}</td>
+                                    <td>{{ row.tipo_huevo }}</td>
+                                    <td>{{ row.vida_util }}</td>
+                                    <td class="js-row-total">{{ row.programado_kg }}</td>
+                                    <td>{{ row.fabricado_kg }}</td>
+                                    <td class="js-row-gestion">{{ row.gestion_kg }}</td>
+                                    <td class="js-row-pendiente">{{ row.pendiente_kg }}</td>
+                                    <td>
+                                        <button type="button"
+                                            class="btn btn-link p-0 js-open-despacho-modal"
+                                            data-toggle="modal"
+                                            data-target="#despachoCalendarModal"
+                                            data-pedido-id="{{ row.pedido_id }}"
+                                            data-compania="{{ row.compania }}"
+                                            data-tipo="{{ row.tipo_huevo }}"
+                                            data-entregas='[{% for entrega in row.entregas_data %}{"fecha":"{{ entrega.fecha }}","cantidad":{{ entrega.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'
+                                            data-despachos='[{% for despacho in row.despachos_data %}{"fecha":"{{ despacho.fecha }}","cantidad":{{ despacho.cantidad }}}{% if not forloop.last %},{% endif %}{% endfor %}]'>
+                                            <i class="fas fa-calendar-alt text-primary"></i>
+                                            <span class="small text-muted">({{ row.entregas_data|length }})</span>
+                                        </button>
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-estado badge-estado-{{ row.estado|lower }}">
+                                            {{ row.estado_label }}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <form method="post" class="form-inline">
+                                            {% csrf_token %}
+                                            <input type="hidden" name="action" value="cambiar_estado">
+                                            <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
+                                            <select name="estado" class="form-control form-control-sm mr-2">
+                                                {% for estado_value, estado_label in row.estado_options %}
+                                                <option value="{{ estado_value }}" {% if row.estado == estado_value %}selected{% endif %}>
+                                                    {{ estado_label }}
+                                                </option>
+                                                {% endfor %}
+                                            </select>
+                                            <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
+                                        </form>
+                                    </td>
+                                </tr>
+                                {% endfor %}
+                                <tr class="js-panel-empty d-none">
+                                    <td colspan="10" class="text-center text-muted">Sin datos para mostrar.</td>
+                                </tr>
+                                {% else %}
+                                <tr class="js-panel-empty">
+                                    <td colspan="10" class="text-center text-muted">Sin datos para mostrar.</td>
+                                </tr>
+                                {% endif %}
+                            </tbody>
+                            <tfoot>
+                                <tr>
+                                    <th colspan="3">TOTAL {{ bloque.nombre|upper }}</th>
+                                    <th class="js-city-total">{{ bloque.totales.programado_kg }}</th>
+                                    <th></th>
+                                    <th class="js-city-gestion">{{ bloque.totales.gestion_kg }}</th>
+                                    <th class="js-city-pendiente">{{ bloque.totales.pendiente_kg }}</th>
+                                    <th colspan="3"></th>
+                                </tr>
+                            </tfoot>
+                        </table>
+                    </div>
+                </div>
+            </div>
+            {% endfor %}
+
+            <div class="card border mb-4">
+                <div class="card-header py-2">
+                    <strong class="text-primary">TOTAL GENERAL</strong>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive">
+                        <table class="table table-bordered mb-0" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>TOTAL PEDIDOS PROGRAMADOS (KG)</th>
+                                    <th>DESPACHADO (KG)</th>
+                                    <th>PENDIENTE (KG)</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td id="panelTotalProgramado">{{ totales_generales.programado_kg }}</td>
+                                    <td id="panelTotalGestion">{{ totales_generales.gestion_kg }}</td>
+                                    <td id="panelTotalPendiente">{{ totales_generales.pendiente_kg }}</td>
+                                </tr>
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+
+            <div class="card border">
+                <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                    <strong class="text-primary">PRODUCTOS DESPACHADOS</strong>
+                    <button type="button"
+                        class="btn btn-outline-secondary btn-sm js-toggle-card-body"
+                        data-target="tablaDespachados"
+                        aria-expanded="true">
+                        Ocultar
+                    </button>
+                </div>
+                <div class="card-body p-0" id="tablaDespachados">
+                    <div class="table-responsive">
+                        <table class="table table-bordered mb-0" width="100%" cellspacing="0">
+                            <thead>
+                                <tr>
+                                    <th>SUCURSAL</th>
+                                    <th>COMPANIA</th>
+                                    <th>VIDA UTIL</th>
+                                    <th>FECHA</th>
+                                    <th>CANTIDAD DESPACHADA (KG)</th>
+                                    <th>CARRITO</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for item in despachos_registrados %}
+                                <tr data-despacho-key="{{ item.row_key }}">
+                                    <td>{{ item.sucursal|upper }}</td>
+                                    <td>{{ item.compania }}</td>
+                                    <td>{{ item.vida_util }}</td>
+                                    <td>{{ item.fecha|date:"d/m/Y" }}</td>
+                                    <td>{{ item.cantidad }}</td>
+                                    <td class="text-center">
+                                        <button type="button"
+                                            class="btn btn-link p-0 js-dispatch-cart"
+                                            aria-pressed="false"
+                                            title="Marcar fila">
+                                            <i class="fas fa-shopping-cart"></i>
+                                        </button>
+                                    </td>
+                                </tr>
+                                {% empty %}
+                                <tr>
+                                    <td colspan="6" class="text-center text-muted">Sin despachos registrados.</td>
+                                </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="despachoCalendarModal" tabindex="-1" role="dialog" aria-labelledby="despachoCalendarModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="despachoCalendarModalLabel">Calendario de despachos</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2" id="despachoCalendarInfo"></p>
+                <div class="d-flex align-items-center justify-content-between mb-2">
+                    <button type="button" class="btn btn-light btn-sm" id="dispatchPrevMonth">&lt;</button>
+                    <div class="font-weight-bold" id="dispatchMonthLabel"></div>
+                    <button type="button" class="btn btn-light btn-sm" id="dispatchNextMonth">&gt;</button>
+                </div>
+                <div class="dispatch-calendar mb-2" id="dispatchCalendarGrid"></div>
+                <div class="border rounded p-3 bg-light">
+                    <div class="small text-muted mb-1">Fecha seleccionada</div>
+                    <div class="font-weight-bold mb-2" id="dispatchSelectedDate">Sin seleccionar</div>
+                    <label class="mb-1">Cantidad despachada (kg)</label>
+                    <input type="number" min="0" step="1" class="form-control" id="dispatchCantidadInput" placeholder="0">
+                    <button type="button" class="btn btn-primary btn-sm mt-3" id="dispatchSaveButton">Guardar</button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const toInt = (value) => {
+            const n = parseInt(value, 10);
+            return Number.isNaN(n) ? 0 : n;
+        };
+
+        const pad = (n) => (n < 10 ? `0${n}` : `${n}`);
+        const parseIso = (value) => {
+            const parts = (value || "").split("-");
+            if (parts.length !== 3) {
+                return null;
+            }
+            return new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+        };
+        const fmtIso = (dateObj) => `${dateObj.getFullYear()}-${pad(dateObj.getMonth() + 1)}-${pad(dateObj.getDate())}`;
+        const fmtLabel = (value) => {
+            const d = parseIso(value);
+            if (!d) {
+                return value;
+            }
+            return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()}`;
+        };
+
+        const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+        const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
+
+        document.querySelectorAll(".js-toggle-card-body").forEach((button) => {
+            button.addEventListener("click", function () {
+                const targetId = this.dataset.target;
+                const target = targetId ? document.getElementById(targetId) : null;
+                if (!target) {
+                    return;
+                }
+                const expanded = this.getAttribute("aria-expanded") !== "false";
+                target.classList.toggle("d-none", expanded);
+                this.setAttribute("aria-expanded", expanded ? "false" : "true");
+                this.textContent = expanded ? "Mostrar" : "Ocultar";
+            });
+        });
+
+        const sucursalFilter = document.getElementById("panelSucursalFilter");
+        const vidaUtilFilter = document.getElementById("panelVidaUtilFilter");
+        const cards = document.querySelectorAll(".js-panel-city-card");
+        const totalProgramado = document.getElementById("panelTotalProgramado");
+        const totalGestion = document.getElementById("panelTotalGestion");
+        const totalPendiente = document.getElementById("panelTotalPendiente");
+
+        const updateTotals = () => {
+            let globalProgramado = 0;
+            let globalGestion = 0;
+            let globalPendiente = 0;
+
+            cards.forEach((card) => {
+                const table = card.querySelector(".js-panel-table");
+                if (!table) {
+                    return;
+                }
+                let cityProgramado = 0;
+                let cityGestion = 0;
+                let cityPendiente = 0;
+                let visibleRows = 0;
+
+                table.querySelectorAll("tbody tr[data-sucursal]").forEach((row) => {
+                    if (row.classList.contains("d-none")) {
+                        return;
+                    }
+                    const programado = toInt(row.querySelector(".js-row-total")?.textContent || 0);
+                    const gestion = toInt(row.querySelector(".js-row-gestion")?.textContent || 0);
+                    const pendiente = toInt(row.querySelector(".js-row-pendiente")?.textContent || 0);
+                    cityProgramado += programado;
+                    cityGestion += gestion;
+                    cityPendiente += pendiente;
+                    visibleRows += 1;
+                });
+
+                const emptyRow = table.querySelector(".js-panel-empty");
+                if (emptyRow) {
+                    emptyRow.classList.toggle("d-none", visibleRows > 0);
+                }
+
+                const cityProgramadoCell = table.querySelector(".js-city-total");
+                const cityGestionCell = table.querySelector(".js-city-gestion");
+                const cityPendienteCell = table.querySelector(".js-city-pendiente");
+                if (cityProgramadoCell) {
+                    cityProgramadoCell.textContent = cityProgramado;
+                }
+                if (cityGestionCell) {
+                    cityGestionCell.textContent = cityGestion;
+                }
+                if (cityPendienteCell) {
+                    cityPendienteCell.textContent = cityPendiente;
+                }
+
+                globalProgramado += cityProgramado;
+                globalGestion += cityGestion;
+                globalPendiente += cityPendiente;
+            });
+
+            if (totalProgramado) {
+                totalProgramado.textContent = globalProgramado;
+            }
+            if (totalGestion) {
+                totalGestion.textContent = globalGestion;
+            }
+            if (totalPendiente) {
+                totalPendiente.textContent = globalPendiente;
+            }
+        };
+
+        const applyFilters = () => {
+            const sucursal = (sucursalFilter?.value || "").toUpperCase();
+            const vida = (vidaUtilFilter?.value || "").toLowerCase();
+
+            cards.forEach((card) => {
+                const sucursalCard = (card.dataset.sucursal || "").toUpperCase();
+                const coincideSucursal = !sucursal || sucursalCard === sucursal;
+                card.classList.toggle("d-none", !coincideSucursal);
+
+                card.querySelectorAll("tbody tr[data-sucursal]").forEach((row) => {
+                    const rowVida = (row.dataset.vidaUtil || "").toLowerCase();
+                    const coincideVida = !vida || rowVida === vida;
+                    row.classList.toggle("d-none", !(coincideSucursal && coincideVida));
+                });
+            });
+
+            updateTotals();
+        };
+
+        if (sucursalFilter) {
+            sucursalFilter.addEventListener("change", applyFilters);
+        }
+        if (vidaUtilFilter) {
+            vidaUtilFilter.addEventListener("change", applyFilters);
+        }
+
+        const dispatchTableKey = `dispatch-highlight-user-{{ request.user.id|default:'0' }}`;
+        const dispatchRowState = (() => {
+            try {
+                return JSON.parse(localStorage.getItem(dispatchTableKey) || "{}");
+            } catch (error) {
+                return {};
+            }
+        })();
+
+        const saveDispatchRowState = () => {
+            localStorage.setItem(dispatchTableKey, JSON.stringify(dispatchRowState));
+        };
+
+        document.querySelectorAll("tr[data-despacho-key]").forEach((row) => {
+            const rowKey = row.dataset.despachoKey;
+            const button = row.querySelector(".js-dispatch-cart");
+            if (!rowKey || !button) {
+                return;
+            }
+            const applyHighlight = () => {
+                const active = Boolean(dispatchRowState[rowKey]);
+                row.classList.toggle("dispatch-highlight", active);
+                button.setAttribute("aria-pressed", active ? "true" : "false");
+            };
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                if (dispatchRowState[rowKey]) {
+                    delete dispatchRowState[rowKey];
+                } else {
+                    dispatchRowState[rowKey] = true;
+                }
+                saveDispatchRowState();
+                applyHighlight();
+            });
+            applyHighlight();
+        });
+
+        const modal = document.getElementById("despachoCalendarModal");
+        const openButtons = document.querySelectorAll(".js-open-despacho-modal");
+        const infoLabel = document.getElementById("despachoCalendarInfo");
+        const monthLabel = document.getElementById("dispatchMonthLabel");
+        const grid = document.getElementById("dispatchCalendarGrid");
+        const selectedDateLabel = document.getElementById("dispatchSelectedDate");
+        const cantidadInput = document.getElementById("dispatchCantidadInput");
+        const saveButton = document.getElementById("dispatchSaveButton");
+        const prevMonthButton = document.getElementById("dispatchPrevMonth");
+        const nextMonthButton = document.getElementById("dispatchNextMonth");
+
+        let currentPedidoId = null;
+        let selectedDate = null;
+        let currentMonth = null;
+        let entregasMap = {};
+        let despachosMap = {};
+
+        const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
+
+        const renderDispatchCalendar = () => {
+            if (!currentMonth) {
+                return;
+            }
+            monthLabel.textContent = `${monthNames[currentMonth.getMonth()]} ${currentMonth.getFullYear()}`;
+            grid.innerHTML = "";
+
+            ["L", "M", "X", "J", "V", "S", "D"].forEach((name) => {
+                const head = document.createElement("div");
+                head.className = "text-center small text-muted";
+                head.textContent = name;
+                grid.appendChild(head);
+            });
+
+            const firstDay = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), 1);
+            const startIndex = (firstDay.getDay() + 6) % 7;
+            for (let i = 0; i < startIndex; i += 1) {
+                const empty = document.createElement("div");
+                empty.className = "dispatch-calendar-day is-muted";
+                grid.appendChild(empty);
+            }
+
+            const daysInMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 0).getDate();
+            for (let day = 1; day <= daysInMonth; day += 1) {
+                const dateStr = `${currentMonth.getFullYear()}-${pad(currentMonth.getMonth() + 1)}-${pad(day)}`;
+                const cell = document.createElement("button");
+                cell.type = "button";
+                cell.className = "dispatch-calendar-day";
+                cell.textContent = day;
+                if (entregasMap[dateStr]) {
+                    cell.classList.add("has-delivery");
+                } else {
+                    cell.classList.add("is-muted");
+                }
+                if (despachosMap[dateStr] && despachosMap[dateStr] > 0) {
+                    cell.classList.add("has-dispatch");
+                }
+                if (selectedDate === dateStr) {
+                    cell.classList.add("is-selected");
+                }
+                cell.addEventListener("click", function () {
+                    if (!entregasMap[dateStr]) {
+                        return;
+                    }
+                    selectedDate = dateStr;
+                    selectedDateLabel.textContent = fmtLabel(dateStr);
+                    cantidadInput.value = despachosMap[dateStr] || "";
+                    renderDispatchCalendar();
+                });
+                grid.appendChild(cell);
+            }
+        };
+
+        openButtons.forEach((button) => {
+            button.addEventListener("click", function () {
+                currentPedidoId = this.dataset.pedidoId;
+                const compania = this.dataset.compania || "";
+                const tipo = this.dataset.tipo || "";
+                infoLabel.textContent = `${compania} · ${tipo}`;
+
+                try {
+                    const entregas = JSON.parse(this.dataset.entregas || "[]");
+                    entregasMap = {};
+                    entregas.forEach((item) => {
+                        entregasMap[item.fecha] = item.cantidad || 0;
+                    });
+                } catch (error) {
+                    entregasMap = {};
+                }
+
+                try {
+                    const despachos = JSON.parse(this.dataset.despachos || "[]");
+                    despachosMap = {};
+                    despachos.forEach((item) => {
+                        despachosMap[item.fecha] = item.cantidad || 0;
+                    });
+                } catch (error) {
+                    despachosMap = {};
+                }
+
+                const fechas = Object.keys(entregasMap).sort();
+                if (fechas.length) {
+                    const first = parseIso(fechas[0]);
+                    currentMonth = new Date(first.getFullYear(), first.getMonth(), 1);
+                    selectedDate = fechas[0];
+                    selectedDateLabel.textContent = fmtLabel(selectedDate);
+                    cantidadInput.value = despachosMap[selectedDate] || "";
+                } else {
+                    const now = new Date();
+                    currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+                    selectedDate = null;
+                    selectedDateLabel.textContent = "Sin seleccionar";
+                    cantidadInput.value = "";
+                }
+
+                renderDispatchCalendar();
+            });
+        });
+
+        prevMonthButton.addEventListener("click", function () {
+            if (!currentMonth) {
+                return;
+            }
+            currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() - 1, 1);
+            renderDispatchCalendar();
+        });
+        nextMonthButton.addEventListener("click", function () {
+            if (!currentMonth) {
+                return;
+            }
+            currentMonth = new Date(currentMonth.getFullYear(), currentMonth.getMonth() + 1, 1);
+            renderDispatchCalendar();
+        });
+
+        saveButton.addEventListener("click", function () {
+            if (!currentPedidoId || !selectedDate) {
+                alert("Selecciona un dia para guardar el despacho.");
+                return;
+            }
+            const cantidad = toInt(cantidadInput.value || 0);
+            fetch("{% url 'guardar_despacho_logistica' %}", {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                    "X-CSRFToken": csrfToken
+                },
+                body: JSON.stringify({
+                    pedido_id: currentPedidoId,
+                    fecha: selectedDate,
+                    cantidad: cantidad
+                })
+            })
+                .then((response) => response.json())
+                .then((payload) => {
+                    if (!payload.ok) {
+                        throw new Error(payload.error || "No se pudo guardar.");
+                    }
+                    window.location.reload();
+                })
+                .catch((error) => {
+                    alert(error.message || "No se pudo guardar.");
+                });
+        });
+
+        applyFilters();
+    });
+</script>
+{% endblock %}

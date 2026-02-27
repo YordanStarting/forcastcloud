@@ -32,6 +32,9 @@ urlpatterns = [
     path('pedidos/estado/<int:id>/', views.editar_estado_pedido, name='editar_estado_pedido'),
     path('pedidos/eliminar/<int:id>/', views.eliminarpedido, name='eliminarpedido'),
     path('pedidos/resumen/', views.resumen_pedidos, name='resumen_pedidos'),
+    path('pedidos/produccion/', views.panel_produccion, name='panel_produccion'),
+    path('pedidos/logistica/', views.panel_logistica, name='panel_logistica'),
+    path('pedidos/logistica/despacho/guardar/', views.guardar_despacho_logistica, name='guardar_despacho_logistica'),
     path('pedidos/notificaciones/', views.notificaciones_pedidos, name='notificaciones_pedidos'),
     path('pedidos/notificaciones/limpiar/', views.limpiar_notificaciones, name='limpiar_notificaciones'),
 
