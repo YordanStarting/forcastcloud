@@ -703,75 +703,79 @@ def inicio(request):
         for value, label in CIUDAD_CHOICES
     ]
 
-    resumen_dashboard_rows = []
+    resumen_dashboard_por_ciudad = []
     resumen_dashboard_totales = {
         'total_kg': 0,
         'fabricado_kg': 0,
         'pendiente_kg': 0,
     }
+    resumen_dashboard_vida_utiles = []
     if puede_ver_resumen_consolidado:
         ciudad_labels = dict(CIUDAD_CHOICES)
         presentacion_labels = dict(PRESENTACION_CHOICES)
+        resumen_por_codigo = {
+            value: {
+                'codigo': value,
+                'nombre': label,
+                'rows': [],
+                'totales': {
+                    'total_kg': 0,
+                    'fabricado_kg': 0,
+                    'pendiente_kg': 0,
+                },
+            }
+            for value, label in CIUDAD_CHOICES
+        }
+        vida_utiles = set()
         resumen_dashboard_qs = (
             pedidos_activos_qs
             .values('ciudad', 'proveedor__nombre', 'presentacion')
-            .annotate(
-                total_kg=Sum(_cantidad_pedido_expr()),
-                fabricado_kg=Sum(
-                    Case(
-                        When(
-                            estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD,
-                            then=_cantidad_pedido_expr(),
-                        ),
-                        default=0,
-                        output_field=IntegerField(),
-                    )
-                ),
-                pendiente_kg=Sum(
-                    Case(
-                        When(estado='PENDIENTE', then=_cantidad_pedido_expr()),
-                        default=0,
-                        output_field=IntegerField(),
-                    )
-                ),
-            )
+            .annotate(total_kg=Sum(_cantidad_pedido_expr()))
             .order_by('ciudad', 'proveedor__nombre', 'presentacion')
         )
         for row in resumen_dashboard_qs:
-            total_kg = row.get('total_kg') or 0
-            fabricado_kg = row.get('fabricado_kg') or 0
-            pendiente_kg = row.get('pendiente_kg') or 0
             ciudad = row.get('ciudad') or ''
+            if ciudad not in resumen_por_codigo:
+                continue
+            total_kg = row.get('total_kg') or 0
             proveedor_nombre = row.get('proveedor__nombre') or '-'
             presentacion_codigo = row.get('presentacion') or ''
             vida_util = presentacion_labels.get(presentacion_codigo, presentacion_codigo or '-')
-            resumen_dashboard_rows.append({
+            vida_utiles.add(vida_util)
+            resumen_por_codigo[ciudad]['rows'].append({
                 'row_key': f"{ciudad}|{proveedor_nombre}|{presentacion_codigo}",
+                'sucursal_codigo': ciudad,
                 'sucursal': ciudad_labels.get(ciudad, ciudad or '-'),
                 'presentacion': proveedor_nombre,
                 'vida_util': vida_util,
                 'total_kg': total_kg,
-                'fabricado_kg': fabricado_kg,
-                'pendiente_kg': pendiente_kg,
+                # Requisito: iniciar siempre en cero.
+                'fabricado_kg': 0,
+                'pendiente_kg': total_kg,
             })
+            resumen_por_codigo[ciudad]['totales']['total_kg'] += total_kg
+            resumen_por_codigo[ciudad]['totales']['pendiente_kg'] += total_kg
             resumen_dashboard_totales['total_kg'] += total_kg
-            resumen_dashboard_totales['fabricado_kg'] += fabricado_kg
-            resumen_dashboard_totales['pendiente_kg'] += pendiente_kg
+            resumen_dashboard_totales['pendiente_kg'] += total_kg
 
-        resumen_dashboard_rows.sort(
-            key=lambda item: (
-                (item.get('vida_util') or '').lower(),
-                (item.get('sucursal') or '').lower(),
-                (item.get('presentacion') or '').lower(),
+        for value, _ in CIUDAD_CHOICES:
+            bloque = resumen_por_codigo[value]
+            bloque['rows'].sort(
+                key=lambda item: (
+                    (item.get('vida_util') or '').lower(),
+                    (item.get('presentacion') or '').lower(),
+                )
             )
-        )
+            resumen_dashboard_por_ciudad.append(bloque)
+        resumen_dashboard_vida_utiles = sorted(vida_utiles, key=lambda item: item.lower())
 
     return render(request, 'paginas/inicio.html', {
         'ultimos_pedidos': ultimos_pedidos,
         'pedidos': pedidos,
         'tablas_ciudades': tablas_ciudades,
         'puede_ver_resumen_consolidado': puede_ver_resumen_consolidado,
-        'resumen_dashboard_rows': resumen_dashboard_rows,
+        'resumen_dashboard_por_ciudad': resumen_dashboard_por_ciudad,
+        'resumen_dashboard_vida_utiles': resumen_dashboard_vida_utiles,
         'resumen_dashboard_totales': resumen_dashboard_totales,
         'pedidos_pendientes': pedidos_pendientes,
         'pedidos_confirmados': pedidos_confirmados,
