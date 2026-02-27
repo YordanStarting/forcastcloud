@@ -109,7 +109,7 @@ Produccion
                                         <td>{{ row.vida_util }}</td>
                                         <td class="js-row-total">{{ row.programado_kg }}</td>
                                         <td>
-                                            <form method="post" class="form-inline">
+                                            <form method="post" class="form-inline js-save-fabricado-form">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="tab" value="producto">
                                                 <input type="hidden" name="action" value="guardar_cantidad">
@@ -478,6 +478,44 @@ Produccion
                 }
                 localStorage.setItem(storageKey, JSON.stringify(highlightedRows));
                 applyHighlight(row);
+            });
+        });
+
+        document.querySelectorAll(".js-save-fabricado-form").forEach((form) => {
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                const formData = new FormData(form);
+                const row = form.closest("tr[data-row-key]");
+                fetch(window.location.href, {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: formData
+                })
+                    .then((response) => response.json())
+                    .then((payload) => {
+                        if (!payload.ok) {
+                            throw new Error("No se pudo guardar el fabricado.");
+                        }
+                        if (row) {
+                            const totalCell = row.querySelector(".js-row-total");
+                            const pendienteCell = row.querySelector(".js-row-pendiente");
+                            const input = form.querySelector("input[name='gestion_kg']");
+                            const total = parseInt(totalCell?.textContent || payload.total_kg || 0, 10) || 0;
+                            const gestion = Math.max(0, Math.min(parseInt(payload.gestion_kg || 0, 10) || 0, total));
+                            if (input) {
+                                input.value = gestion;
+                            }
+                            if (pendienteCell) {
+                                pendienteCell.textContent = Math.max(total - gestion, 0);
+                            }
+                        }
+                        updateTotals();
+                    })
+                    .catch((error) => {
+                        alert(error.message || "No se pudo guardar el fabricado.");
+                    });
             });
         });
 

@@ -121,7 +121,7 @@ Logistica
                                     <td>{{ row.tipo_huevo }}</td>
                                     <td>{{ row.vida_util }}</td>
                                     <td class="js-row-total">{{ row.programado_kg }}</td>
-                                    <td>{{ row.fabricado_kg }}</td>
+                                    <td>{{ row.fabricado_kg|default:0 }}</td>
                                     <td class="js-row-gestion">{{ row.gestion_kg }}</td>
                                     <td class="js-row-pendiente">{{ row.pendiente_kg }}</td>
                                     <td>

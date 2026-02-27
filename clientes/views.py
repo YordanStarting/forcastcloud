@@ -962,6 +962,16 @@ def _render_panel_operativo(request, *, tipo):
                     cantidad_kg=nuevo_valor_int,
                     detalle='Actualizacion de fabricado desde Producto fabricado.',
                 )
+            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                gestion_guardada = int(getattr(pedido, cantidad_attr, 0) or 0)
+                return JsonResponse({
+                    'ok': True,
+                    'pedido_id': pedido.id,
+                    'gestion_kg': gestion_guardada,
+                    'total_kg': total,
+                    'pendiente_kg': max(total - gestion_guardada, 0),
+                    'fabricado_kg': int(getattr(pedido, 'fabricado_kg', 0) or 0),
+                })
         elif action == 'cambiar_estado':
             estado_anterior = pedido.estado
             estado_nuevo = (request.POST.get('estado') or '').strip()
