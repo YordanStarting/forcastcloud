@@ -12,6 +12,9 @@ Historial de pedidos
 <div class="container-fluid">
     <h1 class="h3 mb-2 text-gray-800">HISTORIAL DE PEDIDOS</h1>
     {% include "partials/filtros_pedidos.html" %}
+    {% if semana_label %}
+    <p class="small text-muted mb-3">Semana seleccionada: <strong>{{ semana_label }}</strong></p>
+    {% endif %}
 
     <div class="card shadow mb-4">
         <div class="card-header dashboard-card-header">

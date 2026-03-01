@@ -183,6 +183,19 @@
             color: #92400e;
         }
 
+        .notification-avatar {
+            width: 2.4rem;
+            height: 2.4rem;
+            border-radius: 999px;
+            object-fit: cover;
+            border: 2px solid #dbeafe;
+        }
+
+        .notification-message {
+            line-height: 1.35;
+            white-space: normal;
+        }
+
         @media (max-width: 1200px) {
             .table-responsive-stack .col-semana {
                 display: none;
@@ -456,17 +469,67 @@
                                     </form>
                                 </div>
                                 {% for n in notificaciones %}
-                                <a class="dropdown-item d-flex align-items-center" href="#">
+                                <button type="button"
+                                    class="dropdown-item d-flex align-items-center js-open-notification-modal"
+                                    data-modal-id="notificacionModal{{ n.id }}">
                                     <div class="mr-3">
-                                        <div class="icon-circle bg-primary">
-                                            <i class="fas fa-bell text-white"></i>
-                                        </div>
+                                        <img src="{{ n.actor_profile_image }}" alt="Foto de {{ n.actor_name }}"
+                                            class="notification-avatar">
                                     </div>
                                     <div>
                                         <div class="small text-gray-500">{{ n.fecha_creacion|date:"d M Y H:i" }}</div>
-                                        <span class="font-weight-bold">{{ n.mensaje }}</span>
+                                        <div class="small text-gray-600">{{ n.actor_name }}</div>
+                                        <span class="font-weight-bold notification-message">{{ n.mensaje }}</span>
                                     </div>
-                                </a>
+                                </button>
+                                <div class="modal fade" id="notificacionModal{{ n.id }}" tabindex="-1" role="dialog"
+                                    aria-labelledby="notificacionModalLabel{{ n.id }}" aria-hidden="true">
+                                    <div class="modal-dialog modal-dialog-centered" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" id="notificacionModalLabel{{ n.id }}">
+                                                    Actualizacion de pedido
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <div class="modal-body">
+                                                <div class="d-flex align-items-center mb-3">
+                                                    <img src="{{ n.actor_profile_image }}" alt="Foto de {{ n.actor_name }}"
+                                                        class="notification-avatar mr-2">
+                                                    <div>
+                                                        <div class="font-weight-bold">{{ n.actor_name }}</div>
+                                                        <div class="small text-muted">{{ n.fecha_creacion|date:"d/m/Y H:i" }}</div>
+                                                    </div>
+                                                </div>
+
+                                                <p class="mb-2">
+                                                    La comercial ha cambiado el siguiente pedido
+                                                    {% if n.pedido_id %}#{{ n.pedido_id }}{% endif %}.
+                                                </p>
+                                                <div class="border rounded p-3 bg-light mb-3">
+                                                    <p class="mb-1"><strong>Evento:</strong> {{ n.mensaje }}</p>
+                                                    {% if n.pedido %}
+                                                    <p class="mb-1"><strong>Compania:</strong> {{ n.pedido.proveedor.nombre }}</p>
+                                                    <p class="mb-1"><strong>Tipo de huevo:</strong> {{ n.pedido.get_tipo_huevo_display }}</p>
+                                                    <p class="mb-1"><strong>Presentacion:</strong> {{ n.pedido.get_presentacion_display }}</p>
+                                                    <p class="mb-1"><strong>Cantidad:</strong> {{ n.pedido.cantidad_total|default:n.pedido.cantidad }} kg</p>
+                                                    <p class="mb-1"><strong>Semana:</strong> {{ n.pedido.semana|date:"d/m/Y" }}</p>
+                                                    <p class="mb-0"><strong>Estado actual:</strong> {{ n.pedido.get_estado_display }}</p>
+                                                    {% endif %}
+                                                </div>
+                                                {% if n.detalle %}
+                                                <p class="mb-1"><strong>Detalle:</strong></p>
+                                                <div class="border rounded p-2 bg-white">{{ n.detalle|linebreaksbr }}</div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
                                 {% empty %}
                                 <span class="dropdown-item text-center small text-muted">Sin notificaciones nuevas</span>
                                 {% endfor %}
@@ -567,6 +630,28 @@
         <script src="{% static 'web/js/sb-admin-2.min.js' %}"></script>
 
         {% block page_vendor_scripts %}{% endblock %}
+
+        <script>
+            document.addEventListener("DOMContentLoaded", function () {
+                const notificationButtons = document.querySelectorAll(".js-open-notification-modal");
+                if (!notificationButtons.length) {
+                    return;
+                }
+                notificationButtons.forEach(function (button) {
+                    button.addEventListener("click", function (event) {
+                        event.preventDefault();
+                        const modalId = this.getAttribute("data-modal-id");
+                        if (!modalId) {
+                            return;
+                        }
+                        const selector = `#${modalId}`;
+                        if (window.jQuery && window.jQuery(selector).modal) {
+                            window.jQuery(selector).modal("show");
+                        }
+                    });
+                });
+            });
+        </script>
 
         {% if request.user.is_authenticated %}
         <script>

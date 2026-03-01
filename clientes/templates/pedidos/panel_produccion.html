@@ -35,8 +35,13 @@ Produccion
 
     <ul class="nav nav-tabs mb-3">
         <li class="nav-item">
-            <a class="nav-link {% if active_tab != 'log' %}active{% endif %}" href="{% url 'panel_produccion' %}?tab=producto">
+            <a class="nav-link {% if active_tab == 'producto' or not active_tab %}active{% endif %}" href="{% url 'panel_produccion' %}?tab=producto{% if panel_query_string %}&{{ panel_query_string }}{% endif %}">
                 Producto fabricado
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'estimado' %}active{% endif %}" href="{% url 'panel_produccion' %}?tab=estimado{% if panel_query_string %}&{{ panel_query_string }}{% endif %}">
+                Producto estimado
             </a>
         </li>
         <li class="nav-item">
@@ -46,32 +51,57 @@ Produccion
         </li>
     </ul>
 
-    <div class="{% if active_tab == 'log' %}d-none{% endif %}" id="tabProductoFabricado">
+    <div class="{% if active_tab == 'log' %}d-none{% endif %}" id="tabProductoGestion">
         <div class="card shadow mb-4">
             <div class="card-header py-3">
                 <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
             </div>
             <div class="card-body">
-                <div class="form-row mb-3">
-                    <div class="col-12 col-md-4 mb-2">
-                        <label class="mb-1">Filtrar por sucursal</label>
-                        <select id="panelSucursalFilter" class="form-control form-control-sm">
-                            <option value="">Todas</option>
-                            {% for bloque in bloques_ciudad %}
-                            <option value="{{ bloque.codigo }}">{{ bloque.nombre }}</option>
-                            {% endfor %}
-                        </select>
+                <form method="get" class="mb-3">
+                    <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
+                    <div class="form-row">
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Semana</label>
+                            <select id="panelSemanaFilter" name="semana" class="form-control form-control-sm">
+                                <option value="">Todas</option>
+                                {% for item in semanas_disponibles %}
+                                <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>
+                                    {{ item.label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Filtrar por sucursal</label>
+                            <select id="panelSucursalFilter" name="sucursal" class="form-control form-control-sm">
+                                <option value="">Todas</option>
+                                {% for value, label in ciudades %}
+                                <option value="{{ value }}" {% if filtros_panel.sucursal == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Filtrar por vida util</label>
+                            <select id="panelVidaUtilFilter" name="vida_util" class="form-control form-control-sm">
+                                <option value="">Todas</option>
+                                {% for value, label in presentacion_choices %}
+                                <option value="{{ value }}" {% if filtros_panel.vida_util == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary btn-sm mr-2">Filtrar</button>
+                            <a href="{% url 'panel_produccion' %}?tab={% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+                        </div>
                     </div>
-                    <div class="col-12 col-md-4 mb-2">
-                        <label class="mb-1">Filtrar por vida util</label>
-                        <select id="panelVidaUtilFilter" class="form-control form-control-sm">
-                            <option value="">Todas</option>
-                            {% for item in vida_utiles %}
-                            <option value="{{ item|lower }}">{{ item }}</option>
-                            {% endfor %}
-                        </select>
-                    </div>
-                </div>
+                </form>
+                {% if semana_label %}
+                <p class="small text-muted mt-n2 mb-3">Semana activa: {{ semana_label }}</p>
+                {% endif %}
 
                 {% for bloque in bloques_ciudad %}
                 <div class="card border mb-3 js-panel-city-card" data-sucursal="{{ bloque.codigo }}">
@@ -93,7 +123,7 @@ Produccion
                                         <th>TIPO HUEVO</th>
                                         <th>VIDA UTIL</th>
                                         <th>TOTAL PROGRAMADO (KG)</th>
-                                        <th>FABRICADO (KG)</th>
+                                        <th>{{ panel_label|upper }} (KG)</th>
                                         <th>PENDIENTE (KG)</th>
                                         <th>ESTADO ACTUAL</th>
                                         <th>CAMBIAR ESTADO</th>
@@ -111,9 +141,12 @@ Produccion
                                         <td>
                                             <form method="post" class="form-inline js-save-fabricado-form">
                                                 {% csrf_token %}
-                                                <input type="hidden" name="tab" value="producto">
+                                                <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
                                                 <input type="hidden" name="action" value="guardar_cantidad">
                                                 <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
+                                                <input type="hidden" name="semana" value="{{ filtros_panel.semana }}">
+                                                <input type="hidden" name="sucursal" value="{{ filtros_panel.sucursal }}">
+                                                <input type="hidden" name="vida_util" value="{{ filtros_panel.vida_util }}">
                                                 <input type="number"
                                                     name="gestion_kg"
                                                     class="form-control form-control-sm mr-2"
@@ -132,11 +165,17 @@ Produccion
                                             </span>
                                         </td>
                                         <td>
+                                            {% if active_tab == 'estimado' %}
+                                            <span class="text-muted small">Borrador (sin cambio de estado)</span>
+                                            {% else %}
                                             <form method="post" class="form-inline">
                                                 {% csrf_token %}
-                                                <input type="hidden" name="tab" value="producto">
+                                                <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
                                                 <input type="hidden" name="action" value="cambiar_estado">
                                                 <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
+                                                <input type="hidden" name="semana" value="{{ filtros_panel.semana }}">
+                                                <input type="hidden" name="sucursal" value="{{ filtros_panel.sucursal }}">
+                                                <input type="hidden" name="vida_util" value="{{ filtros_panel.vida_util }}">
                                                 <select name="estado" class="form-control form-control-sm mr-2">
                                                     {% for estado_value, estado_label in row.estado_options %}
                                                     <option value="{{ estado_value }}" {% if row.estado == estado_value %}selected{% endif %}>
@@ -146,6 +185,7 @@ Produccion
                                                 </select>
                                                 <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
                                             </form>
+                                            {% endif %}
                                         </td>
                                         <td class="text-center">
                                             <button type="button" class="btn btn-link p-0 js-prod-cart" aria-label="Marcar fila" aria-pressed="false">
@@ -188,7 +228,7 @@ Produccion
                                 <thead>
                                     <tr>
                                         <th>TOTAL PEDIDOS PROGRAMADOS (KG)</th>
-                                        <th>FABRICADO (KG)</th>
+                                        <th>{{ panel_label|upper }} (KG)</th>
                                         <th>PENDIENTE (KG)</th>
                                     </tr>
                                 </thead>
@@ -411,7 +451,11 @@ Produccion
 
         const applyFilters = () => {
             const sucursal = (sucursalFilter?.value || "").toUpperCase();
-            const vida = (vidaUtilFilter?.value || "").toLowerCase();
+            let vida = "";
+            if (vidaUtilFilter && vidaUtilFilter.value) {
+                const vidaOption = vidaUtilFilter.options[vidaUtilFilter.selectedIndex];
+                vida = ((vidaOption && vidaOption.textContent) || "").trim().toLowerCase();
+            }
 
             cards.forEach((card) => {
                 const sucursalCard = (card.dataset.sucursal || "").toUpperCase();
@@ -436,7 +480,8 @@ Produccion
         }
 
         const userId = "{{ request.user.id|default:'0' }}";
-        const storageKey = `panel-produccion-highlight-user-${userId}`;
+        const activeTab = "{{ active_tab|default:'producto' }}";
+        const storageKey = `panel-produccion-highlight-user-${userId}-${activeTab}`;
         let highlightedRows = {};
 
         try {
@@ -496,7 +541,7 @@ Produccion
                     .then((response) => response.json())
                     .then((payload) => {
                         if (!payload.ok) {
-                            throw new Error("No se pudo guardar el fabricado.");
+                            throw new Error("No se pudo guardar el {{ panel_label_lower }}.");
                         }
                         if (row) {
                             const totalCell = row.querySelector(".js-row-total");
@@ -514,7 +559,7 @@ Produccion
                         updateTotals();
                     })
                     .catch((error) => {
-                        alert(error.message || "No se pudo guardar el fabricado.");
+                        alert(error.message || "No se pudo guardar el {{ panel_label_lower }}.");
                     });
             });
         });

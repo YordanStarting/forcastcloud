@@ -34,7 +34,17 @@ Editar Pedido
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Ciudad</label>
                 <select class="form-control" name="ciudad">
-                    <option value="">Todas</option>
+                    {% if rol_usuario == 'comercial' %}
+                    <option value="" {% if not ciudad %}selected{% endif %}>Mis pedidos</option>
+                    <option value="{{ ciudad_todas_value }}" {% if ciudad == ciudad_todas_value %}selected{% endif %}>
+                        Todas las sucursales
+                    </option>
+                    {% else %}
+                    <option value="{{ ciudad_todas_value }}"
+                        {% if not ciudad or ciudad == ciudad_todas_value %}selected{% endif %}>
+                        Todas las sucursales
+                    </option>
+                    {% endif %}
                     {% for value, label in CIUDAD_CHOICES %}
                     <option value="{{ value }}" {% if ciudad == value %}selected{% endif %}>
                         {{ label }}
@@ -76,7 +86,7 @@ Editar Pedido
                 </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
-                <label class="mb-1">Semana (lunes)</label>
+                <label class="mb-1">Semana</label>
                 <select class="form-control" name="semana">
                     <option value="">Todas</option>
                     {% for item in semanas_disponibles %}

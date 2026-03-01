@@ -82,7 +82,22 @@ class PerfilUsuario(models.Model):
 
 class Notificacion(models.Model):
     usuario = models.ForeignKey(User, on_delete=models.CASCADE, blank=True, null=True)
+    actor = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='notificaciones_generadas',
+    )
+    pedido = models.ForeignKey(
+        'Pedido',
+        on_delete=models.SET_NULL,
+        blank=True,
+        null=True,
+        related_name='notificaciones',
+    )
     mensaje = models.TextField()
+    detalle = models.TextField(blank=True, null=True)
     tipo_evento = models.CharField(
         max_length=30,
         choices=[
@@ -135,6 +150,7 @@ class Pedido(models.Model):
     # Campos adicionales (si los necesitas):
     cantidad_total = models.IntegerField(default=0)
     fabricado_kg = models.IntegerField(default=0)
+    estimado_kg = models.IntegerField(default=0)
     despachado_kg = models.IntegerField(default=0)
     semana = models.DateField(
         help_text="Lunes de la semana", 

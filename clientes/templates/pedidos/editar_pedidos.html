@@ -4,10 +4,6 @@
 Editar pedidos
 {% endblock %}
 
-{% block extra_head %}
-<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr/dist/flatpickr.min.css">
-{% endblock %}
-
 {% block contenido %}
 <div class="container-fluid">
     <h1 class="h3 mb-2 text-gray-800">EDITAR PEDIDOS</h1>
@@ -61,8 +57,14 @@ Editar pedidos
             </div>
             <div class="col-12 col-md-2 mb-2">
                 <label class="mb-1">Semana (lunes)</label>
-                <input type="text" class="form-control js-semana-lunes" name="semana"
-                    value="{{ semana|default:'' }}" autocomplete="off">
+                <select class="form-control" name="semana">
+                    <option value="">Todas</option>
+                    {% for item in semanas_disponibles %}
+                    <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>
+                        {{ item.label }}
+                    </option>
+                    {% endfor %}
+                </select>
             </div>
             <div class="col-12 col-md-2 mb-2">
                 <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
@@ -174,23 +176,4 @@ Editar pedidos
 </div>
 
 {% include "partials/delivery_calendar_assets.html" %}
-<script src="https://cdn.jsdelivr.net/npm/flatpickr"></script>
-<script src="https://cdn.jsdelivr.net/npm/flatpickr/dist/l10n/es.js"></script>
-<script>
-    (function () {
-        const semanaInput = document.querySelector('.js-semana-lunes');
-        if (!semanaInput || !window.flatpickr) {
-            return;
-        }
-        flatpickr(semanaInput, {
-            dateFormat: "Y-m-d",
-            allowInput: false,
-            disableMobile: true,
-            locale: "es",
-            enable: [function (fecha) {
-                return fecha.getDay() === 1;
-            }]
-        });
-    })();
-</script>
 {% endblock %}

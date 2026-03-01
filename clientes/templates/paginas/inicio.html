@@ -32,6 +32,31 @@ Inicio
 
 {% block contenido %}
 <div class="container-fluid">
+    <form method="get" class="card shadow-sm mb-4">
+        <div class="card-body pb-2">
+            <div class="form-row align-items-end">
+                <div class="col-12 col-md-4 mb-2">
+                    <label class="mb-1">Semana con pedidos activos</label>
+                    <select class="form-control js-semana-dashboard" name="semana">
+                        {% if not semanas_disponibles %}
+                        <option value="">Sin semanas con pedidos</option>
+                        {% endif %}
+                        {% for item in semanas_disponibles %}
+                        <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>{{ item.label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-12 col-md-2 mb-2">
+                    <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
+                </div>
+                <div class="col-12 col-md-4 mb-2">
+                    <span class="small text-muted d-block">Semana seleccionada</span>
+                    <strong>{{ semana_label }}</strong>
+                </div>
+            </div>
+        </div>
+    </form>
+
     <div class="row">
         {% for pedido in ultimos_pedidos %}
         <div class="col-xl-3 col-md-6 mb-4">
@@ -105,7 +130,7 @@ Inicio
             <div class="card shadow mb-4">
                 <div class="card-header dashboard-card-header">
                     <h6 class="m-0 font-weight-bold text-primary">
-                        Resumen mensual {{ chart_year }} (kg)
+                        Resumen semanal {{ semana_label }} (kg)
                     </h6>
                 </div>
                 <div class="card-body">
@@ -155,11 +180,12 @@ Inicio
             <div class="card shadow mb-4">
                 <div class="card-header dashboard-card-header">
                     <h6 class="m-0 font-weight-bold text-primary">
-                        Materia prima vs creado por comerciales {{ chart_year }} (kg)
+                        Materia prima vs creado por comerciales ({{ semana_label }})
                     </h6>
                 </div>
                 <div class="card-body">
                     <div class="chart-area">
+                        {{ chart_mp_labels|json_script:"chart-mp-labels" }}
                         {{ chart_materia_prima_data|json_script:"chart-materia-prima-data" }}
                         {{ chart_comerciales_data|json_script:"chart-comerciales-data" }}
                         {{ chart_balance_data|json_script:"chart-balance-data" }}
@@ -192,13 +218,13 @@ Inicio
                 <table class="table table-bordered table-responsive-stack" width="100%" cellspacing="0">
                     <thead>
                         <tr>
+                            <th>ID PEDIDO</th>
                             <th>PRESENTACION</th>
                             <th>COMPANIA</th>
                             <th>TIPO DE HUEVO</th>
                             <th>CANTIDAD TOTAL (KG)</th>
                             <th class="col-semana">SEMANA</th>
                             <th>ENTREGAS</th>
-                            <th>FECHA/CREACION</th>
                             <th>ESTADO</th>
                             <th>CARRITO</th>
                         </tr>
@@ -206,6 +232,7 @@ Inicio
                     <tbody>
                         {% for pedido in tabla.pedidos %}
                         <tr data-pedido-id="{{ pedido.id }}">
+                            <td data-label="ID Pedido">#{{ pedido.id }}</td>
                             <td data-label="Presentacion"
                                 class="js-dashboard-filter"
                                 data-filter-param="presentacion"
@@ -309,9 +336,6 @@ Inicio
                                 {% endif %}
                                 {% endwith %}
                                 {% endwith %}
-                            </td>
-                            <td data-label="Fecha/creacion">
-                                {{ pedido.fecha_creacion|date:"d/m/Y" }}
                             </td>
                             <td data-label="Estado">
                                 <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
@@ -428,7 +452,7 @@ Inicio
     });
 
     document.addEventListener("DOMContentLoaded", function () {
-        const labels = JSON.parse(document.getElementById("chart-labels").textContent);
+        const labels = JSON.parse(document.getElementById("chart-mp-labels").textContent);
         const materiaPrima = JSON.parse(document.getElementById("chart-materia-prima-data").textContent);
         const comerciales = JSON.parse(document.getElementById("chart-comerciales-data").textContent);
         const balance = JSON.parse(document.getElementById("chart-balance-data").textContent);
@@ -490,6 +514,16 @@ Inicio
     });
 
     document.addEventListener("DOMContentLoaded", function () {
+        const semanaSelect = document.querySelector(".js-semana-dashboard");
+        if (!semanaSelect || !semanaSelect.form) {
+            return;
+        }
+        semanaSelect.addEventListener("change", function () {
+            semanaSelect.form.submit();
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
         const labels = JSON.parse(document.getElementById("city-labels").textContent);
         const dataValues = JSON.parse(document.getElementById("city-data").textContent);
         const pieCanvas = document.getElementById("myPieChart");
@@ -540,7 +574,7 @@ Inicio
                 if (!value) {
                     return;
                 }
-                const url = new URL(window.location.origin + window.location.pathname);
+                const url = new URL(window.location.href);
                 url.searchParams.set("presentacion", value);
                 window.location.href = url.toString();
             });

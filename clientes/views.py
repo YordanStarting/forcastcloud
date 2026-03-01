@@ -1,6 +1,7 @@
 import json
 from collections import OrderedDict
 from datetime import date, timedelta
+from urllib.parse import urlencode
 from django.shortcuts import get_object_or_404, render, redirect
 from django.http import JsonResponse, HttpResponseForbidden
 from django.core.paginator import Paginator
@@ -40,13 +41,17 @@ PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
 PEDIDO_ESTADO_LABELS = dict(PEDIDO_ESTADO_CHOICES)
 PEDIDO_ESTADOS_ACTIVOS = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_CONFIRMADOS_RESUMEN = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
-PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD = ['CONFIRMADO', 'EN_PRODUCCION']
+PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_DASHBOARD = ['PENDIENTE'] + PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
+PEDIDO_ESTADOS_TABLAS_DASHBOARD = PEDIDO_ESTADOS_DASHBOARD
+PEDIDO_ESTADOS_SEMANA_DASHBOARD = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_RESUMEN = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'ENTREGADO']
 PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
 PEDIDO_ESTADOS_PANELES = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
 PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
 PRODUCCION_ACCION_LABELS = dict(RegistroProduccion.ACCION_CHOICES)
+DIAS_CORTOS_ES = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
+MESES_CORTOS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 ROL_ESTADOS_PERMITIDOS = {
     'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
@@ -115,12 +120,74 @@ def _usuario_puede_cambiar_estado_pedidos(user):
     return bool(_estados_permitidos_para_usuario(user))
 
 
-def _crear_notificaciones_globales(mensaje, *, tipo_evento='INFO', reproducir_sonido=False):
+def _semana_label_corta(semana_lunes):
+    if not semana_lunes:
+        return 'Sin semana'
+    fecha_inicio = semana_lunes
+    fecha_fin = semana_lunes + timedelta(days=5)
+    dia_inicio = DIAS_CORTOS_ES[fecha_inicio.weekday()]
+    dia_fin = DIAS_CORTOS_ES[fecha_fin.weekday()]
+    mes_inicio = MESES_CORTOS_ES[fecha_inicio.month - 1]
+    mes_fin = MESES_CORTOS_ES[fecha_fin.month - 1]
+    if fecha_inicio.month == fecha_fin.month:
+        return f"{dia_inicio} {fecha_inicio.day} {mes_inicio} - {dia_fin} {fecha_fin.day} {mes_fin}"
+    return (
+        f"{dia_inicio} {fecha_inicio.day} {mes_inicio} - "
+        f"{dia_fin} {fecha_fin.day} {mes_fin}"
+    )
+
+
+def _obtener_semanas_disponibles(qs, *, estados=None, limit=52):
+    semanas_qs = qs.filter(semana__isnull=False)
+    if estados:
+        semanas_qs = semanas_qs.filter(estado__in=estados)
+    return list(
+        semanas_qs
+        .values_list('semana', flat=True)
+        .distinct()
+        .order_by('-semana')[:limit]
+    )
+
+
+def _resolver_semana_seleccionada(request, semanas_disponibles):
+    semana_param = request.GET.get('semana')
+    semana_seleccionada = _ajustar_a_lunes(semana_param) if semana_param else None
+    if not semana_seleccionada:
+        if semanas_disponibles:
+            return semanas_disponibles[0]
+        hoy = date.today()
+        return hoy - timedelta(days=hoy.weekday())
+    return semana_seleccionada
+
+
+def _construir_selector_semanas(semanas_disponibles, semana_seleccionada):
+    return [
+        {
+            'value': semana.isoformat(),
+            'label': _semana_label_corta(semana),
+            'selected': semana == semana_seleccionada,
+        }
+        for semana in semanas_disponibles
+    ]
+
+
+def _crear_notificaciones_globales(
+    mensaje,
+    *,
+    tipo_evento='INFO',
+    reproducir_sonido=False,
+    actor=None,
+    pedido=None,
+    detalle='',
+):
     usuarios_activos = list(User.objects.filter(is_active=True).only('id'))
     notificaciones = [
         Notificacion(
             usuario=usuario,
+            actor=actor,
+            pedido=pedido,
             mensaje=mensaje,
+            detalle=detalle or '',
             tipo_evento=tipo_evento,
             reproducir_sonido=reproducir_sonido,
         )
@@ -145,6 +212,9 @@ def _registrar_evento_creacion_pedido(pedido, usuario):
         f"Pedido #{pedido.id} creado por {nombre_usuario}",
         tipo_evento='PEDIDO_CREADO',
         reproducir_sonido=True,
+        actor=usuario,
+        pedido=pedido,
+        detalle='Pedido creado.',
     )
 
 
@@ -154,6 +224,9 @@ def _registrar_evento_edicion_pedido(pedido, usuario):
         f"Pedido #{pedido.id} editado por {nombre_usuario}",
         tipo_evento='INFO',
         reproducir_sonido=True,
+        actor=usuario,
+        pedido=pedido,
+        detalle='Pedido editado.',
     )
 
 
@@ -163,6 +236,8 @@ def _registrar_evento_eliminacion_pedido(pedido_id, usuario):
         f"Pedido #{pedido_id} eliminado por {nombre_usuario}",
         tipo_evento='INFO',
         reproducir_sonido=True,
+        actor=usuario,
+        detalle='Pedido eliminado.',
     )
 
 
@@ -216,6 +291,13 @@ def _registrar_cambio_estado_pedido(
         mensaje,
         tipo_evento=tipo_evento,
         reproducir_sonido=reproducir_sonido,
+        actor=usuario,
+        pedido=pedido,
+        detalle=(
+            f"Estado anterior: {estado_anterior_label}\n"
+            f"Estado nuevo: {estado_nuevo_label}\n"
+            f"{descripcion or ''}"
+        ).strip(),
     )
 
 
@@ -603,104 +685,80 @@ def mi_perfil(request):
 
 @login_required
 def inicio(request):
-    anio_actual = date.today().year
-    pedidos_qs = Pedido.objects.select_related('proveedor', 'comercial')
-    pedidos_qs, filtros = filtrar_pedidos(request, pedidos_qs)
+    cantidad_expr = _cantidad_pedido_expr()
+    pedidos_base_qs = Pedido.objects.select_related('proveedor', 'comercial')
+    pedidos_base_qs, filtros = filtrar_pedidos(
+        request,
+        pedidos_base_qs,
+        include_semana=False,
+    )
+
+    semanas_disponibles = _obtener_semanas_disponibles(
+        pedidos_base_qs,
+        estados=PEDIDO_ESTADOS_SEMANA_DASHBOARD,
+    )
+    semana_seleccionada = _resolver_semana_seleccionada(request, semanas_disponibles)
+    if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
+        semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+
+    pedidos_semana_qs = pedidos_base_qs
+    if semana_seleccionada:
+        pedidos_semana_qs = pedidos_semana_qs.filter(semana=semana_seleccionada)
+        filtros['semana'] = semana_seleccionada.isoformat()
+
+    pedidos_activos_qs = pedidos_semana_qs.filter(estado__in=PEDIDO_ESTADOS_SEMANA_DASHBOARD)
+    pedidos_tablas_qs = (
+        pedidos_semana_qs
+        .filter(estado__in=PEDIDO_ESTADOS_TABLAS_DASHBOARD)
+        .select_related('proveedor')
+        .prefetch_related('entregas')
+        .order_by('ciudad', 'fecha_entrega', 'id')
+    )
+    pedidos = list(pedidos_tablas_qs)
     ultimos_pedidos = list(
-        pedidos_qs
+        pedidos_tablas_qs
         .filter(estado='PENDIENTE')
         .order_by('-fecha_creacion')[:3]
     )
-    pedidos_activos_qs = pedidos_qs.filter(estado__in=PEDIDO_ESTADOS_DASHBOARD)
-    pedidos = list(
-        pedidos_activos_qs
-        .select_related('proveedor')
-        .prefetch_related('entregas')
-        .order_by('semana', 'fecha_entrega')
-    )
 
     pedidos_por_ciudad = {value: [] for value, _ in CIUDAD_CHOICES}
-    pedidos_pendientes = 0
-    pedidos_confirmados = 0
     for pedido in pedidos:
         if pedido.ciudad in pedidos_por_ciudad:
             pedidos_por_ciudad[pedido.ciudad].append(pedido)
-        if pedido.estado == 'PENDIENTE':
-            pedidos_pendientes += 1
-        elif pedido.estado in PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD:
-            pedidos_confirmados += 1
 
-    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-    chart_pendientes_data = [0] * 12
-    chart_confirmados_data = [0] * 12
-    chart_materia_prima_data = [0] * 12
-    chart_comerciales_data = [0] * 12
-    chart_balance_data = [0] * 12
+    pedidos_pendientes = pedidos_tablas_qs.filter(estado='PENDIENTE').count()
+    pedidos_confirmados = pedidos_tablas_qs.filter(
+        estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
+    ).count()
 
-    resumen_estados = (
-        pedidos_qs
-        .filter(
-            estado__in=PEDIDO_ESTADOS_DASHBOARD,
-            fecha_creacion__year=anio_actual,
+    total_pendientes_kg = pedidos_tablas_qs.filter(estado='PENDIENTE').aggregate(total=Sum(cantidad_expr))['total'] or 0
+    total_confirmados_kg = (
+        pedidos_tablas_qs
+        .filter(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD)
+        .aggregate(total=Sum(cantidad_expr))['total']
+        or 0
+    )
+    chart_labels = ['Pendientes', 'Confirmados']
+    chart_pendientes_data = [total_pendientes_kg, 0]
+    chart_confirmados_data = [0, total_confirmados_kg]
+
+    fecha_inicio_semana = semana_seleccionada
+    fecha_fin_semana = semana_seleccionada + timedelta(days=5) if semana_seleccionada else None
+    total_materia_prima_semana = 0
+    if fecha_inicio_semana and fecha_fin_semana:
+        total_materia_prima_semana = (
+            MateriaPrima.objects
+            .filter(fecha__gte=fecha_inicio_semana, fecha__lte=fecha_fin_semana)
+            .aggregate(total=Sum('cantidad_kg'))['total'] or 0
         )
-        .annotate(mes=ExtractMonth('fecha_creacion'))
-        .values('mes', 'estado')
-        .annotate(total=Sum(_cantidad_pedido_expr()))
-        .order_by('mes')
-    )
-
-    for row in resumen_estados:
-        mes = row.get('mes')
-        if not mes:
-            continue
-        indice = mes - 1
-        total = row.get('total') or 0
-        if row.get('estado') == 'PENDIENTE':
-            chart_pendientes_data[indice] = total
-        elif row.get('estado') in PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD:
-            chart_confirmados_data[indice] += total
-
-    resumen_materia_prima = (
-        MateriaPrima.objects
-        .filter(fecha__year=anio_actual)
-        .annotate(mes=ExtractMonth('fecha'))
-        .values('mes')
-        .annotate(total=Sum('cantidad_kg'))
-        .order_by('mes')
-    )
-    for row in resumen_materia_prima:
-        mes = row.get('mes')
-        if mes:
-            chart_materia_prima_data[mes - 1] = row.get('total') or 0
-
-    resumen_creado_comerciales = (
-        pedidos_qs
-        .filter(
-            fecha_creacion__year=anio_actual,
-            comercial__perfilusuario__rol='comercial',
-        )
-        .annotate(mes=ExtractMonth('fecha_creacion'))
-        .values('mes')
-        .annotate(total=Sum(_cantidad_pedido_expr()))
-        .order_by('mes')
-    )
-    for row in resumen_creado_comerciales:
-        mes = row.get('mes')
-        if mes:
-            chart_comerciales_data[mes - 1] = row.get('total') or 0
-
-    chart_balance_data = [
-        chart_materia_prima_data[idx] - chart_comerciales_data[idx]
-        for idx in range(12)
-    ]
+    total_comerciales_semana = pedidos_tablas_qs.aggregate(total=Sum(cantidad_expr))['total'] or 0
+    chart_mp_labels = [f"Semana {_semana_label_corta(semana_seleccionada)}"] if semana_seleccionada else ['Semana']
+    chart_materia_prima_data = [total_materia_prima_semana]
+    chart_comerciales_data = [total_comerciales_semana]
+    chart_balance_data = [total_materia_prima_semana - total_comerciales_semana]
 
     ciudad_totales = {value: 0 for value, _ in CIUDAD_CHOICES}
-    resumen_ciudad = (
-        pedidos_activos_qs
-        .values('ciudad')
-        .annotate(total=Sum(_cantidad_pedido_expr()))
-    )
+    resumen_ciudad = pedidos_activos_qs.values('ciudad').annotate(total=Sum(cantidad_expr))
     for row in resumen_ciudad:
         ciudad = row.get('ciudad')
         if ciudad in ciudad_totales:
@@ -711,7 +769,7 @@ def inicio(request):
     total_toneladas = round(sum(ciudad_totales.values()) / 1000, 2)
 
     totales_comerciales = (
-        pedidos_activos_qs
+        pedidos_tablas_qs
         .values(
             'ciudad',
             'comercial_id',
@@ -719,7 +777,7 @@ def inicio(request):
             'comercial__first_name',
             'comercial__last_name',
         )
-        .annotate(total_kg=Sum(_cantidad_pedido_expr()))
+        .annotate(total_kg=Sum(cantidad_expr))
         .order_by('ciudad', 'comercial__username')
     )
     totales_por_ciudad = {value: [] for value, _ in CIUDAD_CHOICES}
@@ -759,16 +817,20 @@ def inicio(request):
         'tablas_ciudades': tablas_ciudades,
         'pedidos_pendientes': pedidos_pendientes,
         'pedidos_confirmados': pedidos_confirmados,
-        'chart_labels': meses_labels,
+        'chart_labels': chart_labels,
         'chart_pendientes_data': chart_pendientes_data,
         'chart_confirmados_data': chart_confirmados_data,
         'chart_materia_prima_data': chart_materia_prima_data,
         'chart_comerciales_data': chart_comerciales_data,
         'chart_balance_data': chart_balance_data,
-        'chart_year': anio_actual,
+        'chart_mp_labels': chart_mp_labels,
+        'chart_year': date.today().year,
         'city_labels': city_labels,
         'city_data': city_data,
         'total_toneladas': total_toneladas,
+        'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
+        'semana': semana_seleccionada.isoformat() if semana_seleccionada else '',
+        'semana_label': _semana_label_corta(semana_seleccionada),
         **filtros
     })
 
@@ -820,10 +882,17 @@ def _construir_panel_operativo(pedidos, *, cantidad_attr='fabricado_kg'):
             continue
         total_kg = _cantidad_total_pedido(pedido)
         fabricado_kg = int(getattr(pedido, 'fabricado_kg', 0) or 0)
+        estimado_kg = int(getattr(pedido, 'estimado_kg', 0) or 0)
         despachado_kg = int(getattr(pedido, 'despachado_kg', 0) or 0)
         fabricado_kg = max(0, min(fabricado_kg, total_kg))
+        estimado_kg = max(0, min(estimado_kg, total_kg))
         despachado_kg = max(0, min(despachado_kg, total_kg))
-        gestion_kg = fabricado_kg if cantidad_attr == 'fabricado_kg' else despachado_kg
+        if cantidad_attr == 'estimado_kg':
+            gestion_kg = estimado_kg
+        elif cantidad_attr == 'fabricado_kg':
+            gestion_kg = fabricado_kg
+        else:
+            gestion_kg = despachado_kg
         pendiente_kg = max(total_kg - gestion_kg, 0)
         vida_util = pedido.get_presentacion_display()
         vida_utiles.add(vida_util)
@@ -859,6 +928,7 @@ def _construir_panel_operativo(pedidos, *, cantidad_attr='fabricado_kg'):
             'vida_util': vida_util,
             'programado_kg': total_kg,
             'fabricado_kg': fabricado_kg,
+            'estimado_kg': estimado_kg,
             'despachado_kg': despachado_kg,
             'gestion_kg': gestion_kg,
             'pendiente_kg': pendiente_kg,
@@ -934,15 +1004,66 @@ def _render_panel_operativo(request, *, tipo):
         puede_editar_cantidad = False
         mostrar_calendario = True
 
+    tab_context = (
+        request.POST.get('tab')
+        if request.method == 'POST'
+        else request.GET.get('tab')
+    )
+    tab_context = (tab_context or '').strip().lower()
+    if tab_context not in {'producto', 'estimado', 'log'}:
+        tab_context = 'producto'
+    if tipo == 'produccion' and tab_context == 'estimado':
+        cantidad_attr = 'estimado_kg'
+        gestion_label = 'Estimado'
+        subtitulo = 'Programacion y estimado (borrador) por sucursal'
+
+    ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
+    presentacion_valores = {value for value, _ in PRESENTACION_CHOICES}
+    filtros_panel = {
+        'sucursal': '',
+        'vida_util': '',
+        'semana': '',
+    }
+
+    pedidos_panel_qs = _pedidos_panel_operativo_qs()
+    semanas_disponibles = []
+    semana_seleccionada = None
+
+    if tipo == 'produccion':
+        sucursal_param = (request.GET.get('sucursal') or '').strip().upper()
+        if sucursal_param in ciudad_valores:
+            pedidos_panel_qs = pedidos_panel_qs.filter(ciudad=sucursal_param)
+            filtros_panel['sucursal'] = sucursal_param
+
+        vida_util_param = (request.GET.get('vida_util') or '').strip().upper()
+        if vida_util_param in presentacion_valores:
+            pedidos_panel_qs = pedidos_panel_qs.filter(presentacion=vida_util_param)
+            filtros_panel['vida_util'] = vida_util_param
+
+        semanas_disponibles = _obtener_semanas_disponibles(
+            pedidos_panel_qs,
+            estados=PEDIDO_ESTADOS_PANELES,
+        )
+        semana_seleccionada = _resolver_semana_seleccionada(request, semanas_disponibles)
+        if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
+            semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+        if semana_seleccionada:
+            pedidos_panel_qs = pedidos_panel_qs.filter(semana=semana_seleccionada)
+            filtros_panel['semana'] = semana_seleccionada.isoformat()
+
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
+        tab_origen = (request.POST.get('tab') or '').strip().lower()
+        if tab_origen not in {'producto', 'estimado'}:
+            tab_origen = 'producto'
+        cantidad_attr_post = 'estimado_kg' if tab_origen == 'estimado' else 'fabricado_kg'
         pedido_id = request.POST.get('pedido_id')
         pedido = get_object_or_404(
             Pedido.objects.filter(estado__in=PEDIDO_ESTADOS_PANELES),
             id=pedido_id,
         )
         if action == 'guardar_cantidad' and puede_editar_cantidad:
-            valor_anterior = int(getattr(pedido, cantidad_attr, 0) or 0)
+            valor_anterior = int(getattr(pedido, cantidad_attr_post, 0) or 0)
             nuevo_valor = request.POST.get('gestion_kg')
             try:
                 nuevo_valor_int = int(nuevo_valor)
@@ -951,19 +1072,20 @@ def _render_panel_operativo(request, *, tipo):
             total = _cantidad_total_pedido(pedido)
             nuevo_valor_int = max(0, min(nuevo_valor_int, total))
             if nuevo_valor_int != valor_anterior:
-                setattr(pedido, cantidad_attr, nuevo_valor_int)
-                pedido.save(update_fields=[cantidad_attr])
-                _registrar_log_produccion(
-                    pedido=pedido,
-                    usuario=request.user,
-                    accion='FABRICADO_ACTUALIZADO',
-                    valor_anterior=valor_anterior,
-                    valor_nuevo=nuevo_valor_int,
-                    cantidad_kg=nuevo_valor_int,
-                    detalle='Actualizacion de fabricado desde Producto fabricado.',
-                )
+                setattr(pedido, cantidad_attr_post, nuevo_valor_int)
+                pedido.save(update_fields=[cantidad_attr_post])
+                if tab_origen != 'estimado':
+                    _registrar_log_produccion(
+                        pedido=pedido,
+                        usuario=request.user,
+                        accion='FABRICADO_ACTUALIZADO',
+                        valor_anterior=valor_anterior,
+                        valor_nuevo=nuevo_valor_int,
+                        cantidad_kg=nuevo_valor_int,
+                        detalle='Actualizacion de fabricado desde panel de produccion.',
+                    )
             if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-                gestion_guardada = int(getattr(pedido, cantidad_attr, 0) or 0)
+                gestion_guardada = int(getattr(pedido, cantidad_attr_post, 0) or 0)
                 return JsonResponse({
                     'ok': True,
                     'pedido_id': pedido.id,
@@ -971,8 +1093,9 @@ def _render_panel_operativo(request, *, tipo):
                     'total_kg': total,
                     'pendiente_kg': max(total - gestion_guardada, 0),
                     'fabricado_kg': int(getattr(pedido, 'fabricado_kg', 0) or 0),
+                    'estimado_kg': int(getattr(pedido, 'estimado_kg', 0) or 0),
                 })
-        elif action == 'cambiar_estado':
+        elif action == 'cambiar_estado' and tab_origen != 'estimado':
             estado_anterior = pedido.estado
             estado_nuevo = (request.POST.get('estado') or '').strip()
             if estado_nuevo in set(estado_permitidos):
@@ -994,13 +1117,23 @@ def _render_panel_operativo(request, *, tipo):
                         pedido=pedido,
                         usuario=request.user,
                         accion='ESTADO_EN_PRODUCCION',
-                        detalle='Pedido movido a En produccion desde Producto fabricado.',
+                        detalle='Pedido movido a En produccion desde panel de produccion.',
                     )
         if tipo == 'produccion':
-            return redirect(f"{reverse('panel_produccion')}?tab=producto")
+            redirect_params = {'tab': tab_origen}
+            sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
+            vida_util_post = (request.POST.get('vida_util') or '').strip().upper()
+            semana_post = _ajustar_a_lunes(request.POST.get('semana'))
+            if sucursal_post in ciudad_valores:
+                redirect_params['sucursal'] = sucursal_post
+            if vida_util_post in presentacion_valores:
+                redirect_params['vida_util'] = vida_util_post
+            if semana_post:
+                redirect_params['semana'] = semana_post.isoformat()
+            return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
         return redirect('panel_logistica')
 
-    pedidos = list(_pedidos_panel_operativo_qs())
+    pedidos = list(pedidos_panel_qs)
     panel_data = _construir_panel_operativo(pedidos, cantidad_attr=cantidad_attr)
     for bloque in panel_data['bloques']:
         for row in bloque['rows']:
@@ -1010,6 +1143,7 @@ def _render_panel_operativo(request, *, tipo):
     active_tab = 'producto'
     log_page_obj = None
     log_query_string = ''
+    panel_query_string = ''
     log_filters = {
         'accion': '',
         'sucursal': '',
@@ -1036,11 +1170,14 @@ def _render_panel_operativo(request, *, tipo):
         requested_tab = (request.GET.get('tab') or '').strip().lower()
         has_log_params = bool(
             request.GET.get('accion')
-            or request.GET.get('sucursal')
             or request.GET.get('q')
             or request.GET.get('page')
+            or (
+                request.GET.get('sucursal')
+                and requested_tab == 'log'
+            )
         )
-        if requested_tab in {'producto', 'log'}:
+        if requested_tab in {'producto', 'estimado', 'log'}:
             active_tab = requested_tab
         elif has_log_params:
             active_tab = 'log'
@@ -1073,8 +1210,13 @@ def _render_panel_operativo(request, *, tipo):
         query_params.pop('page', None)
         query_params.pop('tab', None)
         log_query_string = query_params.urlencode()
+        panel_query_string = urlencode({
+            key: value
+            for key, value in filtros_panel.items()
+            if value
+        })
 
-    return render(request, template_name, {
+    context = {
         'panel_titulo': titulo,
         'panel_subtitulo': subtitulo,
         'panel_tipo': tipo,
@@ -1091,7 +1233,20 @@ def _render_panel_operativo(request, *, tipo):
         'log_query_string': log_query_string,
         'produccion_accion_choices': RegistroProduccion.ACCION_CHOICES,
         'ciudades': CIUDAD_CHOICES,
-    })
+    }
+    if tipo == 'produccion':
+        panel_label = 'Estimado' if active_tab == 'estimado' else 'Fabricado'
+        context.update({
+            'active_tab': active_tab if active_tab in {'producto', 'estimado', 'log'} else 'producto',
+            'panel_label': panel_label,
+            'panel_label_lower': panel_label.lower(),
+            'filtros_panel': filtros_panel,
+            'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
+            'semana_label': _semana_label_corta(semana_seleccionada) if semana_seleccionada else '',
+            'presentacion_choices': PRESENTACION_CHOICES,
+            'panel_query_string': panel_query_string,
+        })
+    return render(request, template_name, context)
 
 
 @login_required
@@ -1585,14 +1740,7 @@ def resumen_pedidos(request):
         for dia in dias_programacion
     ]
 
-    semanas_selector = [
-        {
-            'value': semana.isoformat(),
-            'label': f"Semana del {semana.strftime('%d/%m/%Y')}",
-            'selected': semana == semana_seleccionada,
-        }
-        for semana in semanas_disponibles
-    ]
+    semanas_selector = _construir_selector_semanas(semanas_disponibles, semana_seleccionada)
     ciudades_selector = [
         {
             'value': ciudad_todas_value,
@@ -1626,7 +1774,7 @@ def resumen_pedidos(request):
         'total_programado_semana': total_programado_semana,
         'total_pendiente_semana': total_pendiente_semana,
         'semana': semana_seleccionada.isoformat(),
-        'semana_label': semana_seleccionada.strftime('%d/%m/%Y'),
+        'semana_label': _semana_label_corta(semana_seleccionada),
         'ciudad': ciudad_seleccionada,
         'ciudad_label': (
             ciudad_todas_label
@@ -1996,7 +2144,7 @@ def crear_pedido_beta(request):
         'ciudades': CIUDAD_CHOICES,
         'ciudad_seleccionada': ciudad_seleccionada,
         'semana': semana_seleccionada.isoformat(),
-        'semana_label': semana_seleccionada.strftime('%d/%m/%Y'),
+        'semana_label': _semana_label_corta(semana_seleccionada),
         'dias_programacion': dias_programacion,
         'tipos_huevo': tipos_huevo,
         'grupos_presentacion': list(grupos_presentacion.values()),
@@ -2386,29 +2534,20 @@ def editartablas(request):
         .prefetch_related('entregas')
         .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
     )
-    ciudad_usuario = _obtener_ciudad_usuario(request.user)
     rol_usuario = _obtener_rol_usuario(request.user)
     ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
+    ciudad_todas_value = 'TODAS'
     ciudad_param = (request.GET.get('ciudad') or '').strip().upper()
-    if ciudad_param not in ciudad_valores:
+    if ciudad_param not in ciudad_valores and ciudad_param != ciudad_todas_value:
         ciudad_param = ''
 
-    filtros_forzados = {}
     if _usuario_es_admin(request.user):
         pedidos_visibles_qs = pedidos_base_qs
     else:
         pedidos_visibles_qs = pedidos_base_qs
-        if ciudad_param:
-            pedidos_visibles_qs = pedidos_visibles_qs.filter(ciudad=ciudad_param)
-            filtros_forzados['ciudad'] = ciudad_param
-        else:
-            if ciudad_usuario:
-                pedidos_visibles_qs = pedidos_visibles_qs.filter(ciudad=ciudad_usuario)
-                filtros_forzados['ciudad'] = ciudad_usuario
-            else:
-                pedidos_visibles_qs = pedidos_visibles_qs.none()
-            # Para comerciales, por defecto ve solo lo que el usuario creo.
-            if rol_usuario == 'comercial':
+        if rol_usuario == 'comercial':
+            # Comercial inicia viendo sus pedidos; cambia alcance al usar filtro de ciudad.
+            if not ciudad_param:
                 pedidos_visibles_qs = pedidos_visibles_qs.filter(comercial=request.user)
 
     pedidos_semana_qs, _ = filtrar_pedidos(
@@ -2430,8 +2569,6 @@ def editartablas(request):
         pedidos_visibles_qs,
         include_fecha_creacion=False,
     )
-    for key, value in filtros_forzados.items():
-        filtros.setdefault(key, value)
 
     proveedores = Proveedor.objects.only('id', 'nombre', 'activo', 'ciudad').filter(activo=True)
     ciudad_filtro_activa = filtros.get('ciudad')
@@ -2446,7 +2583,7 @@ def editartablas(request):
     semanas_selector = [
         {
             'value': semana.isoformat(),
-            'label': f"Semana del {semana.strftime('%d/%m/%Y')}",
+            'label': _semana_label_corta(semana),
             'selected': semana.isoformat() == semana_seleccionada,
         }
         for semana in semanas_disponibles
@@ -2469,6 +2606,8 @@ def editartablas(request):
         'pedidos': pedidos,
         'proveedores': proveedores,
         'CIUDAD_CHOICES': CIUDAD_CHOICES,
+        'ciudad_todas_value': ciudad_todas_value,
+        'rol_usuario': rol_usuario,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'PEDIDO_ESTADO_CHOICES': estados_activos_choices,
@@ -2484,6 +2623,10 @@ def editartablas(request):
 
 @login_required
 def historial(request):
+    meses_largos_es = [
+        'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
+        'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
+    ]
     registros_historial_qs = (
         RegistroEstadoPedido.objects
         .select_related('usuario')
@@ -2497,22 +2640,68 @@ def historial(request):
         estado__in=PEDIDO_ESTADOS_HISTORIAL
     )
 
-    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
-    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
-                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
-    anios_disponibles = [d.year for d in pedidos_qs.dates('fecha_creacion', 'year', order='DESC')]
+    pedidos_base_filtrados_qs, filtros = filtrar_pedidos(
+        request,
+        pedidos_qs,
+        include_semana=False,
+    )
+
+    anios_disponibles = [
+        item.year
+        for item in pedidos_base_filtrados_qs.dates('fecha_creacion', 'year', order='DESC')
+    ]
     anio_actual = date.today().year
     anio_por_defecto = anios_disponibles[0] if anios_disponibles else anio_actual
-    try:
-        anio = int(request.GET.get('anio', anio_por_defecto))
-    except (TypeError, ValueError):
+    anio_param = (request.GET.get('anio') or '').strip()
+    if anio_param:
+        try:
+            anio = int(anio_param)
+        except (TypeError, ValueError):
+            anio = anio_por_defecto
+    else:
         anio = anio_por_defecto
 
     if anio not in anios_disponibles:
         anios_disponibles = sorted(set(anios_disponibles + [anio]), reverse=True)
 
-    pedidos = pedidos.filter(fecha_creacion__year=anio)
+    pedidos_anio_qs = pedidos_base_filtrados_qs.filter(fecha_creacion__year=anio)
     filtros['anio'] = str(anio)
+
+    meses_disponibles_numeros = [
+        fecha_mes.month
+        for fecha_mes in pedidos_anio_qs.dates('fecha_creacion', 'month', order='ASC')
+    ]
+    mes_param = (request.GET.get('mes') or '').strip()
+    try:
+        mes_seleccionado = int(mes_param) if mes_param else None
+    except (TypeError, ValueError):
+        mes_seleccionado = None
+    if mes_seleccionado and mes_seleccionado not in meses_disponibles_numeros:
+        meses_disponibles_numeros = sorted(set(meses_disponibles_numeros + [mes_seleccionado]))
+
+    pedidos_periodo_qs = pedidos_anio_qs
+    if mes_seleccionado and 1 <= mes_seleccionado <= 12:
+        pedidos_periodo_qs = pedidos_periodo_qs.filter(fecha_creacion__month=mes_seleccionado)
+        filtros['mes'] = str(mes_seleccionado)
+
+    semanas_disponibles = _obtener_semanas_disponibles(
+        pedidos_periodo_qs,
+        estados=PEDIDO_ESTADOS_HISTORIAL,
+    )
+    semana_param = request.GET.get('semana')
+    semana_seleccionada = _ajustar_a_lunes(semana_param) if semana_param else None
+    if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
+        semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+
+    pedidos = pedidos_periodo_qs
+    if semana_seleccionada:
+        pedidos = pedidos.filter(semana=semana_seleccionada)
+        filtros['semana'] = semana_seleccionada.isoformat()
+
+    pedidos = pedidos.order_by('-fecha_creacion', '-id')
+
+    meses_labels = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun',
+                    'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic']
 
     resumen_anual = (
         pedidos
@@ -2549,6 +2738,14 @@ def historial(request):
         for value, label in PEDIDO_ESTADO_CHOICES
         if value in PEDIDO_ESTADOS_HISTORIAL
     ]
+    meses_disponibles = [
+        {
+            'value': str(mes_numero),
+            'label': meses_largos_es[mes_numero - 1],
+        }
+        for mes_numero in meses_disponibles_numeros
+        if 1 <= mes_numero <= 12
+    ]
 
     return render(request, 'pedidos/historial.html', {
         'pedidos': pedidos,
@@ -2556,9 +2753,13 @@ def historial(request):
         'PEDIDO_ESTADO_CHOICES': estados_historial_choices,
         'anios_disponibles': anios_disponibles,
         'anio': str(anio),
+        'meses_disponibles': meses_disponibles,
+        'mes': str(mes_seleccionado) if mes_seleccionado else '',
         'historial_chart_labels': meses_labels,
         'historial_chart_data': historial_chart_data,
         'historial_chart_year': anio,
+        'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
+        'semana_label': _semana_label_corta(semana_seleccionada) if semana_seleccionada else '',
         'puede_editar_historial': _usuario_es_admin(request.user),
         **filtros
     })
@@ -2576,7 +2777,16 @@ def editar_pedidos(request):
         .filter(estado__in=PEDIDO_ESTADOS_ACTIVOS)
     )
     pedidos_qs = _filtrar_pedidos_editables_por_usuario(request.user, pedidos_qs)
+    pedidos_semana_qs, _ = filtrar_pedidos(
+        request,
+        pedidos_qs,
+        include_semana=False,
+    )
+    semanas_disponibles = _obtener_semanas_disponibles(pedidos_semana_qs, estados=PEDIDO_ESTADOS_ACTIVOS)
     pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+    semana_seleccionada = _ajustar_a_lunes(filtros.get('semana'))
+    if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
+        semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
     proveedores = Proveedor.objects.filter(activo=True)
     estados_activos_choices = [
         (value, label)
@@ -2590,6 +2800,7 @@ def editar_pedidos(request):
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
         'PEDIDO_ESTADO_CHOICES': estados_activos_choices,
+        'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
         **filtros
     })
 
@@ -2716,8 +2927,15 @@ def filtrar_pedidos(
         filtros['proveedor_id'] = proveedor
 
     if ciudad := request.GET.get('ciudad'):
-        qs = qs.filter(ciudad=ciudad)
-        filtros['ciudad'] = ciudad
+        ciudad_valor = ciudad.strip().upper()
+        if ciudad_valor and ciudad_valor != 'TODAS':
+            qs = qs.filter(ciudad=ciudad_valor)
+        if ciudad_valor:
+            filtros['ciudad'] = ciudad_valor
+
+    if comercial := request.GET.get('comercial'):
+        qs = qs.filter(comercial_id=comercial)
+        filtros['comercial'] = comercial
 
     if tipo_huevo := request.GET.get('tipo_huevo'):
         qs = qs.filter(tipo_huevo=tipo_huevo)

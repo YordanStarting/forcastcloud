@@ -64,11 +64,23 @@ def notificaciones(request):
 
     unread_notifications_qs = (
         Notificacion.objects
-        .only('mensaje', 'fecha_creacion')
+        .select_related('actor', 'actor__perfilusuario', 'pedido', 'pedido__proveedor')
         .filter(usuario=request.user, leida=False)
         .order_by('-fecha_creacion')[:5]
     )
     unread_notifications = list(unread_notifications_qs)
+    default_actor_image = static('web/img/undraw_profile.svg')
+    for notificacion in unread_notifications:
+        actor = getattr(notificacion, 'actor', None)
+        actor_name = 'Sistema'
+        actor_image = default_actor_image
+        if actor:
+            actor_name = f"{actor.first_name} {actor.last_name}".strip() or actor.username
+            perfil_actor = getattr(actor, 'perfilusuario', None)
+            if perfil_actor and perfil_actor.foto_perfil:
+                actor_image = perfil_actor.foto_perfil.url
+        notificacion.actor_name = actor_name
+        notificacion.actor_profile_image = actor_image
 
     return {
         'notificaciones': unread_notifications,

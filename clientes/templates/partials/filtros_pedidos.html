@@ -36,8 +36,34 @@
             <input type="date" name="fecha_hasta" class="form-control" value="{{ fecha_hasta }}">
         </div>
 
-        {% if anios_disponibles %}
         <div class="col-12 col-md-3 mb-2">
+            <label>Semana</label>
+            <select name="semana" class="form-control">
+                <option value="">Todas</option>
+                {% for item in semanas_disponibles %}
+                <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>
+                    {{ item.label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+
+        {% if meses_disponibles %}
+        <div class="col-12 col-md-2 mb-2">
+            <label>Mes</label>
+            <select name="mes" class="form-control">
+                <option value="">Todos</option>
+                {% for m in meses_disponibles %}
+                <option value="{{ m.value }}" {% if mes == m.value %}selected{% endif %}>
+                    {{ m.label }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        {% endif %}
+
+        {% if anios_disponibles %}
+        <div class="col-12 col-md-2 mb-2">
             <label>Anio</label>
             <select name="anio" class="form-control">
                 {% for y in anios_disponibles %}
@@ -53,6 +79,11 @@
             <button type="submit" class="btn btn-primary w-100">
                 Filtrar
             </button>
+        </div>
+        <div class="col-12 col-md-2 mb-2 d-flex align-items-end">
+            <a href="{% url 'historial' %}" class="btn btn-outline-secondary w-100">
+                Limpiar
+            </a>
         </div>
 
     </div>

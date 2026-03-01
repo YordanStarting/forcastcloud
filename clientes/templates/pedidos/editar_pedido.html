@@ -480,11 +480,23 @@ Editar pedido semanal
                     );
                 };
 
+                const weekdayShort = ['Dom', 'Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab'];
+                const monthShort = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+
                 const formatDate = (dateValue) => {
                     const day = String(dateValue.getDate()).padStart(2, '0');
                     const month = String(dateValue.getMonth() + 1).padStart(2, '0');
                     const year = dateValue.getFullYear();
                     return `${day}/${month}/${year}`;
+                };
+
+                const formatWeekShort = (dateValue) => {
+                    if (!dateValue) {
+                        return '-';
+                    }
+                    const weekday = weekdayShort[dateValue.getDay()] || '';
+                    const month = monthShort[dateValue.getMonth()] || '';
+                    return `${weekday} ${dateValue.getDate()} ${month}`;
                 };
 
                 const formatIsoDate = (dateValue) => {
@@ -662,7 +674,7 @@ Editar pedido semanal
                     const saturday = new Date(monday);
                     saturday.setDate(monday.getDate() + 5);
                     if (semanaRangoLabel) {
-                        semanaRangoLabel.textContent = `Semana activa: ${formatDate(monday)} - ${formatDate(saturday)}`;
+                        semanaRangoLabel.textContent = `Semana activa: ${formatWeekShort(monday)} - ${formatWeekShort(saturday)}`;
                     }
                     entregaRows.forEach((row) => {
                         const offset = parseInt(row.dataset.dayOffset || '0', 10);
