@@ -48,6 +48,7 @@ PEDIDO_ESTADOS_SEMANA_DASHBOARD = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', '
 PEDIDO_ESTADOS_RESUMEN = ['PENDIENTE', 'CONFIRMADO', 'EN_PRODUCCION', 'ENTREGADO']
 PEDIDO_ESTADOS_HISTORIAL = ['ENTREGADO', 'CANCELADO', 'DEVUELTO']
 PEDIDO_ESTADOS_PANELES = ['CONFIRMADO', 'EN_PRODUCCION', 'DESPACHADO']
+PEDIDO_ESTADOS_PANEL_PRODUCCION = ['PENDIENTE'] + PEDIDO_ESTADOS_PANELES
 PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION = {'ENTREGADO', 'DEVUELTO'}
 PRODUCCION_ACCION_LABELS = dict(RegistroProduccion.ACCION_CHOICES)
 DIAS_CORTOS_ES = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
@@ -842,7 +843,7 @@ def _cantidad_total_pedido(pedido):
     return int(getattr(pedido, 'cantidad', 0) or 0)
 
 
-def _pedidos_panel_operativo_qs():
+def _pedidos_panel_operativo_qs(estados):
     return (
         Pedido.objects
         .select_related('proveedor', 'comercial')
@@ -850,7 +851,7 @@ def _pedidos_panel_operativo_qs():
             Prefetch('entregas', queryset=EntregaPedido.objects.order_by('fecha_entrega')),
             Prefetch('despachos', queryset=DespachoPedido.objects.order_by('fecha')),
         )
-        .filter(estado__in=PEDIDO_ESTADOS_PANELES)
+        .filter(estado__in=estados)
         .order_by('ciudad', 'presentacion', 'proveedor__nombre', 'id')
     )
 
@@ -987,6 +988,7 @@ def _render_panel_operativo(request, *, tipo):
         cantidad_attr = 'fabricado_kg'
         gestion_label = 'Fabricado'
         estado_permitidos = ['CONFIRMADO', 'EN_PRODUCCION']
+        estados_panel = PEDIDO_ESTADOS_PANEL_PRODUCCION
         template_name = 'pedidos/panel_produccion.html'
         titulo = 'PRODUCCION'
         subtitulo = 'Programacion y fabricado por sucursal'
@@ -998,6 +1000,7 @@ def _render_panel_operativo(request, *, tipo):
         cantidad_attr = 'despachado_kg'
         gestion_label = 'Despachado'
         estado_permitidos = ['CONFIRMADO', 'DESPACHADO']
+        estados_panel = PEDIDO_ESTADOS_PANELES
         template_name = 'pedidos/panel_logistica.html'
         titulo = 'LOGISTICA'
         subtitulo = 'Programacion y despachos por sucursal'
@@ -1025,7 +1028,7 @@ def _render_panel_operativo(request, *, tipo):
         'semana': '',
     }
 
-    pedidos_panel_qs = _pedidos_panel_operativo_qs()
+    pedidos_panel_qs = _pedidos_panel_operativo_qs(estados_panel)
     semanas_disponibles = []
     semana_seleccionada = None
 
@@ -1042,7 +1045,7 @@ def _render_panel_operativo(request, *, tipo):
 
         semanas_disponibles = _obtener_semanas_disponibles(
             pedidos_panel_qs,
-            estados=PEDIDO_ESTADOS_PANELES,
+            estados=estados_panel,
         )
         semana_seleccionada = _resolver_semana_seleccionada(request, semanas_disponibles)
         if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
@@ -1059,7 +1062,7 @@ def _render_panel_operativo(request, *, tipo):
         cantidad_attr_post = 'estimado_kg' if tab_origen == 'estimado' else 'fabricado_kg'
         pedido_id = request.POST.get('pedido_id')
         pedido = get_object_or_404(
-            Pedido.objects.filter(estado__in=PEDIDO_ESTADOS_PANELES),
+            Pedido.objects.filter(estado__in=estados_panel),
             id=pedido_id,
         )
         if action == 'guardar_cantidad' and puede_editar_cantidad:
