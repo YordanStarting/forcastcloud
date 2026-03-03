@@ -16,6 +16,16 @@ Logistica
         color: #7a5a00 !important;
     }
 
+    .js-main-dispatch-cart,
+    .js-dispatch-cart {
+        color: #94a3b8;
+    }
+
+    .js-main-dispatch-cart.is-active,
+    .js-dispatch-cart.is-active {
+        color: #b45309;
+    }
+
     .dispatch-calendar {
         display: grid;
         grid-template-columns: repeat(7, 1fr);
@@ -50,6 +60,11 @@ Logistica
 
     .dispatch-calendar-day.is-selected {
         outline: 2px solid #2563eb;
+        background: #dbeafe;
+    }
+
+    .dispatch-calendar-day.is-selected.has-dispatch {
+        background: #bbf7d0;
     }
 </style>
 {% endblock %}
@@ -111,12 +126,13 @@ Logistica
                                     <th>ENTREGAS</th>
                                     <th>ESTADO ACTUAL</th>
                                     <th>CAMBIAR ESTADO</th>
+                                    <th>CARRITO</th>
                                 </tr>
                             </thead>
                             <tbody>
                                 {% if bloque.rows %}
                                 {% for row in bloque.rows %}
-                                <tr data-sucursal="{{ bloque.codigo }}" data-vida-util="{{ row.vida_util|lower }}">
+                                <tr data-row-key="{{ row.row_key }}" data-pedido-id="{{ row.pedido_id }}" data-sucursal="{{ bloque.codigo }}" data-vida-util="{{ row.vida_util|lower }}">
                                     <td>{{ row.compania }}</td>
                                     <td>{{ row.tipo_huevo }}</td>
                                     <td>{{ row.vida_util }}</td>
@@ -158,14 +174,22 @@ Logistica
                                             <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
                                         </form>
                                     </td>
+                                    <td class="text-center">
+                                        <button type="button"
+                                            class="btn btn-link p-0 js-main-dispatch-cart"
+                                            aria-pressed="false"
+                                            title="Marcar fila">
+                                            <i class="fas fa-shopping-cart"></i>
+                                        </button>
+                                    </td>
                                 </tr>
                                 {% endfor %}
                                 <tr class="js-panel-empty d-none">
-                                    <td colspan="10" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    <td colspan="11" class="text-center text-muted">Sin datos para mostrar.</td>
                                 </tr>
                                 {% else %}
                                 <tr class="js-panel-empty">
-                                    <td colspan="10" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    <td colspan="11" class="text-center text-muted">Sin datos para mostrar.</td>
                                 </tr>
                                 {% endif %}
                             </tbody>
@@ -176,7 +200,7 @@ Logistica
                                     <th></th>
                                     <th class="js-city-gestion">{{ bloque.totales.gestion_kg }}</th>
                                     <th class="js-city-pendiente">{{ bloque.totales.pendiente_kg }}</th>
-                                    <th colspan="3"></th>
+                                    <th colspan="4"></th>
                                 </tr>
                             </tfoot>
                         </table>
@@ -285,6 +309,8 @@ Logistica
                 <div class="border rounded p-3 bg-light">
                     <div class="small text-muted mb-1">Fecha seleccionada</div>
                     <div class="font-weight-bold mb-2" id="dispatchSelectedDate">Sin seleccionar</div>
+                    <div class="small text-muted mb-1">Cantidad programada (kg)</div>
+                    <div class="font-weight-bold mb-2" id="dispatchProgramadaQty">0</div>
                     <label class="mb-1">Cantidad despachada (kg)</label>
                     <input type="number" min="0" step="1" class="form-control" id="dispatchCantidadInput" placeholder="0">
                     <button type="button" class="btn btn-primary btn-sm mt-3" id="dispatchSaveButton">Guardar</button>
@@ -430,6 +456,55 @@ Logistica
             vidaUtilFilter.addEventListener("change", applyFilters);
         }
 
+        const dispatchMainTableKey = `dispatch-main-highlight-user-{{ request.user.id|default:'0' }}`;
+        const dispatchMainRowState = (() => {
+            try {
+                return JSON.parse(localStorage.getItem(dispatchMainTableKey) || "{}");
+            } catch (error) {
+                return {};
+            }
+        })();
+
+        const saveDispatchMainRowState = () => {
+            localStorage.setItem(dispatchMainTableKey, JSON.stringify(dispatchMainRowState));
+        };
+
+        const applyMainDispatchHighlight = (row) => {
+            const rowKey = row?.dataset?.rowKey;
+            const button = row?.querySelector(".js-main-dispatch-cart");
+            const active = Boolean(rowKey && dispatchMainRowState[rowKey]);
+            row.classList.toggle("dispatch-highlight", active);
+            if (button) {
+                button.classList.toggle("is-active", active);
+                button.setAttribute("aria-pressed", active ? "true" : "false");
+            }
+        };
+
+        document.querySelectorAll("tr[data-row-key]").forEach((row) => {
+            applyMainDispatchHighlight(row);
+        });
+
+        document.querySelectorAll(".js-main-dispatch-cart").forEach((button) => {
+            button.addEventListener("click", function (event) {
+                event.preventDefault();
+                const row = this.closest("tr[data-row-key]");
+                if (!row) {
+                    return;
+                }
+                const rowKey = row.dataset.rowKey;
+                if (!rowKey) {
+                    return;
+                }
+                if (dispatchMainRowState[rowKey]) {
+                    delete dispatchMainRowState[rowKey];
+                } else {
+                    dispatchMainRowState[rowKey] = true;
+                }
+                saveDispatchMainRowState();
+                applyMainDispatchHighlight(row);
+            });
+        });
+
         const dispatchTableKey = `dispatch-highlight-user-{{ request.user.id|default:'0' }}`;
         const dispatchRowState = (() => {
             try {
@@ -452,6 +527,7 @@ Logistica
             const applyHighlight = () => {
                 const active = Boolean(dispatchRowState[rowKey]);
                 row.classList.toggle("dispatch-highlight", active);
+                button.classList.toggle("is-active", active);
                 button.setAttribute("aria-pressed", active ? "true" : "false");
             };
             button.addEventListener("click", function (event) {
@@ -473,6 +549,7 @@ Logistica
         const monthLabel = document.getElementById("dispatchMonthLabel");
         const grid = document.getElementById("dispatchCalendarGrid");
         const selectedDateLabel = document.getElementById("dispatchSelectedDate");
+        const programadaQtyLabel = document.getElementById("dispatchProgramadaQty");
         const cantidadInput = document.getElementById("dispatchCantidadInput");
         const saveButton = document.getElementById("dispatchSaveButton");
         const prevMonthButton = document.getElementById("dispatchPrevMonth");
@@ -484,7 +561,34 @@ Logistica
         let entregasMap = {};
         let despachosMap = {};
 
-        const monthKey = (d) => d.getFullYear() * 12 + d.getMonth();
+        const getProgramada = (dateStr) => toInt(entregasMap[dateStr] || 0);
+        const getDespachada = (dateStr) => toInt(despachosMap[dateStr] || 0);
+        const parseDataArray = (rawValue) => {
+            try {
+                const data = JSON.parse(rawValue || "[]");
+                return Array.isArray(data) ? data : [];
+            } catch (error) {
+                return [];
+            }
+        };
+
+        const updateSelectedDayPanel = () => {
+            if (!selectedDate) {
+                selectedDateLabel.textContent = "Sin seleccionar";
+                if (programadaQtyLabel) {
+                    programadaQtyLabel.textContent = "0";
+                }
+                cantidadInput.value = "";
+                return;
+            }
+            selectedDateLabel.textContent = fmtLabel(selectedDate);
+            const programada = getProgramada(selectedDate);
+            const despachada = getDespachada(selectedDate);
+            if (programadaQtyLabel) {
+                programadaQtyLabel.textContent = `${programada}`;
+            }
+            cantidadInput.value = despachada > 0 ? despachada : (programada || "");
+        };
 
         const renderDispatchCalendar = () => {
             if (!currentMonth) {
@@ -531,8 +635,7 @@ Logistica
                         return;
                     }
                     selectedDate = dateStr;
-                    selectedDateLabel.textContent = fmtLabel(dateStr);
-                    cantidadInput.value = despachosMap[dateStr] || "";
+                    updateSelectedDayPanel();
                     renderDispatchCalendar();
                 });
                 grid.appendChild(cell);
@@ -544,43 +647,36 @@ Logistica
                 currentPedidoId = this.dataset.pedidoId;
                 const compania = this.dataset.compania || "";
                 const tipo = this.dataset.tipo || "";
-                infoLabel.textContent = `${compania} · ${tipo}`;
+                infoLabel.textContent = `${compania} - ${tipo}`;
 
-                try {
-                    const entregas = JSON.parse(this.dataset.entregas || "[]");
-                    entregasMap = {};
-                    entregas.forEach((item) => {
-                        entregasMap[item.fecha] = item.cantidad || 0;
-                    });
-                } catch (error) {
-                    entregasMap = {};
-                }
+                const entregas = parseDataArray(this.dataset.entregas);
+                entregasMap = {};
+                entregas.forEach((item) => {
+                    if (item && item.fecha) {
+                        entregasMap[item.fecha] = toInt(item.cantidad || 0);
+                    }
+                });
 
-                try {
-                    const despachos = JSON.parse(this.dataset.despachos || "[]");
-                    despachosMap = {};
-                    despachos.forEach((item) => {
-                        despachosMap[item.fecha] = item.cantidad || 0;
-                    });
-                } catch (error) {
-                    despachosMap = {};
-                }
+                const despachos = parseDataArray(this.dataset.despachos);
+                despachosMap = {};
+                despachos.forEach((item) => {
+                    if (item && item.fecha) {
+                        despachosMap[item.fecha] = toInt(item.cantidad || 0);
+                    }
+                });
 
                 const fechas = Object.keys(entregasMap).sort();
                 if (fechas.length) {
                     const first = parseIso(fechas[0]);
                     currentMonth = new Date(first.getFullYear(), first.getMonth(), 1);
                     selectedDate = fechas[0];
-                    selectedDateLabel.textContent = fmtLabel(selectedDate);
-                    cantidadInput.value = despachosMap[selectedDate] || "";
                 } else {
                     const now = new Date();
                     currentMonth = new Date(now.getFullYear(), now.getMonth(), 1);
                     selectedDate = null;
-                    selectedDateLabel.textContent = "Sin seleccionar";
-                    cantidadInput.value = "";
                 }
 
+                updateSelectedDayPanel();
                 renderDispatchCalendar();
             });
         });
@@ -623,7 +719,47 @@ Logistica
                     if (!payload.ok) {
                         throw new Error(payload.error || "No se pudo guardar.");
                     }
-                    window.location.reload();
+                    if (cantidad > 0) {
+                        despachosMap[selectedDate] = cantidad;
+                    } else {
+                        delete despachosMap[selectedDate];
+                    }
+                    updateSelectedDayPanel();
+                    renderDispatchCalendar();
+
+                    const row = document.querySelector(`tr[data-pedido-id="${currentPedidoId}"]`);
+                    if (row) {
+                        const gestionCell = row.querySelector(".js-row-gestion");
+                        const pendienteCell = row.querySelector(".js-row-pendiente");
+                        if (gestionCell && typeof payload.despachado_kg !== "undefined") {
+                            gestionCell.textContent = toInt(payload.despachado_kg);
+                        }
+                        if (pendienteCell && typeof payload.pendiente_kg !== "undefined") {
+                            pendienteCell.textContent = toInt(payload.pendiente_kg);
+                        }
+
+                        const calendarButton = row.querySelector(".js-open-despacho-modal");
+                        if (calendarButton) {
+                            const despachosActuales = parseDataArray(calendarButton.dataset.despachos);
+                            const byDate = {};
+                            despachosActuales.forEach((item) => {
+                                if (item && item.fecha) {
+                                    byDate[item.fecha] = toInt(item.cantidad || 0);
+                                }
+                            });
+                            if (cantidad > 0) {
+                                byDate[selectedDate] = cantidad;
+                            } else {
+                                delete byDate[selectedDate];
+                            }
+                            const despachosActualizados = Object.keys(byDate)
+                                .sort()
+                                .map((fecha) => ({ fecha: fecha, cantidad: byDate[fecha] }));
+                            calendarButton.dataset.despachos = JSON.stringify(despachosActualizados);
+                        }
+                    }
+
+                    updateTotals();
                 })
                 .catch((error) => {
                     alert(error.message || "No se pudo guardar.");
@@ -634,3 +770,4 @@ Logistica
     });
 </script>
 {% endblock %}
+
