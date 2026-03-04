@@ -935,6 +935,7 @@ def _construir_panel_operativo(pedidos, *, cantidad_attr='fabricado_kg'):
             'pendiente_kg': pendiente_kg,
             'estado': pedido.estado,
             'estado_label': pedido.get_estado_display(),
+            'comentarios': (pedido.observaciones or '').strip(),
             'entregas_data': entregas_data,
             'despachos_data': despachos_data,
             'despachos_count': len(despachos_data),
@@ -981,6 +982,12 @@ def _opciones_estado_para_panel(pedido_estado, permitidos):
     return opciones
 
 
+def _cambio_estado_permitido_en_panel(*, tipo, estado_anterior, estado_nuevo):
+    if tipo == 'logistica' and estado_nuevo == 'DESPACHADO':
+        return estado_anterior == 'EN_PRODUCCION'
+    return True
+
+
 def _render_panel_operativo(request, *, tipo):
     if tipo == 'produccion':
         if not _usuario_puede_ver_tab_produccion(request.user):
@@ -999,7 +1006,7 @@ def _render_panel_operativo(request, *, tipo):
             return HttpResponseForbidden("No tienes permisos para ver esta seccion.")
         cantidad_attr = 'despachado_kg'
         gestion_label = 'Despachado'
-        estado_permitidos = ['CONFIRMADO', 'DESPACHADO']
+        estado_permitidos = ['DESPACHADO']
         estados_panel = PEDIDO_ESTADOS_PANELES
         template_name = 'pedidos/panel_logistica.html'
         titulo = 'LOGISTICA'
@@ -1101,7 +1108,14 @@ def _render_panel_operativo(request, *, tipo):
         elif action == 'cambiar_estado' and tab_origen != 'estimado':
             estado_anterior = pedido.estado
             estado_nuevo = (request.POST.get('estado') or '').strip()
-            if estado_nuevo in set(estado_permitidos):
+            if (
+                estado_nuevo in set(estado_permitidos)
+                and _cambio_estado_permitido_en_panel(
+                    tipo=tipo,
+                    estado_anterior=estado_anterior,
+                    estado_nuevo=estado_nuevo,
+                )
+            ):
                 pedido.estado = estado_nuevo
                 pedido.save(update_fields=['estado'])
                 _registrar_cambio_estado_pedido(
@@ -1140,7 +1154,13 @@ def _render_panel_operativo(request, *, tipo):
     panel_data = _construir_panel_operativo(pedidos, cantidad_attr=cantidad_attr)
     for bloque in panel_data['bloques']:
         for row in bloque['rows']:
-            row['estado_options'] = _opciones_estado_para_panel(row['estado'], estado_permitidos)
+            if tipo == 'logistica':
+                row['puede_cambiar_estado'] = row['estado'] == 'EN_PRODUCCION'
+                permitidos_row = estado_permitidos if row['puede_cambiar_estado'] else []
+            else:
+                row['puede_cambiar_estado'] = True
+                permitidos_row = estado_permitidos
+            row['estado_options'] = _opciones_estado_para_panel(row['estado'], permitidos_row)
 
     despachos_registrados = []
     active_tab = 'producto'

@@ -124,6 +124,7 @@ Logistica
                                     <th>DESPACHADO (KG)</th>
                                     <th>PENDIENTE (KG)</th>
                                     <th>ENTREGAS</th>
+                                    <th>COMENTARIOS</th>
                                     <th>ESTADO ACTUAL</th>
                                     <th>CAMBIAR ESTADO</th>
                                     <th>CARRITO</th>
@@ -154,12 +155,14 @@ Logistica
                                             <span class="small text-muted">({{ row.entregas_data|length }})</span>
                                         </button>
                                     </td>
+                                    <td>{{ row.comentarios|default:"-" }}</td>
                                     <td>
                                         <span class="badge badge-estado badge-estado-{{ row.estado|lower }}">
                                             {{ row.estado_label }}
                                         </span>
                                     </td>
                                     <td>
+                                        {% if row.puede_cambiar_estado %}
                                         <form method="post" class="form-inline">
                                             {% csrf_token %}
                                             <input type="hidden" name="action" value="cambiar_estado">
@@ -173,6 +176,9 @@ Logistica
                                             </select>
                                             <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
                                         </form>
+                                        {% else %}
+                                        <span class="text-muted small">Disponible cuando este en produccion.</span>
+                                        {% endif %}
                                     </td>
                                     <td class="text-center">
                                         <button type="button"
@@ -185,11 +191,11 @@ Logistica
                                 </tr>
                                 {% endfor %}
                                 <tr class="js-panel-empty d-none">
-                                    <td colspan="11" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    <td colspan="12" class="text-center text-muted">Sin datos para mostrar.</td>
                                 </tr>
                                 {% else %}
                                 <tr class="js-panel-empty">
-                                    <td colspan="11" class="text-center text-muted">Sin datos para mostrar.</td>
+                                    <td colspan="12" class="text-center text-muted">Sin datos para mostrar.</td>
                                 </tr>
                                 {% endif %}
                             </tbody>
@@ -200,7 +206,7 @@ Logistica
                                     <th></th>
                                     <th class="js-city-gestion">{{ bloque.totales.gestion_kg }}</th>
                                     <th class="js-city-pendiente">{{ bloque.totales.pendiente_kg }}</th>
-                                    <th colspan="4"></th>
+                                    <th colspan="5"></th>
                                 </tr>
                             </tfoot>
                         </table>
