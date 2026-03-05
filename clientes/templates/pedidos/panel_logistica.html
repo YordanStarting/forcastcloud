@@ -79,6 +79,7 @@ Logistica
         {% if active_tab == 'resumen' %}
         <input type="hidden" name="dia_semana" value="{{ filtros_resumen.dia_semana }}">
         <input type="hidden" name="resumen_presentacion" value="{{ filtros_resumen.presentacion }}">
+        <input type="hidden" name="resumen_sucursal" value="{{ filtros_resumen.sucursal }}">
         {% endif %}
         <div class="form-row">
             <div class="col-12 col-md-3 mb-2">
@@ -372,7 +373,18 @@ Logistica
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-12 col-md-4 mb-2">
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Sucursal</label>
+                            <select name="resumen_sucursal" class="form-control form-control-sm" id="resumenSucursalFilter">
+                                <option value="">Todas</option>
+                                {% for value, label in ciudades %}
+                                <option value="{{ value }}" {% if filtros_resumen.sucursal == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2">
                             <label class="mb-1">Presentacion</label>
                             <select name="resumen_presentacion" class="form-control form-control-sm" id="resumenPresentacionFilter">
                                 <option value="">Todas</option>
@@ -652,6 +664,7 @@ Logistica
 
         const resumenFilterForm = document.getElementById("resumenFilterForm");
         const resumenDiaFilter = document.getElementById("resumenDiaFilter");
+        const resumenSucursalFilter = document.getElementById("resumenSucursalFilter");
         const resumenPresentacionFilter = document.getElementById("resumenPresentacionFilter");
         if (resumenFilterForm) {
             resumenFilterForm.addEventListener("submit", function () {
@@ -660,6 +673,9 @@ Logistica
             const handleResumenChange = () => submitKeepingScroll(resumenFilterForm);
             if (resumenDiaFilter) {
                 resumenDiaFilter.addEventListener("change", handleResumenChange);
+            }
+            if (resumenSucursalFilter) {
+                resumenSucursalFilter.addEventListener("change", handleResumenChange);
             }
             if (resumenPresentacionFilter) {
                 resumenPresentacionFilter.addEventListener("change", handleResumenChange);

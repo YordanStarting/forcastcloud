@@ -1101,6 +1101,7 @@ def _construir_resumen_logistica_semana(
     *,
     dia_semana='',
     presentacion_codigo='',
+    sucursal_codigo='',
 ):
     if not semana_lunes:
         return {
@@ -1116,6 +1117,7 @@ def _construir_resumen_logistica_semana(
     fecha_fin = semana_lunes + timedelta(days=5)
     ciudad_labels = dict(CIUDAD_CHOICES)
     presentacion_codigo = (presentacion_codigo or '').strip().upper()
+    sucursal_codigo = (sucursal_codigo or '').strip().upper()
     dia_semana = (dia_semana or '').strip()
     try:
         dia_semana_int = int(dia_semana) if dia_semana else 0
@@ -1125,6 +1127,8 @@ def _construir_resumen_logistica_semana(
     resumen = {}
 
     for pedido in pedidos:
+        if sucursal_codigo and pedido.ciudad != sucursal_codigo:
+            continue
         if presentacion_codigo and pedido.presentacion != presentacion_codigo:
             continue
         total_kg = _cantidad_total_pedido(pedido)
@@ -1350,7 +1354,7 @@ def _render_panel_operativo(request, *, tipo):
         cantidad_attr = 'despachado_kg'
         gestion_label = 'Despachado'
         estado_permitidos = ['DESPACHADO', 'ENTREGADO']
-        estados_panel = PEDIDO_ESTADOS_PANELES
+        estados_panel = ['PENDIENTE'] + PEDIDO_ESTADOS_PANELES
         template_name = 'pedidos/panel_logistica.html'
         titulo = 'LOGISTICA'
         subtitulo = 'Programacion y despachos por sucursal'
@@ -1385,6 +1389,7 @@ def _render_panel_operativo(request, *, tipo):
     filtros_resumen = {
         'dia_semana': '',
         'presentacion': '',
+        'sucursal': '',
     }
 
     pedidos_panel_qs = _pedidos_panel_operativo_qs(estados_panel)
@@ -1623,17 +1628,21 @@ def _render_panel_operativo(request, *, tipo):
             filtros_resumen['dia_semana'] = str(dia_semana_val)
         if presentacion_resumen_param in presentacion_valores:
             filtros_resumen['presentacion'] = presentacion_resumen_param
+        sucursal_resumen_param = (request.GET.get('resumen_sucursal') or '').strip().upper()
+        if sucursal_resumen_param in ciudad_valores:
+            filtros_resumen['sucursal'] = sucursal_resumen_param
 
         resumen_logistica = _construir_resumen_logistica_semana(
             pedidos,
             semana_seleccionada,
             dia_semana=filtros_resumen['dia_semana'],
             presentacion_codigo=filtros_resumen['presentacion'],
+            sucursal_codigo=filtros_resumen['sucursal'],
         )
         despachos_qs = (
             DespachoPedido.objects
             .select_related('pedido__proveedor')
-            .filter(pedido__estado__in=PEDIDO_ESTADOS_PANELES, cantidad__gt=0)
+            .filter(pedido__estado__in=estados_panel, cantidad__gt=0)
             .order_by('-fecha', '-id')
         )
         if semana_seleccionada:
@@ -1654,6 +1663,7 @@ def _render_panel_operativo(request, *, tipo):
                 'semana': filtros_panel.get('semana', ''),
                 'dia_semana': filtros_resumen.get('dia_semana', ''),
                 'resumen_presentacion': filtros_resumen.get('presentacion', ''),
+                'resumen_sucursal': filtros_resumen.get('sucursal', ''),
             }.items()
             if value
         })
