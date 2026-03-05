@@ -801,12 +801,19 @@ def mi_perfil(request):
 def inicio(request):
     cantidad_expr = _cantidad_pedido_expr()
     tipo_huevo_map = dict(TIPO_HUEVO_CHOICES)
+    tipos_huevo_liquidos = [codigo for codigo, _ in TIPO_HUEVO_CHOICES if codigo.endswith('LU')]
+    tipo_huevo_dashboard_options = [('LIQUIDO', 'Huevo liquido')]
     pedidos_base_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_base_qs, filtros = filtrar_pedidos(
         request,
         pedidos_base_qs,
         include_semana=False,
     )
+    tipo_huevo_filtro = (filtros.get('tipo_huevo') or '').strip().upper()
+    if tipo_huevo_filtro != 'LIQUIDO':
+        pedidos_base_qs = pedidos_base_qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
+        filtros['tipo_huevo'] = 'LIQUIDO'
+        tipo_huevo_filtro = 'LIQUIDO'
 
     semanas_disponibles = _obtener_semanas_disponibles(
         pedidos_base_qs,
@@ -858,13 +865,14 @@ def inicio(request):
     fecha_inicio_semana = semana_seleccionada
     fecha_fin_semana = semana_seleccionada + timedelta(days=5) if semana_seleccionada else None
     total_materia_prima_semana = 0
-    tipo_huevo_filtro = (filtros.get('tipo_huevo') or '').strip()
     if fecha_inicio_semana and fecha_fin_semana:
         materia_prima_qs = MateriaPrima.objects.filter(
             fecha__gte=fecha_inicio_semana,
             fecha__lte=fecha_fin_semana,
         )
-        if tipo_huevo_filtro in tipo_huevo_map:
+        if tipo_huevo_filtro == 'LIQUIDO':
+            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
+        elif tipo_huevo_filtro in tipo_huevo_map:
             materia_prima_qs = materia_prima_qs.filter(tipo_huevo=tipo_huevo_filtro)
         total_materia_prima_semana = materia_prima_qs.aggregate(total=Sum('cantidad_kg'))['total'] or 0
     total_comerciales_semana = pedidos_tablas_qs.aggregate(total=Sum(cantidad_expr))['total'] or 0
@@ -944,8 +952,8 @@ def inicio(request):
         'city_labels': city_labels,
         'city_data': city_data,
         'total_toneladas': total_toneladas,
-        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
-        'tipo_huevo_label': tipo_huevo_map.get(tipo_huevo_filtro, ''),
+        'dashboard_tipo_huevo_choices': tipo_huevo_dashboard_options,
+        'tipo_huevo_label': 'Huevo liquido' if tipo_huevo_filtro == 'LIQUIDO' else tipo_huevo_map.get(tipo_huevo_filtro, ''),
         'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
         'semana': semana_seleccionada.isoformat() if semana_seleccionada else '',
         'semana_label': _semana_label_corta(semana_seleccionada),
@@ -3532,8 +3540,14 @@ def filtrar_pedidos(
         filtros['comercial'] = comercial
 
     if tipo_huevo := request.GET.get('tipo_huevo'):
-        qs = qs.filter(tipo_huevo=tipo_huevo)
-        filtros['tipo_huevo'] = tipo_huevo
+        tipo_huevo_valor = (tipo_huevo or '').strip().upper()
+        if tipo_huevo_valor == 'LIQUIDO':
+            tipos_huevo_liquidos = [codigo for codigo, _ in TIPO_HUEVO_CHOICES if codigo.endswith('LU')]
+            qs = qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
+            filtros['tipo_huevo'] = 'LIQUIDO'
+        else:
+            qs = qs.filter(tipo_huevo=tipo_huevo)
+            filtros['tipo_huevo'] = tipo_huevo
 
     if presentacion := request.GET.get('presentacion'):
         qs = qs.filter(presentacion=presentacion)
