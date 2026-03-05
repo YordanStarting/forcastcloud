@@ -473,22 +473,22 @@ Inicio
                 labels: labels,
                 datasets: [
                     {
-                        type: "line",
+                        type: "bar",
                         label: "Materia prima (kg)",
                         data: materiaPrima,
                         borderColor: mpColor,
-                        backgroundColor: "rgba(37, 99, 235, 0.12)",
-                        fill: false,
-                        tension: 0.3
+                        backgroundColor: "rgba(37, 99, 235, 0.35)",
+                        borderWidth: 1,
+                        borderRadius: 6
                     },
                     {
-                        type: "line",
+                        type: "bar",
                         label: "Creado por comerciales (kg)",
                         data: comerciales,
                         borderColor: comercialColor,
-                        backgroundColor: "rgba(245, 158, 11, 0.12)",
-                        fill: false,
-                        tension: 0.3
+                        backgroundColor: "rgba(245, 158, 11, 0.35)",
+                        borderWidth: 1,
+                        borderRadius: 6
                     },
                     {
                         type: "bar",
@@ -506,7 +506,7 @@ Inicio
                 interaction: { mode: "index", intersect: false },
                 scales: {
                     y: {
-                        beginAtZero: false
+                        beginAtZero: true
                     }
                 }
             }

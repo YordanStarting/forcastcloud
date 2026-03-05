@@ -454,7 +454,7 @@
                             <a class="nav-link dropdown-toggle" href="#" id="alertsDropdown" role="button"
                                 data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                                 <i class="fas fa-bell fa-fw"></i>
-                                <span class="badge badge-danger badge-counter {% if total_notificaciones == 0 %}d-none{% endif %}">
+                                <span id="alertsBadge" class="badge badge-danger badge-counter {% if total_notificaciones == 0 %}d-none{% endif %}">
                                     {{ total_notificaciones }}
                                 </span>
                             </a>
@@ -468,10 +468,23 @@
                                         <button type="submit" class="btn btn-link btn-sm p-0 text-white">Clear all</button>
                                     </form>
                                 </div>
+                                <div id="alertsRealtimeList">
                                 {% for n in notificaciones %}
                                 <button type="button"
                                     class="dropdown-item d-flex align-items-center js-open-notification-modal"
-                                    data-modal-id="notificacionModal{{ n.id }}">
+                                    data-id="{{ n.id }}"
+                                    data-actor-name="{{ n.actor_name }}"
+                                    data-actor-profile-image="{{ n.actor_profile_image }}"
+                                    data-fecha-creacion="{{ n.fecha_creacion|date:'c' }}"
+                                    data-mensaje="{{ n.mensaje|escapejs }}"
+                                    data-detalle="{{ n.detalle|default:''|escapejs }}"
+                                    data-pedido-id="{{ n.pedido_id|default:'' }}"
+                                    data-pedido-compania="{% if n.pedido %}{{ n.pedido.proveedor.nombre }}{% endif %}"
+                                    data-pedido-tipo-huevo="{% if n.pedido %}{{ n.pedido.get_tipo_huevo_display }}{% endif %}"
+                                    data-pedido-presentacion="{% if n.pedido %}{{ n.pedido.get_presentacion_display }}{% endif %}"
+                                    data-pedido-cantidad="{% if n.pedido %}{{ n.pedido.cantidad_total|default:n.pedido.cantidad }}{% endif %}"
+                                    data-pedido-semana="{% if n.pedido and n.pedido.semana %}{{ n.pedido.semana|date:'d/m/Y' }}{% endif %}"
+                                    data-pedido-estado="{% if n.pedido %}{{ n.pedido.get_estado_display }}{% endif %}">
                                     <div class="mr-3">
                                         <img src="{{ n.actor_profile_image }}" alt="Foto de {{ n.actor_name }}"
                                             class="notification-avatar">
@@ -482,62 +495,12 @@
                                         <span class="font-weight-bold notification-message">{{ n.mensaje }}</span>
                                     </div>
                                 </button>
-                                <div class="modal fade" id="notificacionModal{{ n.id }}" tabindex="-1" role="dialog"
-                                    aria-labelledby="notificacionModalLabel{{ n.id }}" aria-hidden="true">
-                                    <div class="modal-dialog modal-dialog-centered" role="document">
-                                        <div class="modal-content">
-                                            <div class="modal-header">
-                                                <h5 class="modal-title" id="notificacionModalLabel{{ n.id }}">
-                                                    Actualizacion de pedido
-                                                </h5>
-                                                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
-                                                    <span aria-hidden="true">&times;</span>
-                                                </button>
-                                            </div>
-                                            <div class="modal-body">
-                                                <div class="d-flex align-items-center mb-3">
-                                                    <img src="{{ n.actor_profile_image }}" alt="Foto de {{ n.actor_name }}"
-                                                        class="notification-avatar mr-2">
-                                                    <div>
-                                                        <div class="font-weight-bold">{{ n.actor_name }}</div>
-                                                        <div class="small text-muted">{{ n.fecha_creacion|date:"d/m/Y H:i" }}</div>
-                                                    </div>
-                                                </div>
-
-                                                <p class="mb-2">
-                                                    La comercial ha cambiado el siguiente pedido
-                                                    {% if n.pedido_id %}#{{ n.pedido_id }}{% endif %}.
-                                                </p>
-                                                <div class="border rounded p-3 bg-light mb-3">
-                                                    <p class="mb-1"><strong>Evento:</strong> {{ n.mensaje }}</p>
-                                                    {% if n.pedido %}
-                                                    <p class="mb-1"><strong>Compania:</strong> {{ n.pedido.proveedor.nombre }}</p>
-                                                    <p class="mb-1"><strong>Tipo de huevo:</strong> {{ n.pedido.get_tipo_huevo_display }}</p>
-                                                    <p class="mb-1"><strong>Presentacion:</strong> {{ n.pedido.get_presentacion_display }}</p>
-                                                    <p class="mb-1"><strong>Cantidad:</strong> {{ n.pedido.cantidad_total|default:n.pedido.cantidad }} kg</p>
-                                                    <p class="mb-1"><strong>Semana:</strong> {{ n.pedido.semana|date:"d/m/Y" }}</p>
-                                                    <p class="mb-0"><strong>Estado actual:</strong> {{ n.pedido.get_estado_display }}</p>
-                                                    {% endif %}
-                                                </div>
-                                                {% if n.detalle %}
-                                                <p class="mb-1"><strong>Detalle:</strong></p>
-                                                <div class="border rounded p-2 bg-white">{{ n.detalle|linebreaksbr }}</div>
-                                                {% endif %}
-                                            </div>
-                                            <div class="modal-footer">
-                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
-                                            </div>
-                                        </div>
-                                    </div>
-                                </div>
                                 {% empty %}
-                                <span class="dropdown-item text-center small text-muted">Sin notificaciones nuevas</span>
+                                <span class="dropdown-item text-center small text-muted js-alerts-empty">Sin notificaciones nuevas</span>
                                 {% endfor %}
+                                </div>
                             </div>
                         </li>
-
-
-
                         {% if request.user.is_authenticated %}
                         <!-- Nav Item - User Information -->
                         <li class="nav-item dropdown no-arrow">
@@ -599,6 +562,45 @@
             <i class="fas fa-angle-up"></i>
         </a>
 
+        <div class="modal fade" id="notificacionDetalleModal" tabindex="-1" role="dialog" aria-labelledby="notificacionDetalleModalLabel" aria-hidden="true">
+            <div class="modal-dialog modal-dialog-centered" role="document">
+                <div class="modal-content">
+                    <div class="modal-header">
+                        <h5 class="modal-title" id="notificacionDetalleModalLabel">Actualizacion de pedido</h5>
+                        <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                            <span aria-hidden="true">&times;</span>
+                        </button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="d-flex align-items-center mb-3">
+                            <img id="notifModalActorImage" src="{% static 'web/img/undraw_profile.svg' %}" alt="Actor" class="notification-avatar mr-2">
+                            <div>
+                                <div class="font-weight-bold" id="notifModalActorName">Sistema</div>
+                                <div class="small text-muted" id="notifModalFecha">-</div>
+                            </div>
+                        </div>
+                        <p class="mb-2" id="notifModalPedidoIntro">Actualizacion de pedido.</p>
+                        <div class="border rounded p-3 bg-light mb-3">
+                            <p class="mb-1"><strong>Evento:</strong> <span id="notifModalEvento">-</span></p>
+                            <p class="mb-1" id="notifModalCompaniaRow"><strong>Compania:</strong> <span id="notifModalCompania">-</span></p>
+                            <p class="mb-1" id="notifModalTipoRow"><strong>Tipo de huevo:</strong> <span id="notifModalTipo">-</span></p>
+                            <p class="mb-1" id="notifModalPresentacionRow"><strong>Presentacion:</strong> <span id="notifModalPresentacion">-</span></p>
+                            <p class="mb-1" id="notifModalCantidadRow"><strong>Cantidad:</strong> <span id="notifModalCantidad">-</span> kg</p>
+                            <p class="mb-1" id="notifModalSemanaRow"><strong>Semana:</strong> <span id="notifModalSemana">-</span></p>
+                            <p class="mb-0" id="notifModalEstadoRow"><strong>Estado actual:</strong> <span id="notifModalEstado">-</span></p>
+                        </div>
+                        <div id="notifModalDetalleWrap" class="d-none">
+                            <p class="mb-1"><strong>Detalle:</strong></p>
+                            <div class="border rounded p-2 bg-white" id="notifModalDetalle"></div>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Cerrar</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
         <!-- Logout Modal-->
         <div class="modal fade" id="logoutModal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel"
             aria-hidden="true">
@@ -633,23 +635,187 @@
 
         <script>
             document.addEventListener("DOMContentLoaded", function () {
-                const notificationButtons = document.querySelectorAll(".js-open-notification-modal");
-                if (!notificationButtons.length) {
-                    return;
-                }
-                notificationButtons.forEach(function (button) {
-                    button.addEventListener("click", function (event) {
-                        event.preventDefault();
-                        const modalId = this.getAttribute("data-modal-id");
-                        if (!modalId) {
-                            return;
-                        }
-                        const selector = `#${modalId}`;
-                        if (window.jQuery && window.jQuery(selector).modal) {
-                            window.jQuery(selector).modal("show");
-                        }
-                    });
+                const listContainer = document.getElementById("alertsRealtimeList");
+                const badge = document.getElementById("alertsBadge");
+                const modalSelector = "#notificacionDetalleModal";
+                const defaultActorImage = "{% static 'web/img/undraw_profile.svg' %}";
+                const bogotaFormatter = new Intl.DateTimeFormat("es-CO", {
+                    timeZone: "America/Bogota",
+                    day: "2-digit",
+                    month: "short",
+                    year: "numeric",
+                    hour: "2-digit",
+                    minute: "2-digit",
+                    hour12: false,
                 });
+
+                const formatBogotaDate = (isoDate) => {
+                    if (!isoDate) {
+                        return "-";
+                    }
+                    const dateObj = new Date(isoDate);
+                    if (Number.isNaN(dateObj.getTime())) {
+                        return "-";
+                    }
+                    return bogotaFormatter.format(dateObj);
+                };
+
+                const escapeHtml = (value) => String(value === null || typeof value === "undefined" ? "" : value)
+                    .replace(/&/g, "&amp;")
+                    .replace(/</g, "&lt;")
+                    .replace(/>/g, "&gt;")
+                    .replace(/"/g, "&quot;")
+                    .replace(/'/g, "&#39;");
+
+                const setRowVisibility = (rowElement, hasValue) => {
+                    if (!rowElement) {
+                        return;
+                    }
+                    rowElement.classList.toggle("d-none", !hasValue);
+                };
+
+                const openNotificationModal = (button) => {
+                    const actorImage = document.getElementById("notifModalActorImage");
+                    const actorName = document.getElementById("notifModalActorName");
+                    const fecha = document.getElementById("notifModalFecha");
+                    const pedidoIntro = document.getElementById("notifModalPedidoIntro");
+                    const evento = document.getElementById("notifModalEvento");
+                    const compania = document.getElementById("notifModalCompania");
+                    const tipo = document.getElementById("notifModalTipo");
+                    const presentacion = document.getElementById("notifModalPresentacion");
+                    const cantidad = document.getElementById("notifModalCantidad");
+                    const semana = document.getElementById("notifModalSemana");
+                    const estado = document.getElementById("notifModalEstado");
+                    const detalleWrap = document.getElementById("notifModalDetalleWrap");
+                    const detalle = document.getElementById("notifModalDetalle");
+
+                    const pedidoId = button.dataset.pedidoId || "";
+                    const pedidoCompania = button.dataset.pedidoCompania || "";
+                    const pedidoTipo = button.dataset.pedidoTipoHuevo || "";
+                    const pedidoPresentacion = button.dataset.pedidoPresentacion || "";
+                    const pedidoCantidad = button.dataset.pedidoCantidad || "";
+                    const pedidoSemana = button.dataset.pedidoSemana || "";
+                    const pedidoEstado = button.dataset.pedidoEstado || "";
+                    const detalleText = button.dataset.detalle || "";
+
+                    if (actorImage) {
+                        actorImage.src = button.dataset.actorProfileImage || defaultActorImage;
+                    }
+                    if (actorName) {
+                        actorName.textContent = button.dataset.actorName || "Sistema";
+                    }
+                    if (fecha) {
+                        fecha.textContent = formatBogotaDate(button.dataset.fechaCreacion);
+                    }
+                    if (pedidoIntro) {
+                        pedidoIntro.textContent = pedidoId
+                            ? `Actualizacion del pedido #${pedidoId}.`
+                            : "Actualizacion de pedido.";
+                    }
+                    if (evento) {
+                        evento.textContent = button.dataset.mensaje || "-";
+                    }
+                    if (compania) {
+                        compania.textContent = pedidoCompania || "-";
+                    }
+                    if (tipo) {
+                        tipo.textContent = pedidoTipo || "-";
+                    }
+                    if (presentacion) {
+                        presentacion.textContent = pedidoPresentacion || "-";
+                    }
+                    if (cantidad) {
+                        cantidad.textContent = pedidoCantidad || "-";
+                    }
+                    if (semana) {
+                        semana.textContent = pedidoSemana || "-";
+                    }
+                    if (estado) {
+                        estado.textContent = pedidoEstado || "-";
+                    }
+                    if (detalleWrap && detalle) {
+                        detalle.textContent = detalleText || "";
+                        detalleWrap.classList.toggle("d-none", !detalleText);
+                    }
+
+                    setRowVisibility(document.getElementById("notifModalCompaniaRow"), Boolean(pedidoCompania));
+                    setRowVisibility(document.getElementById("notifModalTipoRow"), Boolean(pedidoTipo));
+                    setRowVisibility(document.getElementById("notifModalPresentacionRow"), Boolean(pedidoPresentacion));
+                    setRowVisibility(document.getElementById("notifModalCantidadRow"), Boolean(pedidoCantidad));
+                    setRowVisibility(document.getElementById("notifModalSemanaRow"), Boolean(pedidoSemana));
+                    setRowVisibility(document.getElementById("notifModalEstadoRow"), Boolean(pedidoEstado));
+
+                    if (window.jQuery && window.jQuery(modalSelector).modal) {
+                        window.jQuery(modalSelector).modal("show");
+                    }
+                };
+
+                document.addEventListener("click", function (event) {
+                    const button = event.target.closest(".js-open-notification-modal");
+                    if (!button) {
+                        return;
+                    }
+                    event.preventDefault();
+                    openNotificationModal(button);
+                });
+
+                window.__forecastRenderNotifications = function (notifications, unreadCount) {
+                    if (!listContainer) {
+                        return;
+                    }
+                    const safeNotifications = Array.isArray(notifications) ? notifications : [];
+                    if (!safeNotifications.length) {
+                        listContainer.innerHTML = '<span class="dropdown-item text-center small text-muted js-alerts-empty">Sin notificaciones nuevas</span>';
+                    } else {
+                        listContainer.innerHTML = safeNotifications.map((n) => {
+                            const actorImage = escapeHtml(n.actor_profile_image || defaultActorImage);
+                            const actorName = escapeHtml(n.actor_name || "Sistema");
+                            const fechaTexto = escapeHtml(formatBogotaDate(n.fecha_creacion));
+                            const mensaje = escapeHtml(n.mensaje || "");
+                            const detalle = escapeHtml(n.detalle || "");
+                            const pedidoId = escapeHtml(n.pedido_id || "");
+                            const pedidoCompania = escapeHtml(n.pedido_compania || "");
+                            const pedidoTipo = escapeHtml(n.pedido_tipo_huevo || "");
+                            const pedidoPresentacion = escapeHtml(n.pedido_presentacion || "");
+                            const pedidoCantidad = escapeHtml(n.pedido_cantidad || "");
+                            const pedidoSemana = escapeHtml(n.pedido_semana || "");
+                            const pedidoEstado = escapeHtml(n.pedido_estado || "");
+                            const fechaIso = escapeHtml(n.fecha_creacion || "");
+                            return `
+                                <button type="button"
+                                    class="dropdown-item d-flex align-items-center js-open-notification-modal"
+                                    data-id="${escapeHtml(n.id || "")}"
+                                    data-actor-name="${actorName}"
+                                    data-actor-profile-image="${actorImage}"
+                                    data-fecha-creacion="${fechaIso}"
+                                    data-mensaje="${mensaje}"
+                                    data-detalle="${detalle}"
+                                    data-pedido-id="${pedidoId}"
+                                    data-pedido-compania="${pedidoCompania}"
+                                    data-pedido-tipo-huevo="${pedidoTipo}"
+                                    data-pedido-presentacion="${pedidoPresentacion}"
+                                    data-pedido-cantidad="${pedidoCantidad}"
+                                    data-pedido-semana="${pedidoSemana}"
+                                    data-pedido-estado="${pedidoEstado}">
+                                    <div class="mr-3">
+                                        <img src="${actorImage}" alt="Foto de ${actorName}" class="notification-avatar">
+                                    </div>
+                                    <div>
+                                        <div class="small text-gray-500">${fechaTexto}</div>
+                                        <div class="small text-gray-600">${actorName}</div>
+                                        <span class="font-weight-bold notification-message">${mensaje}</span>
+                                    </div>
+                                </button>
+                            `;
+                        }).join("");
+                    }
+
+                    if (badge) {
+                        const count = Number.isFinite(Number(unreadCount)) ? Number(unreadCount) : safeNotifications.length;
+                        badge.textContent = count;
+                        badge.classList.toggle("d-none", count <= 0);
+                    }
+                };
             });
         </script>
 
@@ -727,21 +893,26 @@
                     fetch("{% url 'notificaciones_pedidos' %}", { credentials: "same-origin" })
                         .then((response) => response.json())
                         .then((data) => {
-                            if (!data || data.last_event_id === null) {
+                            if (!data) {
                                 return;
                             }
-                            const eventId = parseInt(data.last_event_id, 10);
-                            const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
-                            if (!eventId || eventId <= lastSeen) {
-                                return;
+                            if (typeof window.__forecastRenderNotifications === "function") {
+                                window.__forecastRenderNotifications(data.notifications || [], data.unread_count || 0);
                             }
-                            if (audioUnlocked && playBell()) {
-                                localStorage.setItem(bellStateKey, String(eventId));
-                                localStorage.removeItem(bellPendingKey);
-                            } else {
-                                const pendingId = parseInt(localStorage.getItem(bellPendingKey) || "0", 10);
-                                if (eventId > pendingId) {
-                                    localStorage.setItem(bellPendingKey, String(eventId));
+
+                            if (data.last_event_id !== null) {
+                                const eventId = parseInt(data.last_event_id, 10);
+                                const lastSeen = parseInt(localStorage.getItem(bellStateKey) || "0", 10);
+                                if (eventId && eventId > lastSeen) {
+                                    if (audioUnlocked && playBell()) {
+                                        localStorage.setItem(bellStateKey, String(eventId));
+                                        localStorage.removeItem(bellPendingKey);
+                                    } else {
+                                        const pendingId = parseInt(localStorage.getItem(bellPendingKey) || "0", 10);
+                                        if (eventId > pendingId) {
+                                            localStorage.setItem(bellPendingKey, String(eventId));
+                                        }
+                                    }
                                 }
                             }
                         })

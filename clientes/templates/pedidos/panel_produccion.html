@@ -140,6 +140,7 @@ Produccion
                                         <td>{{ row.vida_util }}</td>
                                         <td class="js-row-total">{{ row.programado_kg }}</td>
                                         <td>
+                                            {% if puede_editar_gestion_produccion %}
                                             <form method="post" class="form-inline js-save-fabricado-form">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
@@ -158,9 +159,26 @@ Produccion
                                                     required>
                                                 <button type="submit" class="btn btn-primary btn-sm">Guardar</button>
                                             </form>
+                                            {% else %}
+                                            <span class="font-weight-bold">{{ row.gestion_kg }}</span>
+                                            {% endif %}
                                         </td>
                                         <td class="js-row-pendiente">{{ row.pendiente_kg }}</td>
-                                        <td>{{ row.comentarios|default:"-" }}</td>
+                                        <td>
+                                            {% if row.comentarios %}
+                                            <button type="button"
+                                                class="btn btn-link p-0 js-open-comment-modal"
+                                                data-toggle="modal"
+                                                data-target="#commentModal"
+                                                data-title="Pedido #{{ row.pedido_id }} - {{ row.compania }}"
+                                                data-comment="{{ row.comentarios|escapejs }}"
+                                                title="Ver comentario">
+                                                <i class="fas fa-comment-alt text-info"></i>
+                                            </button>
+                                            {% else %}
+                                            <span class="text-muted">-</span>
+                                            {% endif %}
+                                        </td>
                                         <td>
                                             <span class="badge badge-estado badge-estado-{{ row.estado|lower }}">
                                                 {{ row.estado_label }}
@@ -170,6 +188,7 @@ Produccion
                                             {% if active_tab == 'estimado' %}
                                             <span class="text-muted small">Borrador (sin cambio de estado)</span>
                                             {% else %}
+                                            {% if row.puede_cambiar_estado %}
                                             <form method="post" class="form-inline">
                                                 {% csrf_token %}
                                                 <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
@@ -187,6 +206,9 @@ Produccion
                                                 </select>
                                                 <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
                                             </form>
+                                            {% else %}
+                                            <span class="text-muted small">Solo produccion puede mover a En produccion.</span>
+                                            {% endif %}
                                             {% endif %}
                                         </td>
                                         <td class="text-center">
@@ -245,6 +267,98 @@ Produccion
                         </div>
                     </div>
                 </div>
+
+                {% if active_tab == 'estimado' %}
+                <div class="card border mt-4">
+                    <div class="card-header py-2">
+                        <strong class="text-primary">ESTIMADO SEMANAL POR PROVEEDOR</strong>
+                    </div>
+                    <div class="card-body">
+                        <p class="small text-muted mb-3">
+                            Tabla informativa para proyectar pedidos de la semana seleccionada por sucursal y proveedor.
+                        </p>
+                        {% for bloque in estimados_proveedores.bloques %}
+                        <div class="card border mb-3">
+                            <div class="card-header py-2">
+                                <strong class="text-primary">SUCURSAL - {{ bloque.nombre|upper }}</strong>
+                            </div>
+                            <div class="card-body p-0">
+                                <div class="table-responsive">
+                                    <table class="table table-bordered mb-0" width="100%" cellspacing="0">
+                                        <thead>
+                                            <tr>
+                                                <th>PROVEEDOR</th>
+                                                <th>PRESENTACION</th>
+                                                <th>ESTIMADO (KG)</th>
+                                                <th>GUARDAR</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {% for row in bloque.rows %}
+                                            <tr>
+                                                <td>{{ row.proveedor_nombre }}</td>
+                                                {% if puede_editar_estimado_semanal %}
+                                                <td colspan="3">
+                                                    <form method="post" class="form-inline">
+                                                        {% csrf_token %}
+                                                        <input type="hidden" name="tab" value="estimado">
+                                                        <input type="hidden" name="action" value="guardar_estimado_proveedor">
+                                                        <input type="hidden" name="semana" value="{{ semana }}">
+                                                        <input type="hidden" name="sucursal" value="{{ row.sucursal }}">
+                                                        <input type="hidden" name="proveedor_id" value="{{ row.proveedor_id }}">
+                                                        <input type="hidden" name="sucursal_filter" value="{{ filtros_panel.sucursal }}">
+                                                        <input type="hidden" name="vida_util_filter" value="{{ filtros_panel.vida_util }}">
+                                                        <select name="presentacion" class="form-control form-control-sm mr-2">
+                                                            {% for value, label in presentacion_choices %}
+                                                            <option value="{{ value }}" {% if row.presentacion_codigo == value %}selected{% endif %}>
+                                                                {{ label }}
+                                                            </option>
+                                                            {% endfor %}
+                                                        </select>
+                                                        <input type="number"
+                                                            name="cantidad_kg"
+                                                            class="form-control form-control-sm mr-2"
+                                                            min="0"
+                                                            step="1"
+                                                            value="{{ row.cantidad_kg }}"
+                                                            required>
+                                                        <button type="submit" class="btn btn-outline-primary btn-sm">Guardar</button>
+                                                    </form>
+                                                </td>
+                                                {% else %}
+                                                <td>{{ row.presentacion_label }}</td>
+                                                <td>{{ row.cantidad_kg }}</td>
+                                                <td><span class="text-muted small">Solo programador/produccion/admin puede editar.</span></td>
+                                                {% endif %}
+                                            </tr>
+                                            {% empty %}
+                                            <tr>
+                                                <td colspan="4" class="text-center text-muted">Sin proveedores para mostrar.</td>
+                                            </tr>
+                                            {% endfor %}
+                                        </tbody>
+                                        <tfoot>
+                                            <tr>
+                                                <th colspan="2">TOTAL {{ bloque.nombre|upper }}</th>
+                                                <th>{{ bloque.total_estimado_kg }}</th>
+                                                <th></th>
+                                            </tr>
+                                        </tfoot>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                        {% endfor %}
+
+                        <div class="card border">
+                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
+                                <strong>TOTAL GENERAL ESTIMADO</strong>
+                                <span class="font-weight-bold">{{ estimados_proveedores.total_general_estimado_kg }} kg</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
             </div>
         </div>
     </div>
@@ -356,6 +470,23 @@ Produccion
                     </div>
                 </div>
                 {% endif %}
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="commentModal" tabindex="-1" role="dialog" aria-labelledby="commentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="commentModalLabel">Comentario</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2" id="commentModalTitle">Detalle</p>
+                <div class="border rounded p-3 bg-light" id="commentModalText" style="white-space: pre-line;">Sin comentario.</div>
             </div>
         </div>
     </div>
@@ -563,6 +694,19 @@ Produccion
                     .catch((error) => {
                         alert(error.message || "No se pudo guardar el {{ panel_label_lower }}.");
                     });
+            });
+        });
+
+        const commentModalTitle = document.getElementById("commentModalTitle");
+        const commentModalText = document.getElementById("commentModalText");
+        document.querySelectorAll(".js-open-comment-modal").forEach((button) => {
+            button.addEventListener("click", function () {
+                if (commentModalTitle) {
+                    commentModalTitle.textContent = this.dataset.title || "Comentario";
+                }
+                if (commentModalText) {
+                    commentModalText.textContent = this.dataset.comment || "Sin comentario.";
+                }
             });
         });
 

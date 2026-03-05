@@ -356,3 +356,44 @@ class DespachoPedido(models.Model):
         return f"Despacho Pedido #{self.pedido_id} - {self.fecha}: {self.cantidad} kg"
 
 
+class EstimadoSemanalProveedor(models.Model):
+    semana = models.DateField(help_text="Lunes de la semana", db_index=True)
+    sucursal = models.CharField(max_length=20, choices=CIUDAD_CHOICES, db_index=True)
+    proveedor = models.ForeignKey(
+        Proveedor,
+        on_delete=models.CASCADE,
+        related_name='estimados_semanales',
+    )
+    presentacion = models.CharField(max_length=20, choices=PRESENTACION_CHOICES, db_index=True)
+    cantidad_kg = models.IntegerField(default=0)
+    observaciones = models.TextField(blank=True, default='')
+    actualizado_por = models.ForeignKey(
+        User,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='estimados_semanales_actualizados',
+    )
+    fecha_creacion = models.DateTimeField(auto_now_add=True)
+    fecha_actualizacion = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ['-semana', 'sucursal', 'proveedor__nombre']
+        constraints = [
+            models.UniqueConstraint(
+                fields=['semana', 'sucursal', 'proveedor'],
+                name='unique_estimado_semanal_proveedor_sucursal',
+            ),
+        ]
+        indexes = [
+            models.Index(fields=['semana', 'sucursal']),
+            models.Index(fields=['semana', 'presentacion']),
+        ]
+
+    def __str__(self):
+        return (
+            f"Estimado {self.semana} - {self.sucursal} - "
+            f"{self.proveedor.nombre}: {self.cantidad_kg} kg"
+        )
+
+

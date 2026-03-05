@@ -74,6 +74,46 @@ Logistica
     <h1 class="h3 mb-2 text-gray-800">{{ panel_titulo }}</h1>
     <p class="text-muted">{{ panel_subtitulo }}</p>
 
+    <form method="get" class="mb-3" id="panelSemanaForm">
+        <input type="hidden" name="tab" value="{{ active_tab|default:'producto' }}">
+        {% if active_tab == 'resumen' %}
+        <input type="hidden" name="dia_semana" value="{{ filtros_resumen.dia_semana }}">
+        <input type="hidden" name="resumen_presentacion" value="{{ filtros_resumen.presentacion }}">
+        {% endif %}
+        <div class="form-row">
+            <div class="col-12 col-md-3 mb-2">
+                <label class="mb-1">Semana</label>
+                <select name="semana" class="form-control form-control-sm" id="panelSemanaGlobalFilter">
+                    <option value="">Todas</option>
+                    {% for item in semanas_disponibles %}
+                    <option value="{{ item.value }}" {% if item.selected %}selected{% endif %}>{{ item.label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="col-12 col-md-3 mb-2 d-flex align-items-end">
+                <button type="submit" class="btn btn-primary btn-sm mr-2">Filtrar</button>
+                <a href="{% url 'panel_logistica' %}?tab={{ active_tab|default:'producto' }}" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+            </div>
+        </div>
+    </form>
+    {% if semana_label %}
+    <p class="small text-muted mt-n2 mb-3">Semana activa: {{ semana_label }}</p>
+    {% endif %}
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'producto' or not active_tab %}active{% endif %}" href="{% url 'panel_logistica' %}?tab=producto{% if logistica_query_string %}&{{ logistica_query_string }}{% endif %}">
+                Tablas por sucursal
+            </a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link {% if active_tab == 'resumen' %}active{% endif %}" href="{% url 'panel_logistica' %}?tab=resumen{% if logistica_query_string %}&{{ logistica_query_string }}{% endif %}">
+                Resumen semanal
+            </a>
+        </li>
+    </ul>
+
+    <div class="{% if active_tab != 'producto' %}d-none{% endif %}" id="tabLogisticaSucursal">
     <div class="card shadow mb-4">
         <div class="card-header py-3">
             <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
@@ -155,19 +195,35 @@ Logistica
                                             <span class="small text-muted">({{ row.entregas_data|length }})</span>
                                         </button>
                                     </td>
-                                    <td>{{ row.comentarios|default:"-" }}</td>
                                     <td>
-                                        <span class="badge badge-estado badge-estado-{{ row.estado|lower }}">
+                                        {% if row.comentarios %}
+                                        <button type="button"
+                                            class="btn btn-link p-0 js-open-comment-modal"
+                                            data-toggle="modal"
+                                            data-target="#commentModal"
+                                            data-title="Pedido #{{ row.pedido_id }} - {{ row.compania }}"
+                                            data-comment="{{ row.comentarios|escapejs }}"
+                                            title="Ver comentario">
+                                            <i class="fas fa-comment-alt text-info"></i>
+                                        </button>
+                                        {% else %}
+                                        <span class="text-muted">-</span>
+                                        {% endif %}
+                                    </td>
+                                    <td>
+                                        <span class="badge badge-estado badge-estado-{{ row.estado|lower }} js-row-estado-badge">
                                             {{ row.estado_label }}
                                         </span>
                                     </td>
-                                    <td>
+                                    <td class="js-row-estado-action">
                                         {% if row.puede_cambiar_estado %}
-                                        <form method="post" class="form-inline">
+                                        <form method="post" class="form-inline js-logistica-estado-form">
                                             {% csrf_token %}
+                                            <input type="hidden" name="tab" value="{{ active_tab|default:'producto' }}">
+                                            <input type="hidden" name="semana" value="{{ semana }}">
                                             <input type="hidden" name="action" value="cambiar_estado">
                                             <input type="hidden" name="pedido_id" value="{{ row.pedido_id }}">
-                                            <select name="estado" class="form-control form-control-sm mr-2">
+                                            <select name="estado" class="form-control form-control-sm mr-2 js-logistica-estado-select">
                                                 {% for estado_value, estado_label in row.estado_options %}
                                                 <option value="{{ estado_value }}" {% if row.estado == estado_value %}selected{% endif %}>
                                                     {{ estado_label }}
@@ -293,6 +349,108 @@ Logistica
             </div>
         </div>
     </div>
+    </div>
+
+    <div class="{% if active_tab != 'resumen' %}d-none{% endif %}" id="tabLogisticaResumen">
+        <div class="card shadow mb-4">
+            <div class="card-header py-3">
+                <h6 class="m-0 font-weight-bold text-primary">RESUMEN SEMANAL DE DESPACHO</h6>
+            </div>
+            <div class="card-body">
+                <form method="get" class="mb-3" id="resumenFilterForm">
+                    <input type="hidden" name="tab" value="resumen">
+                    <input type="hidden" name="semana" value="{{ semana }}">
+                    <div class="form-row">
+                        <div class="col-12 col-md-3 mb-2">
+                            <label class="mb-1">Dia de la semana</label>
+                            <select name="dia_semana" class="form-control form-control-sm" id="resumenDiaFilter">
+                                <option value="">Todos</option>
+                                {% for item in resumen_dia_opciones %}
+                                <option value="{{ item.value }}" {% if filtros_resumen.dia_semana == item.value %}selected{% endif %}>
+                                    {{ item.label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-4 mb-2">
+                            <label class="mb-1">Presentacion</label>
+                            <select name="resumen_presentacion" class="form-control form-control-sm" id="resumenPresentacionFilter">
+                                <option value="">Todas</option>
+                                {% for value, label in presentacion_choices %}
+                                <option value="{{ value }}" {% if filtros_resumen.presentacion == value %}selected{% endif %}>
+                                    {{ label }}
+                                </option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="col-12 col-md-3 mb-2 d-flex align-items-end">
+                            <button type="submit" class="btn btn-primary btn-sm mr-2">Filtrar</button>
+                            <a href="{% url 'panel_logistica' %}?tab=resumen{% if semana %}&semana={{ semana }}{% endif %}" class="btn btn-outline-secondary btn-sm">Limpiar</a>
+                        </div>
+                    </div>
+                </form>
+                <div class="table-responsive">
+                    <table class="table table-bordered" width="100%" cellspacing="0">
+                        <thead>
+                            <tr>
+                                <th>DIA</th>
+                                <th>FECHA</th>
+                                <th>PRESENTACION</th>
+                                <th>EMPRESAS</th>
+                                <th>SUCURSALES</th>
+                                <th>PROGRAMADO (KG)</th>
+                                <th>DESPACHADO (KG)</th>
+                                <th>PENDIENTE (KG)</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for row in resumen_logistica.rows %}
+                            <tr>
+                                <td>{{ row.dia_label }}</td>
+                                <td>{{ row.fecha|date:"d/m/Y" }}</td>
+                                <td>{{ row.presentacion }}</td>
+                                <td>{{ row.companias }}</td>
+                                <td>{{ row.sucursales }}</td>
+                                <td>{{ row.programado_kg }}</td>
+                                <td>{{ row.despachado_kg }}</td>
+                                <td>{{ row.pendiente_kg }}</td>
+                            </tr>
+                            {% empty %}
+                            <tr>
+                                <td colspan="8" class="text-center text-muted">Sin datos para la semana seleccionada.</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                        <tfoot>
+                            <tr>
+                                <th colspan="5">TOTAL SEMANAL</th>
+                                <th>{{ resumen_logistica.totales.programado_kg }}</th>
+                                <th>{{ resumen_logistica.totales.despachado_kg }}</th>
+                                <th>{{ resumen_logistica.totales.pendiente_kg }}</th>
+                            </tr>
+                        </tfoot>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="commentModal" tabindex="-1" role="dialog" aria-labelledby="commentModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="commentModalLabel">Comentario</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <p class="small text-muted mb-2" id="commentModalTitle">Detalle</p>
+                <div class="border rounded p-3 bg-light" id="commentModalText" style="white-space: pre-line;">Sin comentario.</div>
+            </div>
+        </div>
+    </div>
 </div>
 
 <div class="modal fade" id="despachoCalendarModal" tabindex="-1" role="dialog" aria-labelledby="despachoCalendarModalLabel" aria-hidden="true">
@@ -352,6 +510,25 @@ Logistica
 
         const monthNames = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
         const csrfToken = document.querySelector("[name=csrfmiddlewaretoken]")?.value || "";
+        const scrollStateKey = "panel-logistica-scroll-y";
+
+        const restoreScrollPosition = () => {
+            const saved = parseInt(sessionStorage.getItem(scrollStateKey) || "", 10);
+            if (!Number.isNaN(saved) && saved >= 0) {
+                window.scrollTo(0, saved);
+            }
+            sessionStorage.removeItem(scrollStateKey);
+        };
+
+        const submitKeepingScroll = (form) => {
+            if (!form) {
+                return;
+            }
+            sessionStorage.setItem(scrollStateKey, String(window.scrollY || 0));
+            form.submit();
+        };
+
+        restoreScrollPosition();
 
         document.querySelectorAll(".js-toggle-card-body").forEach((button) => {
             button.addEventListener("click", function () {
@@ -461,6 +638,80 @@ Logistica
         if (vidaUtilFilter) {
             vidaUtilFilter.addEventListener("change", applyFilters);
         }
+
+        const panelSemanaForm = document.getElementById("panelSemanaForm");
+        const panelSemanaGlobalFilter = document.getElementById("panelSemanaGlobalFilter");
+        if (panelSemanaForm && panelSemanaGlobalFilter) {
+            panelSemanaForm.addEventListener("submit", function () {
+                sessionStorage.setItem(scrollStateKey, String(window.scrollY || 0));
+            });
+            panelSemanaGlobalFilter.addEventListener("change", function () {
+                submitKeepingScroll(panelSemanaForm);
+            });
+        }
+
+        const resumenFilterForm = document.getElementById("resumenFilterForm");
+        const resumenDiaFilter = document.getElementById("resumenDiaFilter");
+        const resumenPresentacionFilter = document.getElementById("resumenPresentacionFilter");
+        if (resumenFilterForm) {
+            resumenFilterForm.addEventListener("submit", function () {
+                sessionStorage.setItem(scrollStateKey, String(window.scrollY || 0));
+            });
+            const handleResumenChange = () => submitKeepingScroll(resumenFilterForm);
+            if (resumenDiaFilter) {
+                resumenDiaFilter.addEventListener("change", handleResumenChange);
+            }
+            if (resumenPresentacionFilter) {
+                resumenPresentacionFilter.addEventListener("change", handleResumenChange);
+            }
+        }
+
+        document.querySelectorAll(".js-logistica-estado-form").forEach((form) => {
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                const formData = new FormData(form);
+                const row = form.closest("tr[data-pedido-id]");
+                const badge = row?.querySelector(".js-row-estado-badge");
+                const actionCell = row?.querySelector(".js-row-estado-action");
+                fetch(window.location.href, {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: formData
+                })
+                    .then((response) => response.json().then((data) => ({ okHttp: response.ok, data })))
+                    .then((payload) => {
+                        if (!payload.okHttp || !payload.data || !payload.data.ok) {
+                            throw new Error(payload?.data?.error || "No se pudo actualizar el estado.");
+                        }
+                        if (badge) {
+                            const estadoLower = payload.data.estado_lower || "";
+                            badge.className = `badge badge-estado badge-estado-${estadoLower} js-row-estado-badge`;
+                            badge.textContent = payload.data.estado_label || payload.data.estado || "-";
+                        }
+                        if (actionCell && !payload.data.puede_cambiar_estado) {
+                            actionCell.innerHTML = '<span class="text-muted small">Disponible cuando este en produccion.</span>';
+                        }
+                    })
+                    .catch((error) => {
+                        alert(error.message || "No se pudo actualizar el estado.");
+                    });
+            });
+        });
+
+        const commentModalTitle = document.getElementById("commentModalTitle");
+        const commentModalText = document.getElementById("commentModalText");
+        document.querySelectorAll(".js-open-comment-modal").forEach((button) => {
+            button.addEventListener("click", function () {
+                if (commentModalTitle) {
+                    commentModalTitle.textContent = this.dataset.title || "Comentario";
+                }
+                if (commentModalText) {
+                    commentModalText.textContent = this.dataset.comment || "Sin comentario.";
+                }
+            });
+        });
 
         const dispatchMainTableKey = `dispatch-main-highlight-user-{{ request.user.id|default:'0' }}`;
         const dispatchMainRowState = (() => {

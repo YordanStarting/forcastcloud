@@ -35,6 +35,8 @@ def notificaciones(request):
         can_manage_usuarios = True
         can_manage_pedidos = True
         can_change_pedido_status = True
+        can_view_produccion_tab = True
+        can_view_logistica_tab = True
 
     if getattr(request.user, PERFIL_CACHE_LOADED_ATTR, False):
         perfil = getattr(request.user, PERFIL_CACHE_ATTR, None)
@@ -57,10 +59,13 @@ def notificaciones(request):
             can_change_pedido_status
             or perfil.rol in {'admin', 'comercial', 'logistica', 'produccion', 'programador'}
         )
-        can_view_produccion_tab = can_view_produccion_tab or perfil.rol in {'produccion', 'programador', 'logistica'}
-        can_view_logistica_tab = can_view_logistica_tab or perfil.rol in {'logistica', 'produccion', 'programador'}
+        can_view_produccion_tab = True
+        can_view_logistica_tab = True
         if perfil.foto_perfil:
             user_profile_image = perfil.foto_perfil.url
+    else:
+        can_view_produccion_tab = True
+        can_view_logistica_tab = True
 
     unread_notifications_qs = (
         Notificacion.objects

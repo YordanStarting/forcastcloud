@@ -11,6 +11,7 @@ from .models import (
     Cliente,
     DespachoPedido,
     EntregaPedido,
+    EstimadoSemanalProveedor,
     MateriaPrima,
     Notificacion,
     Pedido,
@@ -35,6 +36,7 @@ from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm
+from django.templatetags.static import static
 
 PEDIDO_ESTADO_CHOICES = list(Pedido.ESTADO_CHOICES)
 PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
@@ -54,11 +56,11 @@ PRODUCCION_ACCION_LABELS = dict(RegistroProduccion.ACCION_CHOICES)
 DIAS_CORTOS_ES = ['Lun', 'Mar', 'Mie', 'Jue', 'Vie', 'Sab', 'Dom']
 MESES_CORTOS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic']
 ROL_ESTADOS_PERMITIDOS = {
-    'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO'},
+    'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO', 'EN_PRODUCCION'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
     'produccion': {'EN_PRODUCCION', 'DEVUELTO'},
     # Compatibilidad con perfiles existentes antes del rol "produccion".
-    'programador': {'EN_PRODUCCION', 'DEVUELTO'},
+    'programador': {'DEVUELTO'},
     'logistica': {'DESPACHADO', 'ENTREGADO', 'DEVUELTO'},
 }
 
@@ -538,13 +540,46 @@ def _usuario_puede_gestionar_pedidos(user):
 def _usuario_puede_ver_tab_produccion(user):
     if not user.is_authenticated:
         return False
-    return _obtener_rol_usuario(user) in {'produccion', 'programador', 'logistica'}
+    return True
 
 
 def _usuario_puede_ver_tab_logistica(user):
     if not user.is_authenticated:
         return False
-    return _obtener_rol_usuario(user) in {'logistica', 'produccion', 'programador'}
+    return True
+
+
+def _usuario_puede_cambiar_estado_panel(user, *, tipo, estado_nuevo=None):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+
+    rol = _obtener_rol_usuario(user)
+    if tipo == 'produccion':
+        # Solo produccion puede mover pedidos a En produccion.
+        if estado_nuevo == 'EN_PRODUCCION':
+            return rol == 'produccion'
+        return False
+
+    # Logistica: comerciales no pueden cambiar estado.
+    return rol in {'admin', 'logistica', 'produccion', 'programador'}
+
+
+def _usuario_puede_editar_estimado_semanal(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) in {'admin', 'programador', 'produccion'}
+
+
+def _usuario_puede_editar_gestion_produccion(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) in {'admin', 'produccion', 'programador'}
 
 
 def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
@@ -970,6 +1005,207 @@ def _construir_panel_operativo(pedidos, *, cantidad_attr='fabricado_kg'):
     }
 
 
+def _construir_resumen_logistica_semana(
+    pedidos,
+    semana_lunes,
+    *,
+    dia_semana='',
+    presentacion_codigo='',
+):
+    if not semana_lunes:
+        return {
+            'rows': [],
+            'totales': {
+                'programado_kg': 0,
+                'despachado_kg': 0,
+                'pendiente_kg': 0,
+            },
+        }
+
+    fecha_inicio = semana_lunes
+    fecha_fin = semana_lunes + timedelta(days=5)
+    ciudad_labels = dict(CIUDAD_CHOICES)
+    presentacion_codigo = (presentacion_codigo or '').strip().upper()
+    dia_semana = (dia_semana or '').strip()
+    try:
+        dia_semana_int = int(dia_semana) if dia_semana else 0
+    except (TypeError, ValueError):
+        dia_semana_int = 0
+
+    resumen = {}
+
+    for pedido in pedidos:
+        if presentacion_codigo and pedido.presentacion != presentacion_codigo:
+            continue
+        total_kg = _cantidad_total_pedido(pedido)
+        entregas = [
+            (
+                entrega.fecha_entrega,
+                int(entrega.cantidad or 0),
+            )
+            for entrega in pedido.entregas.all()
+        ]
+        if not entregas and pedido.fecha_entrega:
+            entregas = [(pedido.fecha_entrega, total_kg)]
+
+        despachos_por_fecha = {}
+        for despacho in pedido.despachos.all():
+            if not despacho.fecha:
+                continue
+            despachos_por_fecha[despacho.fecha] = (
+                despachos_por_fecha.get(despacho.fecha, 0) + int(despacho.cantidad or 0)
+            )
+
+        for fecha_entrega, cantidad_programada in entregas:
+            if not fecha_entrega:
+                continue
+            if fecha_entrega < fecha_inicio or fecha_entrega > fecha_fin:
+                continue
+            if fecha_entrega.weekday() > 5:
+                continue
+            if dia_semana_int and (fecha_entrega.weekday() + 1) != dia_semana_int:
+                continue
+            if cantidad_programada <= 0:
+                continue
+
+            key = (fecha_entrega, pedido.presentacion)
+            if key not in resumen:
+                resumen[key] = {
+                    'fecha': fecha_entrega,
+                    'dia_num': fecha_entrega.weekday() + 1,
+                    'dia_label': DIAS_CORTOS_ES[fecha_entrega.weekday()],
+                    'presentacion_codigo': pedido.presentacion,
+                    'presentacion': pedido.get_presentacion_display(),
+                    'programado_kg': 0,
+                    'despachado_kg': 0,
+                    'companias': set(),
+                    'sucursales': set(),
+                }
+
+            item = resumen[key]
+            item['programado_kg'] += cantidad_programada
+            item['despachado_kg'] += max(0, int(despachos_por_fecha.get(fecha_entrega, 0)))
+            item['companias'].add(pedido.proveedor.nombre)
+            item['sucursales'].add(ciudad_labels.get(pedido.ciudad, pedido.ciudad))
+
+    rows = []
+    totales = {
+        'programado_kg': 0,
+        'despachado_kg': 0,
+        'pendiente_kg': 0,
+    }
+
+    for _, item in sorted(resumen.items(), key=lambda kv: (kv[0][0], (kv[1]['presentacion'] or '').lower())):
+        programado = int(item['programado_kg'] or 0)
+        despachado = max(0, min(int(item['despachado_kg'] or 0), programado))
+        pendiente = max(programado - despachado, 0)
+
+        rows.append({
+            'dia_num': item['dia_num'],
+            'dia_label': item['dia_label'],
+            'fecha': item['fecha'],
+            'presentacion_codigo': item['presentacion_codigo'],
+            'presentacion': item['presentacion'],
+            'companias': ', '.join(sorted(item['companias'])),
+            'sucursales': ', '.join(sorted(item['sucursales'])),
+            'programado_kg': programado,
+            'despachado_kg': despachado,
+            'pendiente_kg': pendiente,
+        })
+
+        totales['programado_kg'] += programado
+        totales['despachado_kg'] += despachado
+        totales['pendiente_kg'] += pendiente
+
+    return {
+        'rows': rows,
+        'totales': totales,
+    }
+
+
+def _construir_estimados_proveedores_semana(
+    *,
+    semana_seleccionada,
+    sucursal_filtro='',
+    presentacion_filtro='',
+):
+    sucursal_filtro = (sucursal_filtro or '').strip().upper()
+    presentacion_filtro = (presentacion_filtro or '').strip().upper()
+    presentacion_labels = dict(PRESENTACION_CHOICES)
+
+    estimados_map = {}
+    if semana_seleccionada:
+        estimados_qs = (
+            EstimadoSemanalProveedor.objects
+            .select_related('proveedor')
+            .filter(semana=semana_seleccionada)
+        )
+        estimados_map = {
+            (item.proveedor_id, item.sucursal): item
+            for item in estimados_qs
+        }
+
+    proveedores = list(
+        Proveedor.objects
+        .all()
+        .order_by('ciudad', 'nombre', 'id')
+    )
+
+    bloques = {
+        value: {
+            'codigo': value,
+            'nombre': label,
+            'rows': [],
+            'total_estimado_kg': 0,
+        }
+        for value, label in CIUDAD_CHOICES
+    }
+    total_general_estimado = 0
+
+    for proveedor in proveedores:
+        sucursal = (proveedor.ciudad or '').strip().upper()
+        if sucursal not in bloques:
+            continue
+        if sucursal_filtro and sucursal != sucursal_filtro:
+            continue
+
+        estimado = estimados_map.get((proveedor.id, sucursal))
+        presentacion_codigo = (
+            (estimado.presentacion if estimado else proveedor.presentacion or '').strip().upper()
+        )
+        if presentacion_filtro and presentacion_codigo != presentacion_filtro:
+            continue
+
+        cantidad_kg = int(estimado.cantidad_kg if estimado else 0)
+        row = {
+            'row_key': f"estimado-prov-{sucursal}-{proveedor.id}",
+            'proveedor_id': proveedor.id,
+            'proveedor_nombre': proveedor.nombre,
+            'sucursal': sucursal,
+            'presentacion_codigo': presentacion_codigo,
+            'presentacion_label': presentacion_labels.get(presentacion_codigo, presentacion_codigo),
+            'cantidad_kg': cantidad_kg,
+            'observaciones': (estimado.observaciones if estimado else '') or '',
+            'estimado_id': estimado.id if estimado else None,
+        }
+
+        bloque = bloques[sucursal]
+        bloque['rows'].append(row)
+        bloque['total_estimado_kg'] += cantidad_kg
+        total_general_estimado += cantidad_kg
+
+    bloques_ordenados = []
+    for value, _ in CIUDAD_CHOICES:
+        bloque = bloques[value]
+        bloque['rows'].sort(key=lambda item: (item['proveedor_nombre'] or '').lower())
+        bloques_ordenados.append(bloque)
+
+    return {
+        'bloques': bloques_ordenados,
+        'total_general_estimado_kg': total_general_estimado,
+    }
+
+
 def _opciones_estado_para_panel(pedido_estado, permitidos):
     opciones = []
     usados = set()
@@ -982,7 +1218,9 @@ def _opciones_estado_para_panel(pedido_estado, permitidos):
     return opciones
 
 
-def _cambio_estado_permitido_en_panel(*, tipo, estado_anterior, estado_nuevo):
+def _cambio_estado_permitido_en_panel(*, user, tipo, estado_anterior, estado_nuevo):
+    if not _usuario_puede_cambiar_estado_panel(user, tipo=tipo, estado_nuevo=estado_nuevo):
+        return False
     if tipo == 'logistica' and estado_nuevo == 'DESPACHADO':
         return estado_anterior == 'EN_PRODUCCION'
     return True
@@ -999,7 +1237,7 @@ def _render_panel_operativo(request, *, tipo):
         template_name = 'pedidos/panel_produccion.html'
         titulo = 'PRODUCCION'
         subtitulo = 'Programacion y fabricado por sucursal'
-        puede_editar_cantidad = True
+        puede_editar_cantidad = _usuario_puede_editar_gestion_produccion(request.user)
         mostrar_calendario = False
     else:
         if not _usuario_puede_ver_tab_logistica(request.user):
@@ -1014,14 +1252,21 @@ def _render_panel_operativo(request, *, tipo):
         puede_editar_cantidad = False
         mostrar_calendario = True
 
+    if tipo == 'produccion':
+        tabs_permitidos = {'producto', 'estimado', 'log'}
+        tab_default = 'producto'
+    else:
+        tabs_permitidos = {'producto', 'resumen'}
+        tab_default = 'producto'
+
     tab_context = (
         request.POST.get('tab')
         if request.method == 'POST'
         else request.GET.get('tab')
     )
     tab_context = (tab_context or '').strip().lower()
-    if tab_context not in {'producto', 'estimado', 'log'}:
-        tab_context = 'producto'
+    if tab_context not in tabs_permitidos:
+        tab_context = tab_default
     if tipo == 'produccion' and tab_context == 'estimado':
         cantidad_attr = 'estimado_kg'
         gestion_label = 'Estimado'
@@ -1033,6 +1278,10 @@ def _render_panel_operativo(request, *, tipo):
         'sucursal': '',
         'vida_util': '',
         'semana': '',
+    }
+    filtros_resumen = {
+        'dia_semana': '',
+        'presentacion': '',
     }
 
     pedidos_panel_qs = _pedidos_panel_operativo_qs(estados_panel)
@@ -1050,22 +1299,93 @@ def _render_panel_operativo(request, *, tipo):
             pedidos_panel_qs = pedidos_panel_qs.filter(presentacion=vida_util_param)
             filtros_panel['vida_util'] = vida_util_param
 
-        semanas_disponibles = _obtener_semanas_disponibles(
-            pedidos_panel_qs,
-            estados=estados_panel,
-        )
-        semana_seleccionada = _resolver_semana_seleccionada(request, semanas_disponibles)
-        if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
-            semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
-        if semana_seleccionada:
-            pedidos_panel_qs = pedidos_panel_qs.filter(semana=semana_seleccionada)
-            filtros_panel['semana'] = semana_seleccionada.isoformat()
+    semanas_disponibles = _obtener_semanas_disponibles(
+        pedidos_panel_qs,
+        estados=estados_panel,
+    )
+    semana_param_raw = (
+        request.POST.get('semana')
+        if request.method == 'POST'
+        else request.GET.get('semana')
+    )
+    semana_seleccionada = _resolver_semana_seleccionada(request, semanas_disponibles)
+    if not semanas_disponibles and not (semana_param_raw or '').strip():
+        semana_seleccionada = None
+    if tipo == 'produccion' and tab_context == 'estimado' and semana_seleccionada is None:
+        hoy = date.today()
+        semana_seleccionada = hoy - timedelta(days=hoy.weekday())
+    if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
+        semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+    if semana_seleccionada:
+        pedidos_panel_qs = pedidos_panel_qs.filter(semana=semana_seleccionada)
+        filtros_panel['semana'] = semana_seleccionada.isoformat()
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
+        is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
         tab_origen = (request.POST.get('tab') or '').strip().lower()
-        if tab_origen not in {'producto', 'estimado'}:
+        if tipo == 'produccion':
+            if tab_origen not in {'producto', 'estimado'}:
+                tab_origen = 'producto'
+        elif tab_origen not in {'producto', 'resumen'}:
             tab_origen = 'producto'
+        if (
+            tipo == 'produccion'
+            and tab_origen == 'estimado'
+            and action == 'guardar_estimado_proveedor'
+        ):
+            if not _usuario_puede_editar_estimado_semanal(request.user):
+                return HttpResponseForbidden("No tienes permisos para guardar estimados semanales.")
+
+            semana_post = _ajustar_a_lunes(request.POST.get('semana'))
+            if not semana_post:
+                hoy = date.today()
+                semana_post = hoy - timedelta(days=hoy.weekday())
+
+            proveedor_id_raw = (request.POST.get('proveedor_id') or '').strip()
+            sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
+            presentacion_post = (request.POST.get('presentacion') or '').strip().upper()
+            observaciones_post = (request.POST.get('observaciones') or '').strip()
+            try:
+                cantidad_post = int(request.POST.get('cantidad_kg') or 0)
+            except (TypeError, ValueError):
+                cantidad_post = 0
+            cantidad_post = max(cantidad_post, 0)
+
+            proveedor = None
+            try:
+                proveedor_id = int(proveedor_id_raw)
+            except (TypeError, ValueError):
+                proveedor_id = 0
+            if proveedor_id > 0:
+                proveedor = Proveedor.objects.filter(id=proveedor_id).first()
+
+            if (
+                proveedor
+                and sucursal_post in ciudad_valores
+                and presentacion_post in presentacion_valores
+            ):
+                EstimadoSemanalProveedor.objects.update_or_create(
+                    semana=semana_post,
+                    sucursal=sucursal_post,
+                    proveedor=proveedor,
+                    defaults={
+                        'presentacion': presentacion_post,
+                        'cantidad_kg': cantidad_post,
+                        'observaciones': observaciones_post,
+                        'actualizado_por': request.user,
+                    },
+                )
+
+            redirect_params = {'tab': 'estimado', 'semana': semana_post.isoformat()}
+            sucursal_post_filter = (request.POST.get('sucursal_filter') or '').strip().upper()
+            vida_util_post_filter = (request.POST.get('vida_util_filter') or '').strip().upper()
+            if sucursal_post_filter in ciudad_valores:
+                redirect_params['sucursal'] = sucursal_post_filter
+            if vida_util_post_filter in presentacion_valores:
+                redirect_params['vida_util'] = vida_util_post_filter
+            return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
+
         cantidad_attr_post = 'estimado_kg' if tab_origen == 'estimado' else 'fabricado_kg'
         pedido_id = request.POST.get('pedido_id')
         pedido = get_object_or_404(
@@ -1108,9 +1428,11 @@ def _render_panel_operativo(request, *, tipo):
         elif action == 'cambiar_estado' and tab_origen != 'estimado':
             estado_anterior = pedido.estado
             estado_nuevo = (request.POST.get('estado') or '').strip()
+            cambio_aplicado = False
             if (
                 estado_nuevo in set(estado_permitidos)
                 and _cambio_estado_permitido_en_panel(
+                    user=request.user,
                     tipo=tipo,
                     estado_anterior=estado_anterior,
                     estado_nuevo=estado_nuevo,
@@ -1118,6 +1440,7 @@ def _render_panel_operativo(request, *, tipo):
             ):
                 pedido.estado = estado_nuevo
                 pedido.save(update_fields=['estado'])
+                cambio_aplicado = True
                 _registrar_cambio_estado_pedido(
                     pedido,
                     estado_anterior,
@@ -1136,6 +1459,58 @@ def _render_panel_operativo(request, *, tipo):
                         accion='ESTADO_EN_PRODUCCION',
                         detalle='Pedido movido a En produccion desde panel de produccion.',
                     )
+            if is_ajax:
+                puede_cambiar_estado_row = False
+                estado_options_row = []
+                if tipo == 'logistica':
+                    puede_cambiar_estado_row = (
+                        pedido.estado == 'EN_PRODUCCION'
+                        and _usuario_puede_cambiar_estado_panel(
+                            request.user,
+                            tipo='logistica',
+                            estado_nuevo='DESPACHADO',
+                        )
+                    )
+                    estado_options_row = _opciones_estado_para_panel(
+                        pedido.estado,
+                        estado_permitidos if puede_cambiar_estado_row else [],
+                    )
+                else:
+                    puede_cambiar_estado_row = _usuario_puede_cambiar_estado_panel(
+                        request.user,
+                        tipo='produccion',
+                        estado_nuevo='EN_PRODUCCION',
+                    )
+                    estado_options_row = _opciones_estado_para_panel(
+                        pedido.estado,
+                        ['EN_PRODUCCION'] if puede_cambiar_estado_row else [],
+                    )
+                if not cambio_aplicado:
+                    return JsonResponse({
+                        'ok': False,
+                        'pedido_id': pedido.id,
+                        'error': 'No fue posible actualizar el estado con tus permisos o transicion.',
+                        'estado': pedido.estado,
+                        'estado_label': pedido.get_estado_display(),
+                        'estado_lower': (pedido.estado or '').lower(),
+                        'puede_cambiar_estado': puede_cambiar_estado_row,
+                        'estado_options': [
+                            {'value': value, 'label': label}
+                            for value, label in estado_options_row
+                        ],
+                    }, status=400)
+                return JsonResponse({
+                    'ok': True,
+                    'pedido_id': pedido.id,
+                    'estado': pedido.estado,
+                    'estado_label': pedido.get_estado_display(),
+                    'estado_lower': (pedido.estado or '').lower(),
+                    'puede_cambiar_estado': puede_cambiar_estado_row,
+                    'estado_options': [
+                        {'value': value, 'label': label}
+                        for value, label in estado_options_row
+                    ],
+                })
         if tipo == 'produccion':
             redirect_params = {'tab': tab_origen}
             sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
@@ -1148,37 +1523,83 @@ def _render_panel_operativo(request, *, tipo):
             if semana_post:
                 redirect_params['semana'] = semana_post.isoformat()
             return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
+        redirect_params = {}
+        semana_post = _ajustar_a_lunes(request.POST.get('semana'))
+        tab_post = (request.POST.get('tab') or '').strip().lower()
+        if tab_post in {'producto', 'resumen'}:
+            redirect_params['tab'] = tab_post
+        if semana_post:
+            redirect_params['semana'] = semana_post.isoformat()
+        if redirect_params:
+            return redirect(f"{reverse('panel_logistica')}?{urlencode(redirect_params)}")
         return redirect('panel_logistica')
 
     pedidos = list(pedidos_panel_qs)
     panel_data = _construir_panel_operativo(pedidos, cantidad_attr=cantidad_attr)
+    puede_mover_a_produccion = _usuario_puede_cambiar_estado_panel(
+        request.user,
+        tipo='produccion',
+        estado_nuevo='EN_PRODUCCION',
+    )
+    puede_actualizar_logistica = _usuario_puede_cambiar_estado_panel(
+        request.user,
+        tipo='logistica',
+        estado_nuevo='DESPACHADO',
+    )
     for bloque in panel_data['bloques']:
         for row in bloque['rows']:
             if tipo == 'logistica':
-                row['puede_cambiar_estado'] = row['estado'] == 'EN_PRODUCCION'
+                row['puede_cambiar_estado'] = (
+                    row['estado'] == 'EN_PRODUCCION'
+                    and puede_actualizar_logistica
+                )
                 permitidos_row = estado_permitidos if row['puede_cambiar_estado'] else []
             else:
-                row['puede_cambiar_estado'] = True
-                permitidos_row = estado_permitidos
+                row['puede_cambiar_estado'] = puede_mover_a_produccion
+                permitidos_row = ['EN_PRODUCCION'] if row['puede_cambiar_estado'] else []
             row['estado_options'] = _opciones_estado_para_panel(row['estado'], permitidos_row)
 
     despachos_registrados = []
-    active_tab = 'producto'
+    resumen_logistica = {'rows': [], 'totales': {'programado_kg': 0, 'despachado_kg': 0, 'pendiente_kg': 0}}
+    estimados_proveedores = {'bloques': [], 'total_general_estimado_kg': 0}
+    active_tab = tab_context
     log_page_obj = None
     log_query_string = ''
     panel_query_string = ''
+    logistica_query_string = ''
     log_filters = {
         'accion': '',
         'sucursal': '',
         'q': '',
     }
     if tipo == 'logistica':
+        if active_tab not in {'producto', 'resumen'}:
+            active_tab = 'producto'
+        dia_semana_param = (request.GET.get('dia_semana') or '').strip()
+        presentacion_resumen_param = (request.GET.get('resumen_presentacion') or '').strip().upper()
+        try:
+            dia_semana_val = int(dia_semana_param) if dia_semana_param else 0
+        except (TypeError, ValueError):
+            dia_semana_val = 0
+        if dia_semana_val in {1, 2, 3, 4, 5, 6}:
+            filtros_resumen['dia_semana'] = str(dia_semana_val)
+        if presentacion_resumen_param in presentacion_valores:
+            filtros_resumen['presentacion'] = presentacion_resumen_param
+
+        resumen_logistica = _construir_resumen_logistica_semana(
+            pedidos,
+            semana_seleccionada,
+            dia_semana=filtros_resumen['dia_semana'],
+            presentacion_codigo=filtros_resumen['presentacion'],
+        )
         despachos_qs = (
             DespachoPedido.objects
             .select_related('pedido__proveedor')
             .filter(pedido__estado__in=PEDIDO_ESTADOS_PANELES, cantidad__gt=0)
             .order_by('-fecha', '-id')
         )
+        if semana_seleccionada:
+            despachos_qs = despachos_qs.filter(pedido__semana=semana_seleccionada)
         for item in despachos_qs:
             despachos_registrados.append({
                 'row_key': f"despacho-{item.id}",
@@ -1189,6 +1610,15 @@ def _render_panel_operativo(request, *, tipo):
                 'cantidad': int(item.cantidad or 0),
                 'pedido_id': item.pedido_id,
             })
+        logistica_query_string = urlencode({
+            key: value
+            for key, value in {
+                'semana': filtros_panel.get('semana', ''),
+                'dia_semana': filtros_resumen.get('dia_semana', ''),
+                'resumen_presentacion': filtros_resumen.get('presentacion', ''),
+            }.items()
+            if value
+        })
     else:
         requested_tab = (request.GET.get('tab') or '').strip().lower()
         has_log_params = bool(
@@ -1204,6 +1634,12 @@ def _render_panel_operativo(request, *, tipo):
             active_tab = requested_tab
         elif has_log_params:
             active_tab = 'log'
+
+        estimados_proveedores = _construir_estimados_proveedores_semana(
+            semana_seleccionada=semana_seleccionada,
+            sucursal_filtro=filtros_panel.get('sucursal', ''),
+            presentacion_filtro=filtros_panel.get('vida_util', ''),
+        )
 
         registros_qs = RegistroProduccion.objects.select_related('usuario', 'pedido')
         if accion := (request.GET.get('accion') or '').strip():
@@ -1256,6 +1692,16 @@ def _render_panel_operativo(request, *, tipo):
         'log_query_string': log_query_string,
         'produccion_accion_choices': RegistroProduccion.ACCION_CHOICES,
         'ciudades': CIUDAD_CHOICES,
+        'presentacion_choices': PRESENTACION_CHOICES,
+        'filtros_panel': filtros_panel,
+        'filtros_resumen': filtros_resumen,
+        'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
+        'semana_label': _semana_label_corta(semana_seleccionada) if semana_seleccionada else '',
+        'semana': semana_seleccionada.isoformat() if semana_seleccionada else '',
+        'resumen_dia_opciones': [
+            {'value': str(idx + 1), 'label': DIAS_CORTOS_ES[idx]}
+            for idx in range(6)
+        ],
     }
     if tipo == 'produccion':
         panel_label = 'Estimado' if active_tab == 'estimado' else 'Fabricado'
@@ -1263,11 +1709,16 @@ def _render_panel_operativo(request, *, tipo):
             'active_tab': active_tab if active_tab in {'producto', 'estimado', 'log'} else 'producto',
             'panel_label': panel_label,
             'panel_label_lower': panel_label.lower(),
-            'filtros_panel': filtros_panel,
-            'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
-            'semana_label': _semana_label_corta(semana_seleccionada) if semana_seleccionada else '',
-            'presentacion_choices': PRESENTACION_CHOICES,
             'panel_query_string': panel_query_string,
+            'estimados_proveedores': estimados_proveedores,
+            'puede_editar_estimado_semanal': _usuario_puede_editar_estimado_semanal(request.user),
+            'puede_editar_gestion_produccion': puede_editar_cantidad,
+        })
+    else:
+        context.update({
+            'active_tab': active_tab if active_tab in {'producto', 'resumen'} else 'producto',
+            'resumen_logistica': resumen_logistica,
+            'logistica_query_string': logistica_query_string,
         })
     return render(request, template_name, context)
 
@@ -2180,10 +2631,36 @@ def crear_materia_prima(request):
     if not _usuario_puede_gestionar_pedidos(request.user):
         return HttpResponseForbidden("No tienes permisos para registrar materia prima.")
 
+    semanas_disponibles = _obtener_semanas_disponibles(
+        Pedido.objects.all(),
+        estados=PEDIDO_ESTADOS_SEMANA_DASHBOARD,
+    )
+    semana_param = (request.POST.get('semana') if request.method == 'POST' else request.GET.get('semana'))
+    semana_seleccionada = _ajustar_a_lunes(semana_param) if semana_param else None
+    if not semana_seleccionada:
+        if semanas_disponibles:
+            semana_seleccionada = semanas_disponibles[0]
+        else:
+            hoy = date.today()
+            semana_seleccionada = hoy - timedelta(days=hoy.weekday())
+    if semana_seleccionada not in semanas_disponibles:
+        semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+
+    fecha_inicio_semana = semana_seleccionada
+    fecha_fin_semana = semana_seleccionada + timedelta(days=5)
+    hoy = date.today()
+    if hoy < fecha_inicio_semana:
+        fecha_default = fecha_inicio_semana
+    elif hoy > fecha_fin_semana:
+        fecha_default = fecha_fin_semana
+    else:
+        fecha_default = hoy
+
     error_message = None
     success_message = None
     form_data = {
-        'fecha': date.today().isoformat(),
+        'fecha': fecha_default.isoformat(),
+        'semana': semana_seleccionada.isoformat(),
         'tipo_huevo': TIPO_HUEVO_CHOICES[0][0],
         'cantidad_kg': '',
         'observaciones': '',
@@ -2216,6 +2693,11 @@ def crear_materia_prima(request):
             error_message = 'Debes ingresar una cantidad valida en kg.'
         elif cantidad_kg == 0:
             error_message = 'La cantidad de materia prima no puede ser 0.'
+        elif fecha < fecha_inicio_semana or fecha > fecha_fin_semana:
+            error_message = (
+                "La fecha debe estar dentro de la semana seleccionada "
+                f"({fecha_inicio_semana.strftime('%d/%m/%Y')} - {fecha_fin_semana.strftime('%d/%m/%Y')})."
+            )
         else:
             registro = MateriaPrima.objects.create(
                 fecha=fecha,
@@ -2240,7 +2722,8 @@ def crear_materia_prima(request):
             )
             success_message = 'Materia prima registrada correctamente.'
             form_data = {
-                'fecha': date.today().isoformat(),
+                'fecha': fecha_default.isoformat(),
+                'semana': semana_seleccionada.isoformat(),
                 'tipo_huevo': TIPO_HUEVO_CHOICES[0][0],
                 'cantidad_kg': '',
                 'observaciones': '',
@@ -2249,7 +2732,12 @@ def crear_materia_prima(request):
     ultimos_registros = (
         MateriaPrima.objects
         .select_related('creado_por')
-        .all()[:20]
+        .filter(fecha__gte=fecha_inicio_semana, fecha__lte=fecha_fin_semana)[:30]
+    )
+    total_materia_prima_semana = (
+        MateriaPrima.objects
+        .filter(fecha__gte=fecha_inicio_semana, fecha__lte=fecha_fin_semana)
+        .aggregate(total=Sum('cantidad_kg'))['total'] or 0
     )
 
     return render(request, 'pedidos/crear_materia_prima.html', {
@@ -2258,6 +2746,12 @@ def crear_materia_prima(request):
         'ultimos_registros': ultimos_registros,
         'error_message': error_message,
         'success_message': success_message,
+        'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
+        'semana': semana_seleccionada.isoformat(),
+        'semana_label': _semana_label_corta(semana_seleccionada),
+        'fecha_inicio_semana': fecha_inicio_semana,
+        'fecha_fin_semana': fecha_fin_semana,
+        'total_materia_prima_semana': total_materia_prima_semana,
     })
 
 
@@ -3033,6 +3527,41 @@ def limpiar_notificaciones(request):
 
 @login_required
 def notificaciones_pedidos(request):
+    unread_notifications = list(
+        Notificacion.objects
+        .select_related('actor', 'actor__perfilusuario', 'pedido', 'pedido__proveedor')
+        .filter(usuario=request.user, leida=False)
+        .order_by('-fecha_creacion')[:5]
+    )
+    default_actor_image = static('web/img/undraw_profile.svg')
+    notifications_payload = []
+    for notificacion in unread_notifications:
+        actor = getattr(notificacion, 'actor', None)
+        actor_name = 'Sistema'
+        actor_image = default_actor_image
+        if actor:
+            actor_name = f"{actor.first_name} {actor.last_name}".strip() or actor.username
+            perfil_actor = getattr(actor, 'perfilusuario', None)
+            if perfil_actor and perfil_actor.foto_perfil:
+                actor_image = perfil_actor.foto_perfil.url
+
+        pedido = getattr(notificacion, 'pedido', None)
+        notifications_payload.append({
+            'id': notificacion.id,
+            'mensaje': notificacion.mensaje,
+            'detalle': notificacion.detalle or '',
+            'fecha_creacion': notificacion.fecha_creacion.isoformat(),
+            'actor_name': actor_name,
+            'actor_profile_image': actor_image,
+            'pedido_id': pedido.id if pedido else None,
+            'pedido_compania': pedido.proveedor.nombre if pedido and pedido.proveedor else '',
+            'pedido_tipo_huevo': pedido.get_tipo_huevo_display() if pedido else '',
+            'pedido_presentacion': pedido.get_presentacion_display() if pedido else '',
+            'pedido_cantidad': _cantidad_total_pedido(pedido) if pedido else None,
+            'pedido_semana': pedido.semana.isoformat() if pedido and pedido.semana else '',
+            'pedido_estado': pedido.get_estado_display() if pedido else '',
+        })
+
     ultimo_evento = (
         Notificacion.objects
         .filter(usuario=request.user, reproducir_sonido=True)
@@ -3040,11 +3569,19 @@ def notificaciones_pedidos(request):
         .first()
     )
     if not ultimo_evento:
-        return JsonResponse({'last_event_id': None, 'last_event_ts': None})
+        return JsonResponse({
+            'last_event_id': None,
+            'last_event_ts': None,
+            'last_event_message': '',
+            'unread_count': len(unread_notifications),
+            'notifications': notifications_payload,
+        })
     return JsonResponse({
         'last_event_id': ultimo_evento.id,
         'last_event_ts': ultimo_evento.fecha_creacion.isoformat(),
         'last_event_message': ultimo_evento.mensaje,
+        'unread_count': len(unread_notifications),
+        'notifications': notifications_payload,
     })
 
 @login_required
