@@ -46,12 +46,37 @@ Inicio
                         {% endfor %}
                     </select>
                 </div>
+                <div class="col-12 col-md-4 mb-2">
+                    <label class="mb-1">Tipo de huevo</label>
+                    <select class="form-control js-tipo-huevo-dashboard" name="tipo_huevo">
+                        <option value="">Todos</option>
+                        {% for value, label in TIPO_HUEVO_CHOICES %}
+                        <option value="{{ value }}" {% if tipo_huevo == value %}selected{% endif %}>{{ label }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
                 <div class="col-12 col-md-2 mb-2">
                     <button type="submit" class="btn btn-primary btn-block">Filtrar</button>
                 </div>
-                <div class="col-12 col-md-4 mb-2">
+                <div class="col-12 col-md-2 mb-2">
+                    <a class="btn btn-outline-secondary btn-block" href="{% url 'inicio' %}">Limpiar</a>
+                </div>
+                <div class="col-12 col-md-6 mb-2">
                     <span class="small text-muted d-block">Semana seleccionada</span>
                     <strong>{{ semana_label }}</strong>
+                </div>
+                <div class="col-12 col-md-6 mb-2">
+                    <span class="small text-muted d-block">Categoria activa</span>
+                    <strong>{% if tipo_huevo_label %}{{ tipo_huevo_label }}{% else %}Todas{% endif %}</strong>
+                </div>
+            </div>
+            <div class="form-row">
+                <div class="col-12">
+                    <span class="small text-muted mr-2">Acceso rapido:</span>
+                    <a href="?{% if semana %}semana={{ semana }}{% endif %}" class="badge badge-pill {% if not tipo_huevo %}badge-primary{% else %}badge-light{% endif %} mr-1">Todos</a>
+                    {% for value, label in TIPO_HUEVO_CHOICES %}
+                    <a href="?{% if semana %}semana={{ semana }}&{% endif %}tipo_huevo={{ value }}" class="badge badge-pill {% if tipo_huevo == value %}badge-primary{% else %}badge-light{% endif %} mr-1">{{ label }}</a>
+                    {% endfor %}
                 </div>
             </div>
         </div>
@@ -156,7 +181,9 @@ Inicio
                         <canvas id="myPieChart"></canvas>
                     </div>
                     <div class="mt-3 text-center">
-                        <div class="text-xs text-uppercase text-muted">Total general</div>
+                        <div class="text-xs text-uppercase text-muted">
+                            Total general {% if tipo_huevo_label %}({{ tipo_huevo_label }}){% endif %}
+                        </div>
                         <div class="h5 font-weight-bold text-gray-800">{{ total_toneladas }} toneladas</div>
                     </div>
                     <div class="mt-4 text-center small">
@@ -200,7 +227,10 @@ Inicio
         </div>
     </div>
 
-    <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES Y CONFIRMADOS</h1>
+    <h1 class="h3 mb-2 text-gray-800">
+        LISTADO PENDIENTES Y CONFIRMADOS
+        {% if tipo_huevo_label %}<small class="text-muted">({{ tipo_huevo_label }})</small>{% endif %}
+    </h1>
     <div class="card shadow-sm mb-3">
         <div class="card-body py-3">
             <div class="form-row align-items-end">
@@ -532,12 +562,18 @@ Inicio
 
     document.addEventListener("DOMContentLoaded", function () {
         const semanaSelect = document.querySelector(".js-semana-dashboard");
+        const tipoHuevoSelect = document.querySelector(".js-tipo-huevo-dashboard");
         if (!semanaSelect || !semanaSelect.form) {
             return;
         }
         semanaSelect.addEventListener("change", function () {
             semanaSelect.form.submit();
         });
+        if (tipoHuevoSelect) {
+            tipoHuevoSelect.addEventListener("change", function () {
+                semanaSelect.form.submit();
+            });
+        }
     });
 
     document.addEventListener("DOMContentLoaded", function () {

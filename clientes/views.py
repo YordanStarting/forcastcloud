@@ -1,9 +1,10 @@
 import json
+import time as time_module
 from collections import OrderedDict
-from datetime import date, timedelta
+from datetime import date, datetime, time, timedelta
 from urllib.parse import urlencode
 from django.shortcuts import get_object_or_404, render, redirect
-from django.http import JsonResponse, HttpResponseForbidden
+from django.http import JsonResponse, HttpResponseForbidden, StreamingHttpResponse
 from django.core.paginator import Paginator
 from django.urls import NoReverseMatch, reverse
 from django.views.decorators.http import require_POST
@@ -30,13 +31,14 @@ from .forms import (
     UsuarioCrearForm,
     UsuarioEditarForm,
 )
-from django.db.models import Prefetch, Sum, Case, When, IntegerField, Q
+from django.db.models import Prefetch, Sum, Count, Case, When, IntegerField, Q, OuterRef, Subquery
 from django.db.models.functions import ExtractMonth
 from django.contrib.auth.models import User
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth import login, logout, update_session_auth_hash
 from django.contrib.auth.forms import AuthenticationForm
 from django.templatetags.static import static
+from django.utils import timezone
 
 PEDIDO_ESTADO_CHOICES = list(Pedido.ESTADO_CHOICES)
 PEDIDO_ESTADOS_VALIDOS = {value for value, _ in PEDIDO_ESTADO_CHOICES}
@@ -69,6 +71,10 @@ ROL_ESTADOS_PERMITIDOS = {
 
 PERFIL_CACHE_ATTR = '_perfil_usuario_cache'
 PERFIL_CACHE_LOADED_ATTR = '_perfil_usuario_cache_loaded'
+PAGINACION_PER_PAGE_DEFAULT = 20
+PAGINACION_PER_PAGE_OPCIONES = (20, 50)
+NOTIFICACIONES_SSE_HEARTBEAT_SEGUNDOS = 30
+NOTIFICACIONES_SSE_MAX_EVENTOS = 40
 
 
 def _obtener_perfil_usuario(user):
@@ -111,6 +117,68 @@ def _resolver_next_url(next_value, default_name='editartablas'):
         return reverse(next_value)
     except NoReverseMatch:
         return reverse(default_name)
+
+
+def _resolver_per_page(request, *, default=PAGINACION_PER_PAGE_DEFAULT):
+    per_page_raw = request.GET.get('per_page')
+    try:
+        per_page = int(per_page_raw)
+    except (TypeError, ValueError):
+        per_page = default
+    if per_page not in PAGINACION_PER_PAGE_OPCIONES:
+        per_page = default
+    return per_page
+
+
+def _paginacion_desde_queryset(request, qs, *, default=PAGINACION_PER_PAGE_DEFAULT):
+    per_page = _resolver_per_page(request, default=default)
+    paginator = Paginator(qs, per_page)
+    page_obj = paginator.get_page(request.GET.get('page'))
+    query_params = request.GET.copy()
+    query_params.pop('page', None)
+    return page_obj, query_params.urlencode(), per_page
+
+
+def _rango_datetime_para_fecha(fecha_iso):
+    try:
+        fecha = date.fromisoformat(fecha_iso)
+    except (TypeError, ValueError):
+        return None
+    fecha_inicio = datetime.combine(fecha, time.min)
+    fecha_fin = fecha_inicio + timedelta(days=1)
+    if timezone.is_naive(fecha_inicio):
+        tz_actual = timezone.get_current_timezone()
+        fecha_inicio = timezone.make_aware(fecha_inicio, tz_actual)
+        fecha_fin = timezone.make_aware(fecha_fin, tz_actual)
+    return fecha_inicio, fecha_fin
+
+
+def _resumen_notificaciones_usuario(user):
+    unread_count = (
+        Notificacion.objects
+        .filter(usuario=user, leida=False)
+        .count()
+    )
+    ultimo_evento = (
+        Notificacion.objects
+        .filter(usuario=user, reproducir_sonido=True)
+        .order_by('-fecha_creacion')
+        .values('id', 'fecha_creacion', 'mensaje')
+        .first()
+    )
+    if not ultimo_evento:
+        return {
+            'last_event_id': None,
+            'last_event_ts': None,
+            'last_event_message': '',
+            'unread_count': unread_count,
+        }
+    return {
+        'last_event_id': ultimo_evento['id'],
+        'last_event_ts': ultimo_evento['fecha_creacion'].isoformat() if ultimo_evento['fecha_creacion'] else None,
+        'last_event_message': ultimo_evento['mensaje'] or '',
+        'unread_count': unread_count,
+    }
 
 
 def _estados_permitidos_para_usuario(user):
@@ -201,15 +269,6 @@ def _crear_notificaciones_globales(
     ]
     if notificaciones:
         Notificacion.objects.bulk_create(notificaciones)
-    for usuario in usuarios_activos:
-        ids_exceso = list(
-            Notificacion.objects
-            .filter(usuario=usuario)
-            .order_by('-fecha_creacion')
-            .values_list('id', flat=True)[5:]
-        )
-        if ids_exceso:
-            Notificacion.objects.filter(id__in=ids_exceso).delete()
 
 
 def _registrar_evento_creacion_pedido(pedido, usuario):
@@ -741,6 +800,7 @@ def mi_perfil(request):
 @login_required
 def inicio(request):
     cantidad_expr = _cantidad_pedido_expr()
+    tipo_huevo_map = dict(TIPO_HUEVO_CHOICES)
     pedidos_base_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_base_qs, filtros = filtrar_pedidos(
         request,
@@ -781,18 +841,16 @@ def inicio(request):
         if pedido.ciudad in pedidos_por_ciudad:
             pedidos_por_ciudad[pedido.ciudad].append(pedido)
 
-    pedidos_pendientes = pedidos_tablas_qs.filter(estado='PENDIENTE').count()
-    pedidos_confirmados = pedidos_tablas_qs.filter(
-        estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD
-    ).count()
-
-    total_pendientes_kg = pedidos_tablas_qs.filter(estado='PENDIENTE').aggregate(total=Sum(cantidad_expr))['total'] or 0
-    total_confirmados_kg = (
-        pedidos_tablas_qs
-        .filter(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD)
-        .aggregate(total=Sum(cantidad_expr))['total']
-        or 0
+    resumen_estados = pedidos_tablas_qs.aggregate(
+        pedidos_pendientes=Count('id', filter=Q(estado='PENDIENTE')),
+        pedidos_confirmados=Count('id', filter=Q(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD)),
+        total_pendientes_kg=Sum(cantidad_expr, filter=Q(estado='PENDIENTE')),
+        total_confirmados_kg=Sum(cantidad_expr, filter=Q(estado__in=PEDIDO_ESTADOS_CONFIRMADOS_DASHBOARD)),
     )
+    pedidos_pendientes = resumen_estados.get('pedidos_pendientes') or 0
+    pedidos_confirmados = resumen_estados.get('pedidos_confirmados') or 0
+    total_pendientes_kg = resumen_estados.get('total_pendientes_kg') or 0
+    total_confirmados_kg = resumen_estados.get('total_confirmados_kg') or 0
     chart_labels = ['Pendientes', 'Confirmados']
     chart_pendientes_data = [total_pendientes_kg, 0]
     chart_confirmados_data = [0, total_confirmados_kg]
@@ -800,12 +858,15 @@ def inicio(request):
     fecha_inicio_semana = semana_seleccionada
     fecha_fin_semana = semana_seleccionada + timedelta(days=5) if semana_seleccionada else None
     total_materia_prima_semana = 0
+    tipo_huevo_filtro = (filtros.get('tipo_huevo') or '').strip()
     if fecha_inicio_semana and fecha_fin_semana:
-        total_materia_prima_semana = (
-            MateriaPrima.objects
-            .filter(fecha__gte=fecha_inicio_semana, fecha__lte=fecha_fin_semana)
-            .aggregate(total=Sum('cantidad_kg'))['total'] or 0
+        materia_prima_qs = MateriaPrima.objects.filter(
+            fecha__gte=fecha_inicio_semana,
+            fecha__lte=fecha_fin_semana,
         )
+        if tipo_huevo_filtro in tipo_huevo_map:
+            materia_prima_qs = materia_prima_qs.filter(tipo_huevo=tipo_huevo_filtro)
+        total_materia_prima_semana = materia_prima_qs.aggregate(total=Sum('cantidad_kg'))['total'] or 0
     total_comerciales_semana = pedidos_tablas_qs.aggregate(total=Sum(cantidad_expr))['total'] or 0
     chart_mp_labels = [f"Semana {_semana_label_corta(semana_seleccionada)}"] if semana_seleccionada else ['Semana']
     chart_materia_prima_data = [total_materia_prima_semana]
@@ -883,6 +944,8 @@ def inicio(request):
         'city_labels': city_labels,
         'city_data': city_data,
         'total_toneladas': total_toneladas,
+        'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
+        'tipo_huevo_label': tipo_huevo_map.get(tipo_huevo_filtro, ''),
         'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
         'semana': semana_seleccionada.isoformat() if semana_seleccionada else '',
         'semana_label': _semana_label_corta(semana_seleccionada),
@@ -1302,9 +1365,7 @@ def _render_panel_operativo(request, *, tipo):
     if tab_context not in tabs_permitidos:
         tab_context = tab_default
     if tipo == 'produccion' and tab_context == 'estimado':
-        cantidad_attr = 'estimado_kg'
-        gestion_label = 'Estimado'
-        subtitulo = 'Programacion y estimado (borrador) por sucursal'
+        subtitulo = 'Planeador manual de producto estimado'
 
     ciudad_valores = {value for value, _ in CIUDAD_CHOICES}
     presentacion_valores = {value for value, _ in PRESENTACION_CHOICES}
@@ -1363,64 +1424,7 @@ def _render_panel_operativo(request, *, tipo):
                 tab_origen = 'producto'
         elif tab_origen not in {'producto', 'resumen'}:
             tab_origen = 'producto'
-        if (
-            tipo == 'produccion'
-            and tab_origen == 'estimado'
-            and action == 'guardar_estimado_proveedor'
-        ):
-            if not _usuario_puede_editar_estimado_semanal(request.user):
-                return HttpResponseForbidden("No tienes permisos para guardar estimados semanales.")
-
-            semana_post = _ajustar_a_lunes(request.POST.get('semana'))
-            if not semana_post:
-                hoy = date.today()
-                semana_post = hoy - timedelta(days=hoy.weekday())
-
-            proveedor_id_raw = (request.POST.get('proveedor_id') or '').strip()
-            sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
-            presentacion_post = (request.POST.get('presentacion') or '').strip().upper()
-            observaciones_post = (request.POST.get('observaciones') or '').strip()
-            try:
-                cantidad_post = int(request.POST.get('cantidad_kg') or 0)
-            except (TypeError, ValueError):
-                cantidad_post = 0
-            cantidad_post = max(cantidad_post, 0)
-
-            proveedor = None
-            try:
-                proveedor_id = int(proveedor_id_raw)
-            except (TypeError, ValueError):
-                proveedor_id = 0
-            if proveedor_id > 0:
-                proveedor = Proveedor.objects.filter(id=proveedor_id).first()
-
-            if (
-                proveedor
-                and sucursal_post in ciudad_valores
-                and presentacion_post in presentacion_valores
-            ):
-                EstimadoSemanalProveedor.objects.update_or_create(
-                    semana=semana_post,
-                    sucursal=sucursal_post,
-                    proveedor=proveedor,
-                    defaults={
-                        'presentacion': presentacion_post,
-                        'cantidad_kg': cantidad_post,
-                        'observaciones': observaciones_post,
-                        'actualizado_por': request.user,
-                    },
-                )
-
-            redirect_params = {'tab': 'estimado', 'semana': semana_post.isoformat()}
-            sucursal_post_filter = (request.POST.get('sucursal_filter') or '').strip().upper()
-            vida_util_post_filter = (request.POST.get('vida_util_filter') or '').strip().upper()
-            if sucursal_post_filter in ciudad_valores:
-                redirect_params['sucursal'] = sucursal_post_filter
-            if vida_util_post_filter in presentacion_valores:
-                redirect_params['vida_util'] = vida_util_post_filter
-            return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
-
-        cantidad_attr_post = 'estimado_kg' if tab_origen == 'estimado' else 'fabricado_kg'
+        cantidad_attr_post = 'fabricado_kg'
         pedido_id = request.POST.get('pedido_id')
         pedido = get_object_or_404(
             Pedido.objects.filter(estado__in=estados_panel),
@@ -1587,10 +1591,10 @@ def _render_panel_operativo(request, *, tipo):
 
     despachos_registrados = []
     resumen_logistica = {'rows': [], 'totales': {'programado_kg': 0, 'despachado_kg': 0, 'pendiente_kg': 0}}
-    estimados_proveedores = {'bloques': [], 'total_general_estimado_kg': 0}
     active_tab = tab_context
     log_page_obj = None
     log_query_string = ''
+    log_per_page = PAGINACION_PER_PAGE_DEFAULT
     panel_query_string = ''
     logistica_query_string = ''
     log_filters = {
@@ -1651,6 +1655,7 @@ def _render_panel_operativo(request, *, tipo):
             request.GET.get('accion')
             or request.GET.get('q')
             or request.GET.get('page')
+            or request.GET.get('per_page')
             or (
                 request.GET.get('sucursal')
                 and requested_tab == 'log'
@@ -1660,12 +1665,6 @@ def _render_panel_operativo(request, *, tipo):
             active_tab = requested_tab
         elif has_log_params:
             active_tab = 'log'
-
-        estimados_proveedores = _construir_estimados_proveedores_semana(
-            semana_seleccionada=semana_seleccionada,
-            sucursal_filtro=filtros_panel.get('sucursal', ''),
-            presentacion_filtro=filtros_panel.get('vida_util', ''),
-        )
 
         registros_qs = RegistroProduccion.objects.select_related('usuario', 'pedido')
         if accion := (request.GET.get('accion') or '').strip():
@@ -1684,8 +1683,10 @@ def _render_panel_operativo(request, *, tipo):
             )
             log_filters['q'] = q_value
 
-        paginator = Paginator(registros_qs, 10)
-        log_page_obj = paginator.get_page(request.GET.get('page'))
+        log_page_obj, _, log_per_page = _paginacion_desde_queryset(
+            request,
+            registros_qs.order_by('-fecha_creacion', '-id'),
+        )
         for registro in log_page_obj.object_list:
             registro.accion_label = PRODUCCION_ACCION_LABELS.get(registro.accion, registro.accion)
             registro.sucursal_label = dict(CIUDAD_CHOICES).get(registro.sucursal, registro.sucursal)
@@ -1714,8 +1715,10 @@ def _render_panel_operativo(request, *, tipo):
         'despachos_registrados': despachos_registrados,
         'active_tab': active_tab,
         'log_page_obj': log_page_obj,
+        'log_per_page': log_per_page,
         'log_filters': log_filters,
         'log_query_string': log_query_string,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         'produccion_accion_choices': RegistroProduccion.ACCION_CHOICES,
         'ciudades': CIUDAD_CHOICES,
         'presentacion_choices': PRESENTACION_CHOICES,
@@ -1736,8 +1739,6 @@ def _render_panel_operativo(request, *, tipo):
             'panel_label': panel_label,
             'panel_label_lower': panel_label.lower(),
             'panel_query_string': panel_query_string,
-            'estimados_proveedores': estimados_proveedores,
-            'puede_editar_estimado_semanal': _usuario_puede_editar_estimado_semanal(request.user),
             'puede_editar_gestion_produccion': puede_editar_cantidad,
         })
     else:
@@ -2288,8 +2289,15 @@ def resumen_pedidos(request):
 # vista logica del forscast.
 @login_required
 def clientesweb(request):
-    clientes = Cliente.objects.all()
-    return render(request, 'clientesweb/index.html', {'Clientes': clientes})
+    clientes_qs = Cliente.objects.all().order_by('-id')
+    page_obj, query_string, per_page = _paginacion_desde_queryset(request, clientes_qs)
+    return render(request, 'clientesweb/index.html', {
+        'Clientes': page_obj.object_list,
+        'page_obj': page_obj,
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
+    })
 # vista logica del forscast.
 @login_required
 def crearcliente(request):
@@ -2334,18 +2342,16 @@ def verproveedores(request):
     if q:
         proveedores_qs = proveedores_qs.filter(nombre__icontains=q)
 
-    paginator = Paginator(proveedores_qs, 10)
-    page_obj = paginator.get_page(request.GET.get('page'))
-
-    query_params = request.GET.copy()
-    query_params.pop('page', None)
+    page_obj, query_string, per_page = _paginacion_desde_queryset(request, proveedores_qs)
 
     return render(request, 'proveedores/lista.html', {
         'proveedores': page_obj.object_list,
         'page_obj': page_obj,
-        'query_string': query_params.urlencode(),
+        'query_string': query_string,
         'ciudad': ciudad,
         'q': q,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         'CIUDAD_CHOICES': CIUDAD_CHOICES,
     })
 
@@ -2388,7 +2394,9 @@ def eliminarproveedor(request, id):
 def usuarios_lista(request):
     if not _usuario_puede_gestionar_usuarios(request.user):
         return HttpResponseForbidden("No tienes permisos para ver usuarios.")
-    usuarios = list(User.objects.all().order_by('username'))
+    usuarios_qs = User.objects.all().order_by('username')
+    page_obj, query_string, per_page = _paginacion_desde_queryset(request, usuarios_qs)
+    usuarios = list(page_obj.object_list)
     perfiles = PerfilUsuario.objects.filter(usuario__in=usuarios)
     roles = {perfil.usuario_id: perfil.get_rol_display() for perfil in perfiles}
     ciudades = {perfil.usuario_id: perfil.get_ciudad_display() for perfil in perfiles}
@@ -2400,7 +2408,13 @@ def usuarios_lista(request):
         }
         for usuario in usuarios
     ]
-    return render(request, 'usuarios/lista.html', {'usuarios': data})
+    return render(request, 'usuarios/lista.html', {
+        'usuarios': data,
+        'page_obj': page_obj,
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
+    })
 
 
 @login_required
@@ -3109,7 +3123,7 @@ def editartablas(request):
         .order_by('-semana')
     )
 
-    pedidos, filtros = filtrar_pedidos(
+    pedidos_filtrados_qs, filtros = filtrar_pedidos(
         request,
         pedidos_visibles_qs,
         include_fecha_creacion=False,
@@ -3134,21 +3148,25 @@ def editartablas(request):
         for semana in semanas_disponibles
     ]
 
-    # SUMAS CORRECTAS (sin duplicar)
-    total_liquido = pedidos.filter(
-        tipo_huevo__in=['HELU', 'CLLU']
-    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
-
-    total_yema = pedidos.filter(
-        tipo_huevo='YELU'
-    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
-
-    total_mezcla = pedidos.filter(
-        tipo_huevo='MEPU'
-    ).aggregate(total=Sum(_cantidad_pedido_expr()))['total'] or 0
+    resumen_totales = pedidos_filtrados_qs.aggregate(
+        total_liquido=Sum(_cantidad_pedido_expr(), filter=Q(tipo_huevo__in=['HELU', 'CLLU'])),
+        total_yema=Sum(_cantidad_pedido_expr(), filter=Q(tipo_huevo='YELU')),
+        total_mezcla=Sum(_cantidad_pedido_expr(), filter=Q(tipo_huevo='MEPU')),
+    )
+    total_liquido = resumen_totales.get('total_liquido') or 0
+    total_yema = resumen_totales.get('total_yema') or 0
+    total_mezcla = resumen_totales.get('total_mezcla') or 0
+    page_obj, query_string, per_page = _paginacion_desde_queryset(
+        request,
+        pedidos_filtrados_qs.order_by('-fecha_creacion', '-id'),
+    )
 
     return render(request, 'paginas/editartablas.html', {
-        'pedidos': pedidos,
+        'pedidos': page_obj.object_list,
+        'page_obj': page_obj,
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         'proveedores': proveedores,
         'CIUDAD_CHOICES': CIUDAD_CHOICES,
         'ciudad_todas_value': ciudad_todas_value,
@@ -3172,17 +3190,27 @@ def historial(request):
         'Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio',
         'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre',
     ]
-    registros_historial_qs = (
+    ultimo_registro_qs = (
         RegistroEstadoPedido.objects
-        .select_related('usuario')
-        .filter(estado_nuevo__in=PEDIDO_ESTADOS_HISTORIAL)
+        .filter(
+            pedido_id=OuterRef('pk'),
+            estado_nuevo__in=PEDIDO_ESTADOS_HISTORIAL,
+        )
         .order_by('-fecha_creacion')
     )
-    pedidos_qs = Pedido.objects.select_related('proveedor').prefetch_related(
-        'entregas',
-        Prefetch('registros_estado', queryset=registros_historial_qs, to_attr='registros_historial')
-    ).filter(
-        estado__in=PEDIDO_ESTADOS_HISTORIAL
+    pedidos_qs = (
+        Pedido.objects
+        .select_related('proveedor')
+        .prefetch_related('entregas')
+        .filter(estado__in=PEDIDO_ESTADOS_HISTORIAL)
+        .annotate(
+            historial_estado_nuevo=Subquery(ultimo_registro_qs.values('estado_nuevo')[:1]),
+            historial_fecha_registro=Subquery(ultimo_registro_qs.values('fecha_creacion')[:1]),
+            historial_descripcion=Subquery(ultimo_registro_qs.values('descripcion')[:1]),
+            historial_usuario_first_name=Subquery(ultimo_registro_qs.values('usuario__first_name')[:1]),
+            historial_usuario_last_name=Subquery(ultimo_registro_qs.values('usuario__last_name')[:1]),
+            historial_usuario_username=Subquery(ultimo_registro_qs.values('usuario__username')[:1]),
+        )
     )
 
     pedidos_base_filtrados_qs, filtros = filtrar_pedidos(
@@ -3261,21 +3289,23 @@ def historial(request):
         if mes:
             historial_chart_data[mes - 1] = row.get('total') or 0
 
-    pedidos = list(pedidos)
+    page_obj, query_string, per_page = _paginacion_desde_queryset(request, pedidos)
+    pedidos = list(page_obj.object_list)
     for pedido in pedidos:
-        registro_historial = pedido.registros_historial[0] if getattr(pedido, 'registros_historial', None) else None
+        usuario_first = (pedido.historial_usuario_first_name or '').strip()
+        usuario_last = (pedido.historial_usuario_last_name or '').strip()
+        usuario_username = (pedido.historial_usuario_username or '').strip()
+        usuario_nombre = f"{usuario_first} {usuario_last}".strip()
+        if not usuario_nombre:
+            usuario_nombre = usuario_username or 'Sistema'
         pedido.estado_historial = (
-            _estado_pedido_label(registro_historial.estado_nuevo)
-            if registro_historial
+            _estado_pedido_label(pedido.historial_estado_nuevo)
+            if pedido.historial_estado_nuevo
             else pedido.get_estado_display()
         )
-        pedido.fecha_historial = registro_historial.fecha_creacion if registro_historial else None
-        pedido.usuario_historial = _nombre_usuario(registro_historial.usuario) if registro_historial else 'Sistema'
-        pedido.detalle_historial = (
-            (registro_historial.descripcion or '').strip()
-            if registro_historial
-            else ''
-        )
+        pedido.fecha_historial = pedido.historial_fecha_registro
+        pedido.usuario_historial = usuario_nombre
+        pedido.detalle_historial = (pedido.historial_descripcion or '').strip()
 
     proveedores = Proveedor.objects.only('id', 'nombre', 'activo').filter(activo=True)
     estados_historial_choices = [
@@ -3294,6 +3324,10 @@ def historial(request):
 
     return render(request, 'pedidos/historial.html', {
         'pedidos': pedidos,
+        'page_obj': page_obj,
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         'proveedores': proveedores,
         'PEDIDO_ESTADO_CHOICES': estados_historial_choices,
         'anios_disponibles': anios_disponibles,
@@ -3328,10 +3362,14 @@ def editar_pedidos(request):
         include_semana=False,
     )
     semanas_disponibles = _obtener_semanas_disponibles(pedidos_semana_qs, estados=PEDIDO_ESTADOS_ACTIVOS)
-    pedidos, filtros = filtrar_pedidos(request, pedidos_qs)
+    pedidos_filtrados_qs, filtros = filtrar_pedidos(request, pedidos_qs)
     semana_seleccionada = _ajustar_a_lunes(filtros.get('semana'))
     if semana_seleccionada and semana_seleccionada not in semanas_disponibles:
         semanas_disponibles = sorted(set([*semanas_disponibles, semana_seleccionada]), reverse=True)
+    page_obj, query_string, per_page = _paginacion_desde_queryset(
+        request,
+        pedidos_filtrados_qs.order_by('-fecha_creacion', '-id'),
+    )
     proveedores = Proveedor.objects.filter(activo=True)
     estados_activos_choices = [
         (value, label)
@@ -3340,7 +3378,11 @@ def editar_pedidos(request):
     ]
 
     return render(request, 'pedidos/editar_pedidos.html', {
-        'pedidos': pedidos,
+        'pedidos': page_obj.object_list,
+        'page_obj': page_obj,
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         'proveedores': proveedores,
         'TIPO_HUEVO_CHOICES': TIPO_HUEVO_CHOICES,
         'PRESENTACION_CHOICES': PRESENTACION_CHOICES,
@@ -3441,19 +3483,26 @@ def registros_pedidos(request):
         filtros['usuario'] = usuario_id
 
     if fecha := request.GET.get('fecha'):
-        registros_qs = registros_qs.filter(fecha_creacion__date=fecha)
-        filtros['fecha'] = fecha
+        rango_fecha = _rango_datetime_para_fecha(fecha)
+        if rango_fecha:
+            fecha_inicio, fecha_fin = rango_fecha
+            registros_qs = registros_qs.filter(
+                fecha_creacion__gte=fecha_inicio,
+                fecha_creacion__lt=fecha_fin,
+            )
+            filtros['fecha'] = fecha
 
-    paginator = Paginator(registros_qs, 10)
-    page_obj = paginator.get_page(request.GET.get('page'))
-
-    query_params = request.GET.copy()
-    query_params.pop('page', None)
+    page_obj, query_string, per_page = _paginacion_desde_queryset(
+        request,
+        registros_qs.order_by('-fecha_creacion', '-id'),
+    )
 
     return render(request, 'pedidos/registros.html', {
         'page_obj': page_obj,
         'usuarios': usuarios,
-        'query_string': query_params.urlencode(),
+        'query_string': query_string,
+        'per_page': per_page,
+        'per_page_opciones': PAGINACION_PER_PAGE_OPCIONES,
         **filtros,
     })
 
@@ -3505,8 +3554,14 @@ def filtrar_pedidos(
 
     if include_fecha_creacion:
         if fecha_creacion := request.GET.get('fecha_creacion'):
-            qs = qs.filter(fecha_creacion__date=fecha_creacion)
-            filtros['fecha_creacion'] = fecha_creacion
+            rango_fecha = _rango_datetime_para_fecha(fecha_creacion)
+            if rango_fecha:
+                fecha_inicio, fecha_fin = rango_fecha
+                qs = qs.filter(
+                    fecha_creacion__gte=fecha_inicio,
+                    fecha_creacion__lt=fecha_fin,
+                )
+                filtros['fecha_creacion'] = fecha_creacion
 
     if include_semana:
         if semana := request.GET.get('semana'):
@@ -3590,27 +3645,47 @@ def notificaciones_pedidos(request):
             'pedido_estado': pedido.get_estado_display() if pedido else '',
         })
 
-    ultimo_evento = (
-        Notificacion.objects
-        .filter(usuario=request.user, reproducir_sonido=True)
-        .order_by('-fecha_creacion')
-        .first()
-    )
-    if not ultimo_evento:
-        return JsonResponse({
-            'last_event_id': None,
-            'last_event_ts': None,
-            'last_event_message': '',
-            'unread_count': len(unread_notifications),
-            'notifications': notifications_payload,
-        })
+    resumen = _resumen_notificaciones_usuario(request.user)
     return JsonResponse({
-        'last_event_id': ultimo_evento.id,
-        'last_event_ts': ultimo_evento.fecha_creacion.isoformat(),
-        'last_event_message': ultimo_evento.mensaje,
-        'unread_count': len(unread_notifications),
+        **resumen,
         'notifications': notifications_payload,
     })
+
+
+@login_required
+def notificaciones_resumen(request):
+    return JsonResponse(_resumen_notificaciones_usuario(request.user))
+
+
+@login_required
+def notificaciones_sse(request):
+    def _stream():
+        ultimo_payload = None
+        eventos_emitidos = 0
+
+        while eventos_emitidos < NOTIFICACIONES_SSE_MAX_EVENTOS:
+            if request.user.is_authenticated:
+                payload_dict = _resumen_notificaciones_usuario(request.user)
+                payload_json = json.dumps(payload_dict)
+                if payload_json != ultimo_payload:
+                    ultimo_payload = payload_json
+                    eventos_emitidos += 1
+                    event_id = payload_dict.get('last_event_id') or 0
+                    yield f"id: {event_id}\n"
+                    yield "event: notification\n"
+                    yield f"data: {payload_json}\n\n"
+                else:
+                    yield ": heartbeat\n\n"
+            else:
+                yield ": disconnected\n\n"
+                break
+
+            time_module.sleep(NOTIFICACIONES_SSE_HEARTBEAT_SEGUNDOS)
+
+    response = StreamingHttpResponse(_stream(), content_type='text/event-stream')
+    response['Cache-Control'] = 'no-cache'
+    response['X-Accel-Buffering'] = 'no'
+    return response
 
 @login_required
 def crear_pedido_semanal(request):
