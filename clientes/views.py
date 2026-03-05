@@ -568,9 +568,9 @@ def _usuario_puede_cambiar_estado_panel(user, *, tipo, estado_nuevo=None):
 
     rol = _obtener_rol_usuario(user)
     if tipo == 'produccion':
-        # Solo produccion puede mover pedidos a En produccion.
+        # Produccion y programador pueden mover pedidos a En produccion.
         if estado_nuevo == 'EN_PRODUCCION':
-            return rol == 'produccion'
+            return rol in {'produccion', 'programador'}
         return False
 
     if tipo == 'logistica':
