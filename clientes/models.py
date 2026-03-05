@@ -68,6 +68,7 @@ class PerfilUsuario(models.Model):
     ROL_CHOICES = [
         ('admin', 'Administrador'),
         ('comercial', 'Comercial'),
+        ('auxiliar', 'Auxiliar'),
         ('logistica', 'Logistica'),
         ('produccion', 'Produccion'),
         ('programador', 'Programador'),

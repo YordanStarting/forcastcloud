@@ -201,6 +201,24 @@ Inicio
     </div>
 
     <h1 class="h3 mb-2 text-gray-800">LISTADO PENDIENTES Y CONFIRMADOS</h1>
+    <div class="card shadow-sm mb-3">
+        <div class="card-body py-3">
+            <div class="form-row align-items-end">
+                <div class="col-12 col-md-4 mb-2">
+                    <label for="dashboardPresentacionFilter" class="mb-1">Filtrar por presentacion</label>
+                    <select id="dashboardPresentacionFilter" class="form-control form-control-sm">
+                        <option value="">Todas</option>
+                    </select>
+                </div>
+                <div class="col-12 col-md-4 mb-2">
+                    <label for="dashboardTipoHuevoFilter" class="mb-1">Filtrar por tipo de huevo</label>
+                    <select id="dashboardTipoHuevoFilter" class="form-control form-control-sm">
+                        <option value="">Todos</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
 
     {% for tabla in tablas_ciudades %}
     <div class="card shadow mb-4">
@@ -231,13 +249,12 @@ Inicio
                     </thead>
                     <tbody>
                         {% for pedido in tabla.pedidos %}
-                        <tr data-pedido-id="{{ pedido.id }}">
+                        <tr
+                            data-pedido-id="{{ pedido.id }}"
+                            data-presentacion-label="{{ pedido.get_presentacion_display }}"
+                            data-tipo-huevo-label="{{ pedido.get_tipo_huevo_display }}">
                             <td data-label="ID Pedido">#{{ pedido.id }}</td>
-                            <td data-label="Presentacion"
-                                class="js-dashboard-filter"
-                                data-filter-param="presentacion"
-                                data-filter-value="{{ pedido.presentacion }}"
-                                style="cursor: pointer;">
+                            <td data-label="Presentacion">
                                 {{ pedido.get_presentacion_display }}
                             </td>
                             <td data-label="Compania">
@@ -561,24 +578,83 @@ Inicio
     });
 
     document.addEventListener("DOMContentLoaded", function () {
-        const cells = document.querySelectorAll(".js-dashboard-filter");
-        if (!cells.length) {
+        const presentacionFilter = document.getElementById("dashboardPresentacionFilter");
+        const tipoHuevoFilter = document.getElementById("dashboardTipoHuevoFilter");
+        const rows = Array.from(document.querySelectorAll("tr[data-pedido-id]"));
+        if (!presentacionFilter || !tipoHuevoFilter || !rows.length) {
             return;
         }
-        cells.forEach((cell) => {
-            cell.addEventListener("click", function (event) {
-                if (event.target.closest("button, a, [data-toggle='modal']")) {
-                    return;
-                }
-                const value = this.dataset.filterValue;
-                if (!value) {
-                    return;
-                }
-                const url = new URL(window.location.href);
-                url.searchParams.set("presentacion", value);
-                window.location.href = url.toString();
+
+        const normalize = (value) => (value || "").toString().trim().toLowerCase();
+
+        const buildOptions = (select, labelsMap) => {
+            const labels = Array.from(labelsMap.entries())
+                .sort((a, b) => a[1].localeCompare(b[1], "es", { sensitivity: "base" }));
+
+            labels.forEach(([normalized, label]) => {
+                const option = document.createElement("option");
+                option.value = normalized;
+                option.textContent = label;
+                select.appendChild(option);
             });
+        };
+
+        const presentacionLabels = new Map();
+        const tipoHuevoLabels = new Map();
+        rows.forEach((row) => {
+            const presentacionLabel = (row.dataset.presentacionLabel || "").trim();
+            const tipoHuevoLabel = (row.dataset.tipoHuevoLabel || "").trim();
+            const presentacionKey = normalize(presentacionLabel);
+            const tipoHuevoKey = normalize(tipoHuevoLabel);
+
+            if (presentacionKey && !presentacionLabels.has(presentacionKey)) {
+                presentacionLabels.set(presentacionKey, presentacionLabel);
+            }
+            if (tipoHuevoKey && !tipoHuevoLabels.has(tipoHuevoKey)) {
+                tipoHuevoLabels.set(tipoHuevoKey, tipoHuevoLabel);
+            }
         });
+
+        buildOptions(presentacionFilter, presentacionLabels);
+        buildOptions(tipoHuevoFilter, tipoHuevoLabels);
+
+        const updateEmptyRows = () => {
+            document.querySelectorAll("table tbody").forEach((tbody) => {
+                const bodyRows = Array.from(tbody.querySelectorAll("tr[data-pedido-id]"));
+                if (!bodyRows.length) {
+                    return;
+                }
+                const hasVisibleRows = bodyRows.some((row) => !row.classList.contains("d-none"));
+                let emptyRow = tbody.querySelector(".js-dashboard-empty-filter");
+
+                if (!emptyRow) {
+                    emptyRow = document.createElement("tr");
+                    emptyRow.className = "js-dashboard-empty-filter d-none";
+                    emptyRow.innerHTML = '<td colspan="9" class="text-center text-muted">Sin pedidos para los filtros seleccionados.</td>';
+                    tbody.appendChild(emptyRow);
+                }
+                emptyRow.classList.toggle("d-none", hasVisibleRows);
+            });
+        };
+
+        const applyFilters = () => {
+            const selectedPresentacion = normalize(presentacionFilter.value);
+            const selectedTipoHuevo = normalize(tipoHuevoFilter.value);
+
+            rows.forEach((row) => {
+                const rowPresentacion = normalize(row.dataset.presentacionLabel);
+                const rowTipoHuevo = normalize(row.dataset.tipoHuevoLabel);
+                const matchPresentacion = !selectedPresentacion || rowPresentacion === selectedPresentacion;
+                const matchTipoHuevo = !selectedTipoHuevo || rowTipoHuevo === selectedTipoHuevo;
+                row.classList.toggle("d-none", !(matchPresentacion && matchTipoHuevo));
+            });
+
+            updateEmptyRows();
+        };
+
+        presentacionFilter.addEventListener("change", applyFilters);
+        tipoHuevoFilter.addEventListener("change", applyFilters);
+        applyFilters();
     });
 
     document.addEventListener("DOMContentLoaded", function () {

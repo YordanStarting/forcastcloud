@@ -103,6 +103,7 @@ Produccion
                 <p class="small text-muted mt-n2 mb-3">Semana activa: {{ semana_label }}</p>
                 {% endif %}
 
+                {% if active_tab != 'estimado' %}
                 {% for bloque in bloques_ciudad %}
                 <div class="card border mb-3 js-panel-city-card" data-sucursal="{{ bloque.codigo }}">
                     <div class="card-header py-2 d-flex justify-content-between align-items-center">
@@ -267,6 +268,7 @@ Produccion
                         </div>
                     </div>
                 </div>
+                {% endif %}
 
                 {% if active_tab == 'estimado' %}
                 <div class="card border mt-4">

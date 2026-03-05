@@ -11,6 +11,7 @@ def notificaciones(request):
     can_manage_proveedores = False
     can_manage_usuarios = False
     can_manage_pedidos = False
+    can_manage_materia_prima = False
     can_change_pedido_status = False
     can_view_produccion_tab = False
     can_view_logistica_tab = False
@@ -24,6 +25,7 @@ def notificaciones(request):
             'can_manage_proveedores': can_manage_proveedores,
             'can_manage_usuarios': can_manage_usuarios,
             'can_manage_pedidos': can_manage_pedidos,
+            'can_manage_materia_prima': can_manage_materia_prima,
             'can_change_pedido_status': can_change_pedido_status,
             'can_view_produccion_tab': can_view_produccion_tab,
             'can_view_logistica_tab': can_view_logistica_tab,
@@ -34,6 +36,7 @@ def notificaciones(request):
         can_manage_proveedores = True
         can_manage_usuarios = True
         can_manage_pedidos = True
+        can_manage_materia_prima = True
         can_change_pedido_status = True
         can_view_produccion_tab = True
         can_view_logistica_tab = True
@@ -54,7 +57,10 @@ def notificaciones(request):
         user_role = perfil.rol
         can_manage_proveedores = can_manage_proveedores or perfil.rol in {'admin', 'comercial'}
         can_manage_usuarios = can_manage_usuarios or perfil.rol == 'admin'
-        can_manage_pedidos = can_manage_pedidos or perfil.rol in {'admin', 'comercial'}
+        can_manage_pedidos = can_manage_pedidos or perfil.rol in {'admin', 'comercial', 'auxiliar'}
+        can_manage_materia_prima = can_manage_materia_prima or perfil.rol in {
+            'admin', 'comercial', 'auxiliar', 'produccion', 'programador'
+        }
         can_change_pedido_status = (
             can_change_pedido_status
             or perfil.rol in {'admin', 'comercial', 'logistica', 'produccion', 'programador'}
@@ -94,6 +100,7 @@ def notificaciones(request):
         'can_manage_proveedores': can_manage_proveedores,
         'can_manage_usuarios': can_manage_usuarios,
         'can_manage_pedidos': can_manage_pedidos,
+        'can_manage_materia_prima': can_manage_materia_prima,
         'can_change_pedido_status': can_change_pedido_status,
         'can_view_produccion_tab': can_view_produccion_tab,
         'can_view_logistica_tab': can_view_logistica_tab,

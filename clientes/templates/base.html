@@ -314,11 +314,24 @@
             </li>
 
             {% if can_view_produccion_tab %}
-            <li class="nav-item {% if current_url == 'panel_produccion' %}section-active{% endif %}">
-                <a class="nav-link" href="{% url 'panel_produccion' %}">
+            <li class="nav-item {% if current_url == 'panel_produccion' or current_url == 'crear_materia_prima' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'panel_produccion' and current_url != 'crear_materia_prima' %}collapsed{% endif %}"
+                    href="#" data-toggle="collapse" data-target="#collapseProduccion"
+                    aria-expanded="{% if current_url == 'panel_produccion' or current_url == 'crear_materia_prima' %}true{% else %}false{% endif %}"
+                    aria-controls="collapseProduccion">
                     <i class="fas fa-fw fa-industry"></i>
                     <span>Produccion</span>
                 </a>
+                <div id="collapseProduccion" class="collapse {% if current_url == 'panel_produccion' or current_url == 'crear_materia_prima' %}show{% endif %}"
+                    aria-labelledby="headingProduccion" data-parent="#accordionSidebar">
+                    <div class="bg-white py-2 collapse-inner rounded">
+                        <h6 class="collapse-header">Produccion:</h6>
+                        <a class="collapse-item" href="{% url 'panel_produccion' %}">Panel de produccion</a>
+                        {% if can_manage_materia_prima %}
+                        <a class="collapse-item" href="{% url 'crear_materia_prima' %}">Materia prima</a>
+                        {% endif %}
+                    </div>
+                </div>
             </li>
             {% endif %}
 
@@ -332,21 +345,20 @@
             {% endif %}
 
             {% if can_manage_pedidos %}
-            <li class="nav-item {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}section-active{% endif %}">
-                <a class="nav-link {% if current_url != 'crearpedido' and current_url != 'crear_pedido_beta' and current_url != 'crear_materia_prima' and current_url != 'editar_pedidos' and current_url != 'editarpedido' and current_url != 'editar_estado_pedido' and current_url != 'eliminarpedido' and current_url != 'marcar_realizado' %}collapsed{% endif %}"
+            <li class="nav-item {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}section-active{% endif %}">
+                <a class="nav-link {% if current_url != 'crearpedido' and current_url != 'crear_pedido_beta' and current_url != 'editar_pedidos' and current_url != 'editarpedido' and current_url != 'editar_estado_pedido' and current_url != 'eliminarpedido' and current_url != 'marcar_realizado' %}collapsed{% endif %}"
                     href="#" data-toggle="collapse" data-target="#collapsePedidosGestion"
-                    aria-expanded="{% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}true{% else %}false{% endif %}"
+                    aria-expanded="{% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}true{% else %}false{% endif %}"
                     aria-controls="collapsePedidosGestion">
                     <i class="fas fa-fw fa-clipboard-list"></i>
                     <span>Gestion de pedidos</span>
                 </a>
-                <div id="collapsePedidosGestion" class="collapse {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'crear_materia_prima' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}show{% endif %}"
+                <div id="collapsePedidosGestion" class="collapse {% if current_url == 'crearpedido' or current_url == 'crear_pedido_beta' or current_url == 'editar_pedidos' or current_url == 'editarpedido' or current_url == 'editar_estado_pedido' or current_url == 'eliminarpedido' or current_url == 'marcar_realizado' %}show{% endif %}"
                     aria-labelledby="headingPedidosGestion" data-parent="#accordionSidebar">
                     <div class="bg-white py-2 collapse-inner rounded">
                         <h6 class="collapse-header">Gestion:</h6>
                         <a class="collapse-item" href="{% url 'crearpedido' %}">Crear Pedido</a>
                         <a class="collapse-item" href="{% url 'crear_pedido_beta' %}">Crear pedido (beta)</a>
-                        <a class="collapse-item" href="{% url 'crear_materia_prima' %}">Agregar materia prima</a>
                         <a class="collapse-item" href="{% url 'editar_pedidos' %}">Editar Pedidos</a>
                     </div>
                 </div>

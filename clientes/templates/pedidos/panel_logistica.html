@@ -233,7 +233,7 @@ Logistica
                                             <button type="submit" class="btn btn-outline-primary btn-sm">Actualizar</button>
                                         </form>
                                         {% else %}
-                                        <span class="text-muted small">Disponible cuando este en produccion.</span>
+                                        <span class="text-muted small">Sin cambios de estado disponibles.</span>
                                         {% endif %}
                                     </td>
                                     <td class="text-center">
@@ -691,7 +691,7 @@ Logistica
                             badge.textContent = payload.data.estado_label || payload.data.estado || "-";
                         }
                         if (actionCell && !payload.data.puede_cambiar_estado) {
-                            actionCell.innerHTML = '<span class="text-muted small">Disponible cuando este en produccion.</span>';
+                            actionCell.innerHTML = '<span class="text-muted small">Sin cambios de estado disponibles.</span>';
                         }
                     })
                     .catch((error) => {

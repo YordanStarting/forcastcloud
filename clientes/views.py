@@ -58,6 +58,9 @@ MESES_CORTOS_ES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep'
 ROL_ESTADOS_PERMITIDOS = {
     'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO', 'EN_PRODUCCION'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
+    # Auxiliar no usa el flujo general de cambio de estado.
+    # En logistica solo puede mover DESPACHADO -> ENTREGADO.
+    'auxiliar': set(),
     'produccion': {'EN_PRODUCCION', 'DEVUELTO'},
     # Compatibilidad con perfiles existentes antes del rol "produccion".
     'programador': {'DEVUELTO'},
@@ -480,7 +483,7 @@ def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
     if not user.is_authenticated or user.is_superuser:
         return proveedores
 
-    if _obtener_rol_usuario(user) == 'comercial':
+    if _obtener_rol_usuario(user) in {'comercial', 'auxiliar'}:
         ciudad_usuario = _obtener_ciudad_usuario(user)
         if not ciudad_usuario:
             return proveedores.none()
@@ -534,7 +537,15 @@ def _usuario_puede_gestionar_pedidos(user):
         return False
     if user.is_superuser:
         return True
-    return _obtener_rol_usuario(user) in {'admin', 'comercial'}
+    return _obtener_rol_usuario(user) in {'admin', 'comercial', 'auxiliar'}
+
+
+def _usuario_puede_registrar_materia_prima(user):
+    if not user.is_authenticated:
+        return False
+    if user.is_superuser:
+        return True
+    return _obtener_rol_usuario(user) in {'admin', 'comercial', 'auxiliar', 'produccion', 'programador'}
 
 
 def _usuario_puede_ver_tab_produccion(user):
@@ -562,8 +573,16 @@ def _usuario_puede_cambiar_estado_panel(user, *, tipo, estado_nuevo=None):
             return rol == 'produccion'
         return False
 
-    # Logistica: comerciales no pueden cambiar estado.
-    return rol in {'admin', 'logistica', 'produccion', 'programador'}
+    if tipo == 'logistica':
+        if rol == 'auxiliar':
+            return estado_nuevo == 'ENTREGADO'
+        # Logistica: comerciales no pueden cambiar estado.
+        return (
+            rol in {'admin', 'logistica', 'produccion', 'programador'}
+            and estado_nuevo == 'DESPACHADO'
+        )
+
+    return False
 
 
 def _usuario_puede_editar_estimado_semanal(user):
@@ -587,7 +606,7 @@ def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
         return False
     if _usuario_es_admin(user):
         return True
-    if _obtener_rol_usuario(user) != 'comercial':
+    if _obtener_rol_usuario(user) not in {'comercial', 'auxiliar'}:
         return False
     ciudad_usuario = _obtener_ciudad_usuario(user)
     return bool(ciudad_usuario and pedido.ciudad == ciudad_usuario)
@@ -596,7 +615,7 @@ def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
 def _filtrar_pedidos_editables_por_usuario(user, qs):
     if _usuario_es_admin(user):
         return qs
-    if _obtener_rol_usuario(user) != 'comercial':
+    if _obtener_rol_usuario(user) not in {'comercial', 'auxiliar'}:
         return qs.none()
     ciudad_usuario = _obtener_ciudad_usuario(user)
     if not ciudad_usuario:
@@ -1223,7 +1242,22 @@ def _cambio_estado_permitido_en_panel(*, user, tipo, estado_anterior, estado_nue
         return False
     if tipo == 'logistica' and estado_nuevo == 'DESPACHADO':
         return estado_anterior == 'EN_PRODUCCION'
+    if tipo == 'logistica' and estado_nuevo == 'ENTREGADO':
+        return estado_anterior == 'DESPACHADO'
     return True
+
+
+def _estados_permitidos_logistica_para_estado(user, estado_actual):
+    estados = []
+    for estado_destino in ['DESPACHADO', 'ENTREGADO']:
+        if _cambio_estado_permitido_en_panel(
+            user=user,
+            tipo='logistica',
+            estado_anterior=estado_actual,
+            estado_nuevo=estado_destino,
+        ):
+            estados.append(estado_destino)
+    return estados
 
 
 def _render_panel_operativo(request, *, tipo):
@@ -1244,7 +1278,7 @@ def _render_panel_operativo(request, *, tipo):
             return HttpResponseForbidden("No tienes permisos para ver esta seccion.")
         cantidad_attr = 'despachado_kg'
         gestion_label = 'Despachado'
-        estado_permitidos = ['DESPACHADO']
+        estado_permitidos = ['DESPACHADO', 'ENTREGADO']
         estados_panel = PEDIDO_ESTADOS_PANELES
         template_name = 'pedidos/panel_logistica.html'
         titulo = 'LOGISTICA'
@@ -1463,17 +1497,14 @@ def _render_panel_operativo(request, *, tipo):
                 puede_cambiar_estado_row = False
                 estado_options_row = []
                 if tipo == 'logistica':
-                    puede_cambiar_estado_row = (
-                        pedido.estado == 'EN_PRODUCCION'
-                        and _usuario_puede_cambiar_estado_panel(
-                            request.user,
-                            tipo='logistica',
-                            estado_nuevo='DESPACHADO',
-                        )
+                    permitidos_row = _estados_permitidos_logistica_para_estado(
+                        request.user,
+                        pedido.estado,
                     )
+                    puede_cambiar_estado_row = bool(permitidos_row)
                     estado_options_row = _opciones_estado_para_panel(
                         pedido.estado,
-                        estado_permitidos if puede_cambiar_estado_row else [],
+                        permitidos_row,
                     )
                 else:
                     puede_cambiar_estado_row = _usuario_puede_cambiar_estado_panel(
@@ -1541,19 +1572,14 @@ def _render_panel_operativo(request, *, tipo):
         tipo='produccion',
         estado_nuevo='EN_PRODUCCION',
     )
-    puede_actualizar_logistica = _usuario_puede_cambiar_estado_panel(
-        request.user,
-        tipo='logistica',
-        estado_nuevo='DESPACHADO',
-    )
     for bloque in panel_data['bloques']:
         for row in bloque['rows']:
             if tipo == 'logistica':
-                row['puede_cambiar_estado'] = (
-                    row['estado'] == 'EN_PRODUCCION'
-                    and puede_actualizar_logistica
+                permitidos_row = _estados_permitidos_logistica_para_estado(
+                    request.user,
+                    row['estado'],
                 )
-                permitidos_row = estado_permitidos if row['puede_cambiar_estado'] else []
+                row['puede_cambiar_estado'] = bool(permitidos_row)
             else:
                 row['puede_cambiar_estado'] = puede_mover_a_produccion
                 permitidos_row = ['EN_PRODUCCION'] if row['puede_cambiar_estado'] else []
@@ -1824,7 +1850,7 @@ def resumen_pedidos(request):
     rol_usuario = _obtener_rol_usuario(request.user)
     ciudad_usuario = _obtener_ciudad_usuario(request.user)
     ciudad_default = 'BOGOTA'
-    if rol_usuario == 'comercial' and ciudad_usuario in ciudad_valores:
+    if rol_usuario in {'comercial', 'auxiliar'} and ciudad_usuario in ciudad_valores:
         ciudad_default = ciudad_usuario
 
     ciudad_param = (request.GET.get('ciudad') or '').strip().upper()
@@ -2427,6 +2453,8 @@ def usuario_eliminar(request, id):
 #VISTA DE PEDIDOS
 @login_required
 def crear_pedido(request):
+    if not _usuario_puede_gestionar_pedidos(request.user):
+        return HttpResponseForbidden("No tienes permisos para crear pedidos.")
 
     proveedores = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
     comerciales = [request.user]
@@ -2628,7 +2656,7 @@ def crear_pedido_beta(request):
 
 @login_required
 def crear_materia_prima(request):
-    if not _usuario_puede_gestionar_pedidos(request.user):
+    if not _usuario_puede_registrar_materia_prima(request.user):
         return HttpResponseForbidden("No tienes permisos para registrar materia prima.")
 
     semanas_disponibles = _obtener_semanas_disponibles(
@@ -3062,8 +3090,8 @@ def editartablas(request):
         pedidos_visibles_qs = pedidos_base_qs
     else:
         pedidos_visibles_qs = pedidos_base_qs
-        if rol_usuario == 'comercial':
-            # Comercial inicia viendo sus pedidos; cambia alcance al usar filtro de ciudad.
+        if rol_usuario in {'comercial', 'auxiliar'}:
+            # Comercial/Auxiliar inicia viendo sus pedidos; cambia alcance al usar filtro de ciudad.
             if not ciudad_param:
                 pedidos_visibles_qs = pedidos_visibles_qs.filter(comercial=request.user)
 
