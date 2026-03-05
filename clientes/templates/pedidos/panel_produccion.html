@@ -25,6 +25,60 @@ Produccion
     .js-prod-cart.is-active {
         color: #b45309;
     }
+
+    .estimado-custom-table th,
+    .estimado-custom-table td {
+        border: 2px solid #1f2937 !important;
+        vertical-align: middle !important;
+    }
+
+    .estimado-custom-table thead th {
+        background: #00d5b5;
+        color: #111827;
+    }
+
+    .estimado-row-total-semana td {
+        background: #e8d6c8;
+    }
+
+    .estimado-row-medellin td {
+        background: #e9ad85;
+    }
+
+    .estimado-row-bogota td {
+        background: #bfc5cf;
+    }
+
+    .estimado-row-cali td {
+        background: #f2d469;
+    }
+
+    .estimado-row-congelar td {
+        background: #ed822f;
+    }
+
+    .estimado-row-resumen-1 td {
+        background: #18ff14;
+        font-weight: 700;
+    }
+
+    .estimado-row-resumen-2 td {
+        background: #2ea8ff;
+        font-weight: 700;
+    }
+
+    .estimado-row-resumen-3 td {
+        background: #ffc400;
+        font-weight: 700;
+    }
+
+    .estimado-label-strong {
+        font-weight: 700;
+    }
+
+    .estimado-input {
+        min-width: 110px;
+    }
 </style>
 {% endblock %}
 
@@ -57,6 +111,7 @@ Produccion
                 <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
             </div>
             <div class="card-body">
+                {% if active_tab != 'estimado' %}
                 <form method="get" class="mb-3">
                     <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
                     <div class="form-row">
@@ -101,6 +156,7 @@ Produccion
                 </form>
                 {% if semana_label %}
                 <p class="small text-muted mt-n2 mb-3">Semana activa: {{ semana_label }}</p>
+                {% endif %}
                 {% endif %}
 
                 {% if active_tab != 'estimado' %}
@@ -273,90 +329,253 @@ Produccion
                 {% if active_tab == 'estimado' %}
                 <div class="card border mt-4">
                     <div class="card-header py-2">
-                        <strong class="text-primary">ESTIMADO SEMANAL POR PROVEEDOR</strong>
+                        <strong class="text-primary">PRODUCTO ESTIMADO - TABLA MANUAL</strong>
                     </div>
                     <div class="card-body">
-                        <p class="small text-muted mb-3">
-                            Tabla informativa para proyectar pedidos de la semana seleccionada por sucursal y proveedor.
-                        </p>
-                        {% for bloque in estimados_proveedores.bloques %}
-                        <div class="card border mb-3">
-                            <div class="card-header py-2">
-                                <strong class="text-primary">SUCURSAL - {{ bloque.nombre|upper }}</strong>
-                            </div>
-                            <div class="card-body p-0">
-                                <div class="table-responsive">
-                                    <table class="table table-bordered mb-0" width="100%" cellspacing="0">
-                                        <thead>
-                                            <tr>
-                                                <th>PROVEEDOR</th>
-                                                <th>PRESENTACION</th>
-                                                <th>ESTIMADO (KG)</th>
-                                                <th>GUARDAR</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody>
-                                            {% for row in bloque.rows %}
-                                            <tr>
-                                                <td>{{ row.proveedor_nombre }}</td>
-                                                {% if puede_editar_estimado_semanal %}
-                                                <td colspan="3">
-                                                    <form method="post" class="form-inline">
-                                                        {% csrf_token %}
-                                                        <input type="hidden" name="tab" value="estimado">
-                                                        <input type="hidden" name="action" value="guardar_estimado_proveedor">
-                                                        <input type="hidden" name="semana" value="{{ semana }}">
-                                                        <input type="hidden" name="sucursal" value="{{ row.sucursal }}">
-                                                        <input type="hidden" name="proveedor_id" value="{{ row.proveedor_id }}">
-                                                        <input type="hidden" name="sucursal_filter" value="{{ filtros_panel.sucursal }}">
-                                                        <input type="hidden" name="vida_util_filter" value="{{ filtros_panel.vida_util }}">
-                                                        <select name="presentacion" class="form-control form-control-sm mr-2">
-                                                            {% for value, label in presentacion_choices %}
-                                                            <option value="{{ value }}" {% if row.presentacion_codigo == value %}selected{% endif %}>
-                                                                {{ label }}
-                                                            </option>
-                                                            {% endfor %}
-                                                        </select>
-                                                        <input type="number"
-                                                            name="cantidad_kg"
-                                                            class="form-control form-control-sm mr-2"
-                                                            min="0"
-                                                            step="1"
-                                                            value="{{ row.cantidad_kg }}"
-                                                            required>
-                                                        <button type="submit" class="btn btn-outline-primary btn-sm">Guardar</button>
-                                                    </form>
-                                                </td>
-                                                {% else %}
-                                                <td>{{ row.presentacion_label }}</td>
-                                                <td>{{ row.cantidad_kg }}</td>
-                                                <td><span class="text-muted small">Solo programador/produccion/admin puede editar.</span></td>
-                                                {% endif %}
-                                            </tr>
-                                            {% empty %}
-                                            <tr>
-                                                <td colspan="4" class="text-center text-muted">Sin proveedores para mostrar.</td>
-                                            </tr>
-                                            {% endfor %}
-                                        </tbody>
-                                        <tfoot>
-                                            <tr>
-                                                <th colspan="2">TOTAL {{ bloque.nombre|upper }}</th>
-                                                <th>{{ bloque.total_estimado_kg }}</th>
-                                                <th></th>
-                                            </tr>
-                                        </tfoot>
-                                    </table>
-                                </div>
+                        <div class="d-flex align-items-center justify-content-between mb-3">
+                            <p class="small text-muted mb-0">
+                                Registro manual local (sin base de datos). Usa Guardar para conservar en este navegador.
+                            </p>
+                            <div>
+                                <button type="button" class="btn btn-sm btn-primary mr-2" id="estimadoSaveBtn">Guardar</button>
+                                <button type="button" class="btn btn-sm btn-outline-secondary" id="estimadoClearBtn">Limpiar</button>
                             </div>
                         </div>
-                        {% endfor %}
+                        <p class="small text-muted mb-3" id="estimadoStatus"></p>
+                        <div class="table-responsive" id="estimadoPlanner">
+                            <table class="table table-sm mb-0 estimado-custom-table">
+                                <thead>
+                                    <tr>
+                                        <th>SUCURSAL</th>
+                                        <th>PRESENTACION</th>
+                                        <th>VIDA UTIL</th>
+                                        <th>TOTAL</th>
+                                        <th>FABRICADO</th>
+                                        <th>PENDIENTE</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-1">
+                                        <td class="estimado-label-strong text-center" rowspan="7">TOTAL SEMANA</td>
+                                        <td>BIB X 5</td>
+                                        <td>OVOLIV 30 X 5</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="12285"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-2">
+                                        <td>BIB X 20</td>
+                                        <td>OVOLIV 30 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="4100"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-3">
+                                        <td class="estimado-label-strong">HORNITOS BOGOTA</td>
+                                        <td>OVOLIV 30 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="2000"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-4">
+                                        <td>VENTOLINI PH 6,8 y 7,2</td>
+                                        <td>OVOLIV 30 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="1800"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-5">
+                                        <td>COLOMBINA BIB X 20</td>
+                                        <td>OVOLIV 30 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-6">
+                                        <td>BIB X 3</td>
+                                        <td>OVOLIV 30 X 3</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="120"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-total-semana js-estimado-row" data-row-id="ts-7">
+                                        <td>NOEL BIB X 5</td>
+                                        <td>OVOLIV 30 X 5</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
 
-                        <div class="card border">
-                            <div class="card-body p-2 d-flex justify-content-between align-items-center">
-                                <strong>TOTAL GENERAL ESTIMADO</strong>
-                                <span class="font-weight-bold">{{ estimados_proveedores.total_general_estimado_kg }} kg</span>
-                            </div>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-1">
+                                        <td class="estimado-label-strong text-center" rowspan="9">MEDELLIN</td>
+                                        <td>NOEL X 1000</td>
+                                        <td>OVOLIV 20 X 1000</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-2">
+                                        <td>TORTAS DEL GORDO</td>
+                                        <td>OVOLIV 15 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-3">
+                                        <td>PASTELPAN</td>
+                                        <td>OVOLIV 15 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-4">
+                                        <td>FRUGAL</td>
+                                        <td>OVOLIV 15 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-5">
+                                        <td>PANAL</td>
+                                        <td>OVOLIV 15 X 14</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-6">
+                                        <td>SECAR PLANTA HELU</td>
+                                        <td>OVOLIV 15 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-7">
+                                        <td>INGEAL</td>
+                                        <td>OVOLIV 15 X 200</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-8">
+                                        <td>BIMBO ITAGUI</td>
+                                        <td>OVOLIV 15 X 200</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-medellin js-estimado-row" data-row-id="med-9">
+                                        <td>MEZCLA MELU</td>
+                                        <td>OVOLIV 20 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-1">
+                                        <td class="estimado-label-strong text-center" rowspan="8">BOGOTA</td>
+                                        <td>BIMBO CONVENCIONAL</td>
+                                        <td>OVOLIV 20 X 1000</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-2">
+                                        <td class="estimado-label-strong bg-dark text-success">BIMBO CAGE FREE</td>
+                                        <td>OVOLIV 20 X 1000</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="23000"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-3">
+                                        <td>COMPANIA ALIMENTICIA</td>
+                                        <td>OVOLIV 20 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-4">
+                                        <td class="estimado-label-strong bg-dark text-success">CREPES Y WAFLES CAGE FREE</td>
+                                        <td>OVOLIV 15 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-5">
+                                        <td>COMAPAN X 14</td>
+                                        <td>OVOLIV 15 X 14</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="4004"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-6">
+                                        <td>PRODUCTOS RAMO</td>
+                                        <td>OVOLIV 15 X 200</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-7">
+                                        <td>RAMO ZF PIR X 200</td>
+                                        <td>OVOLIV 15 X 200</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-bogota js-estimado-row" data-row-id="bog-8">
+                                        <td>MAQUILA RAMO ZF PIR X 200</td>
+                                        <td>OVOLIV 15 X 200</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+
+                                    <tr class="estimado-row-cali js-estimado-row" data-row-id="cali-1">
+                                        <td class="estimado-label-strong text-center" rowspan="2">CALI</td>
+                                        <td class="estimado-label-strong bg-dark text-success">MAQUITE CAGE FREE SIN CERTIFICADO</td>
+                                        <td>OVOLIV 15 X 15</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default="525"></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+                                    <tr class="estimado-row-cali js-estimado-row" data-row-id="cali-2">
+                                        <td>COLOMBINA CAUCA CLARA</td>
+                                        <td>OVOLIV 20 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+
+                                    <tr class="estimado-row-congelar js-estimado-row" data-row-id="congelar-1">
+                                        <td class="estimado-label-strong text-center" colspan="2">CONGELAR</td>
+                                        <td>OVOLIV 15 X 20</td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-total" data-default=""></td>
+                                        <td><input type="number" class="form-control form-control-sm estimado-input js-est-fabricado" data-default=""></td>
+                                        <td class="js-est-pendiente text-right">-</td>
+                                    </tr>
+
+                                    <tr class="estimado-row-resumen-1">
+                                        <td colspan="3" class="text-center">TOTAL PEDIDOS</td>
+                                        <td id="estimadoTotalPedidos" class="text-right">0</td>
+                                        <td></td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="estimado-row-resumen-2">
+                                        <td colspan="3" class="text-center">TOTAL FABRICADO</td>
+                                        <td></td>
+                                        <td id="estimadoTotalFabricado" class="text-right">0</td>
+                                        <td></td>
+                                    </tr>
+                                    <tr class="estimado-row-resumen-3">
+                                        <td colspan="3" class="text-center">PENDIENTE POR FABRICAR</td>
+                                        <td></td>
+                                        <td></td>
+                                        <td id="estimadoPendienteTotal" class="text-right">-</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                        <div class="small text-muted mt-2">
+                            Nota: el boton Guardar solo conserva datos en este navegador (localStorage).
                         </div>
                     </div>
                 </div>
@@ -383,7 +602,7 @@ Produccion
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-12 col-md-3 mb-2">
+                        <div class="col-12 col-md-2 mb-2">
                             <label class="mb-1">Sucursal</label>
                             <select name="sucursal" class="form-control form-control-sm">
                                 <option value="">Todas</option>
@@ -392,9 +611,17 @@ Produccion
                                 {% endfor %}
                             </select>
                         </div>
-                        <div class="col-12 col-md-4 mb-2">
+                        <div class="col-12 col-md-3 mb-2">
                             <label class="mb-1">Buscar</label>
                             <input type="text" name="q" class="form-control form-control-sm" value="{{ log_filters.q }}" placeholder="Compania, tipo, presentacion o usuario">
+                        </div>
+                        <div class="col-12 col-md-2 mb-2">
+                            <label class="mb-1">Items por pagina</label>
+                            <select name="per_page" class="form-control form-control-sm">
+                                {% for value in per_page_opciones %}
+                                <option value="{{ value }}" {% if log_per_page == value %}selected{% endif %}>{{ value }}</option>
+                                {% endfor %}
+                            </select>
                         </div>
                         <div class="col-12 col-md-2 mb-2 d-flex align-items-end">
                             <button type="submit" class="btn btn-primary btn-sm mr-2">Filtrar</button>
@@ -616,6 +843,167 @@ Produccion
 
         const userId = "{{ request.user.id|default:'0' }}";
         const activeTab = "{{ active_tab|default:'producto' }}";
+        const semanaKey = "{{ semana|default:'' }}";
+
+        const estimadoContainer = document.getElementById("estimadoPlanner");
+        if (estimadoContainer) {
+            const estimadoStorageKey = `panel-produccion-estimado-user-${userId}-${semanaKey || "sin-semana"}`;
+            const estimadoRows = Array.from(estimadoContainer.querySelectorAll(".js-estimado-row"));
+            const estimadoTotalPedidos = document.getElementById("estimadoTotalPedidos");
+            const estimadoTotalFabricado = document.getElementById("estimadoTotalFabricado");
+            const estimadoPendienteTotal = document.getElementById("estimadoPendienteTotal");
+            const estimadoSaveBtn = document.getElementById("estimadoSaveBtn");
+            const estimadoClearBtn = document.getElementById("estimadoClearBtn");
+            const estimadoStatus = document.getElementById("estimadoStatus");
+            const estimadoFormat = new Intl.NumberFormat("es-CO");
+
+            const setEstimadoStatus = (message, isError) => {
+                if (!estimadoStatus) {
+                    return;
+                }
+                estimadoStatus.textContent = message || "";
+                estimadoStatus.classList.remove("text-success", "text-danger");
+                if (isError) {
+                    estimadoStatus.classList.add("text-danger");
+                } else if (message) {
+                    estimadoStatus.classList.add("text-success");
+                }
+            };
+
+            const normalizeInputNumber = (value) => {
+                const raw = String(value || "").trim();
+                if (!raw) {
+                    return { hasValue: false, value: 0 };
+                }
+                const parsed = Number(raw.replace(",", "."));
+                if (!Number.isFinite(parsed)) {
+                    return { hasValue: false, value: 0 };
+                }
+                return { hasValue: true, value: Math.trunc(parsed) };
+            };
+
+            const applyEstimadoDefaults = () => {
+                estimadoRows.forEach((row) => {
+                    const totalInput = row.querySelector(".js-est-total");
+                    const fabricadoInput = row.querySelector(".js-est-fabricado");
+                    if (totalInput) {
+                        totalInput.value = totalInput.dataset.default || "";
+                    }
+                    if (fabricadoInput) {
+                        fabricadoInput.value = fabricadoInput.dataset.default || "";
+                    }
+                });
+            };
+
+            const loadEstimadoSavedData = () => {
+                let savedData = {};
+                try {
+                    savedData = JSON.parse(localStorage.getItem(estimadoStorageKey) || "{}");
+                } catch (error) {
+                    savedData = {};
+                }
+
+                estimadoRows.forEach((row) => {
+                    const rowId = row.dataset.rowId || "";
+                    const totalInput = row.querySelector(".js-est-total");
+                    const fabricadoInput = row.querySelector(".js-est-fabricado");
+                    if (!rowId || !savedData[rowId]) {
+                        return;
+                    }
+                    if (totalInput && typeof savedData[rowId].total !== "undefined") {
+                        totalInput.value = savedData[rowId].total;
+                    }
+                    if (fabricadoInput && typeof savedData[rowId].fabricado !== "undefined") {
+                        fabricadoInput.value = savedData[rowId].fabricado;
+                    }
+                });
+            };
+
+            const recalculateEstimado = () => {
+                let totalPedidos = 0;
+                let totalFabricado = 0;
+                let hasAnyTotal = false;
+
+                estimadoRows.forEach((row) => {
+                    const totalInput = row.querySelector(".js-est-total");
+                    const fabricadoInput = row.querySelector(".js-est-fabricado");
+                    const pendienteCell = row.querySelector(".js-est-pendiente");
+
+                    const totalData = normalizeInputNumber(totalInput ? totalInput.value : "");
+                    const fabricadoData = normalizeInputNumber(fabricadoInput ? fabricadoInput.value : "");
+
+                    if (totalData.hasValue) {
+                        hasAnyTotal = true;
+                        totalPedidos += totalData.value;
+                        if (pendienteCell) {
+                            pendienteCell.textContent = estimadoFormat.format(
+                                totalData.value - (fabricadoData.hasValue ? fabricadoData.value : 0)
+                            );
+                        }
+                    } else if (pendienteCell) {
+                        pendienteCell.textContent = "-";
+                    }
+
+                    if (fabricadoData.hasValue) {
+                        totalFabricado += fabricadoData.value;
+                    }
+                });
+
+                if (estimadoTotalPedidos) {
+                    estimadoTotalPedidos.textContent = hasAnyTotal
+                        ? estimadoFormat.format(totalPedidos)
+                        : "0";
+                }
+                if (estimadoTotalFabricado) {
+                    estimadoTotalFabricado.textContent = estimadoFormat.format(totalFabricado);
+                }
+                if (estimadoPendienteTotal) {
+                    estimadoPendienteTotal.textContent = hasAnyTotal
+                        ? estimadoFormat.format(totalPedidos - totalFabricado)
+                        : "-";
+                }
+            };
+
+            estimadoRows.forEach((row) => {
+                row.querySelectorAll("input").forEach((input) => {
+                    input.addEventListener("input", recalculateEstimado);
+                });
+            });
+
+            if (estimadoSaveBtn) {
+                estimadoSaveBtn.addEventListener("click", function () {
+                    const payload = {};
+                    estimadoRows.forEach((row) => {
+                        const rowId = row.dataset.rowId || "";
+                        if (!rowId) {
+                            return;
+                        }
+                        const totalInput = row.querySelector(".js-est-total");
+                        const fabricadoInput = row.querySelector(".js-est-fabricado");
+                        payload[rowId] = {
+                            total: totalInput ? String(totalInput.value || "").trim() : "",
+                            fabricado: fabricadoInput ? String(fabricadoInput.value || "").trim() : "",
+                        };
+                    });
+                    localStorage.setItem(estimadoStorageKey, JSON.stringify(payload));
+                    setEstimadoStatus("Datos guardados localmente.", false);
+                });
+            }
+
+            if (estimadoClearBtn) {
+                estimadoClearBtn.addEventListener("click", function () {
+                    localStorage.removeItem(estimadoStorageKey);
+                    applyEstimadoDefaults();
+                    recalculateEstimado();
+                    setEstimadoStatus("Datos limpiados.", false);
+                });
+            }
+
+            applyEstimadoDefaults();
+            loadEstimadoSavedData();
+            recalculateEstimado();
+        }
+
         const storageKey = `panel-produccion-highlight-user-${userId}-${activeTab}`;
         let highlightedRows = {};
 
