@@ -215,7 +215,7 @@ Editar Pedido
                                 </span>
                             </td>
                             <td data-label="Acciones" class="table-actions">
-                                {% if can_change_pedido_status %}
+                                {% if pedido.puede_cambiar_estado_listado %}
                                 <a href="{% url 'editar_estado_pedido' pedido.id %}?next=editartablas"
                                     class="btn btn-outline-primary btn-sm">
                                     Cambiar estado

@@ -209,6 +209,17 @@ def _usuario_puede_cambiar_estado_pedidos(user):
     return bool(_estados_permitidos_para_usuario(user))
 
 
+def _usuario_puede_cambiar_estado_pedido_en_listado(user, pedido):
+    if not user.is_authenticated or not pedido:
+        return False
+    if _usuario_puede_cambiar_estado_pedidos(user):
+        return True
+    rol = _obtener_rol_usuario(user)
+    if rol == 'auxiliar':
+        return pedido.estado == 'DESPACHADO'
+    return False
+
+
 def _semana_label_corta(semana_lunes):
     if not semana_lunes:
         return 'Sin semana'
@@ -3342,9 +3353,15 @@ def editartablas(request):
         request,
         pedidos_filtrados_qs.order_by('-fecha_creacion', '-id'),
     )
+    pedidos_page = list(page_obj.object_list)
+    for pedido in pedidos_page:
+        pedido.puede_cambiar_estado_listado = _usuario_puede_cambiar_estado_pedido_en_listado(
+            request.user,
+            pedido,
+        )
 
     return render(request, 'paginas/editartablas.html', {
-        'pedidos': page_obj.object_list,
+        'pedidos': pedidos_page,
         'page_obj': page_obj,
         'query_string': query_string,
         'per_page': per_page,
@@ -3361,7 +3378,6 @@ def editartablas(request):
         'total_yema': total_yema,
         'mostrar_filtro_ciudad': True,
         'semanas_disponibles': semanas_selector,
-        'can_change_pedido_status': _usuario_puede_cambiar_estado_pedidos(request.user),
         **filtros
     })
 
@@ -3575,12 +3591,19 @@ def editar_pedidos(request):
 
 @login_required
 def marcar_pedido_realizado(request, id):
-    if not _usuario_puede_cambiar_estado_pedidos(request.user):
+    rol_usuario = _obtener_rol_usuario(request.user)
+    es_auxiliar = rol_usuario == 'auxiliar'
+    if not _usuario_puede_cambiar_estado_pedidos(request.user) and not es_auxiliar:
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
-    estados_permitidos = _estados_permitidos_para_usuario(request.user)
-    if 'ENTREGADO' not in estados_permitidos:
-        return HttpResponseForbidden("No tienes permisos para cambiar el pedido a entregado.")
     pedido = get_object_or_404(Pedido, id=id)
+    estados_permitidos = _estados_permitidos_para_usuario(request.user)
+    if es_auxiliar:
+        if pedido.estado != 'DESPACHADO':
+            return HttpResponseForbidden(
+                "Solo puedes marcar como entregado pedidos en estado Despachado."
+            )
+    elif 'ENTREGADO' not in estados_permitidos:
+        return HttpResponseForbidden("No tienes permisos para cambiar el pedido a entregado.")
     estado_anterior = pedido.estado
     pedido.estado = 'ENTREGADO'
     pedido.save()
@@ -3600,11 +3623,15 @@ def marcar_pedido_realizado(request, id):
 
 @login_required
 def editar_estado_pedido(request, id):
-    if not _usuario_puede_cambiar_estado_pedidos(request.user):
+    rol_usuario = _obtener_rol_usuario(request.user)
+    es_auxiliar = rol_usuario == 'auxiliar'
+    if not _usuario_puede_cambiar_estado_pedidos(request.user) and not es_auxiliar:
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
 
     pedido = get_object_or_404(Pedido, id=id)
     estados_permitidos = _estados_permitidos_para_usuario(request.user)
+    if es_auxiliar:
+        estados_permitidos = {'ENTREGADO'} if pedido.estado == 'DESPACHADO' else set()
     estado_choices = [
         (value, label)
         for value, label in PEDIDO_ESTADO_CHOICES
