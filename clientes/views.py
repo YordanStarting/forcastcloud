@@ -75,6 +75,21 @@ PAGINACION_PER_PAGE_DEFAULT = 20
 PAGINACION_PER_PAGE_OPCIONES = (20, 50)
 NOTIFICACIONES_SSE_HEARTBEAT_SEGUNDOS = 30
 NOTIFICACIONES_SSE_MAX_EVENTOS = 40
+TIPOS_HUEVO_LIQUIDOS = tuple(
+    codigo
+    for codigo, _ in TIPO_HUEVO_CHOICES
+    if codigo.endswith('LU')
+)
+TIPOS_HUEVO_POLVO = tuple(
+    codigo
+    for codigo, label in TIPO_HUEVO_CHOICES
+    if codigo.endswith('PU') or codigo == 'ALBP' or 'POLVO' in (label or '').upper()
+)
+TIPO_HUEVO_DASHBOARD_CHOICES = (
+    ('TODOS', 'Todos'),
+    ('LIQUIDO', 'Todo liquido'),
+    ('POLVO', 'Todo en polvo'),
+)
 
 
 def _obtener_perfil_usuario(user):
@@ -801,19 +816,18 @@ def mi_perfil(request):
 def inicio(request):
     cantidad_expr = _cantidad_pedido_expr()
     tipo_huevo_map = dict(TIPO_HUEVO_CHOICES)
-    tipos_huevo_liquidos = [codigo for codigo, _ in TIPO_HUEVO_CHOICES if codigo.endswith('LU')]
-    tipo_huevo_dashboard_options = [('LIQUIDO', 'Huevo liquido')]
     pedidos_base_qs = Pedido.objects.select_related('proveedor', 'comercial')
     pedidos_base_qs, filtros = filtrar_pedidos(
         request,
         pedidos_base_qs,
         include_semana=False,
     )
-    tipo_huevo_filtro = (filtros.get('tipo_huevo') or '').strip().upper()
-    if tipo_huevo_filtro != 'LIQUIDO':
-        pedidos_base_qs = pedidos_base_qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
-        filtros['tipo_huevo'] = 'LIQUIDO'
-        tipo_huevo_filtro = 'LIQUIDO'
+    tipo_huevo_filtro = (filtros.get('tipo_huevo') or 'TODOS').strip().upper()
+    if tipo_huevo_filtro == 'LIQUIDO':
+        pedidos_base_qs = pedidos_base_qs.filter(tipo_huevo__in=TIPOS_HUEVO_LIQUIDOS)
+    elif tipo_huevo_filtro == 'POLVO':
+        pedidos_base_qs = pedidos_base_qs.filter(tipo_huevo__in=TIPOS_HUEVO_POLVO)
+    filtros['tipo_huevo'] = tipo_huevo_filtro
 
     semanas_disponibles = _obtener_semanas_disponibles(
         pedidos_base_qs,
@@ -871,7 +885,9 @@ def inicio(request):
             fecha__lte=fecha_fin_semana,
         )
         if tipo_huevo_filtro == 'LIQUIDO':
-            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
+            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=TIPOS_HUEVO_LIQUIDOS)
+        elif tipo_huevo_filtro == 'POLVO':
+            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=TIPOS_HUEVO_POLVO)
         elif tipo_huevo_filtro in tipo_huevo_map:
             materia_prima_qs = materia_prima_qs.filter(tipo_huevo=tipo_huevo_filtro)
         total_materia_prima_semana = materia_prima_qs.aggregate(total=Sum('cantidad_kg'))['total'] or 0
@@ -952,8 +968,16 @@ def inicio(request):
         'city_labels': city_labels,
         'city_data': city_data,
         'total_toneladas': total_toneladas,
-        'dashboard_tipo_huevo_choices': tipo_huevo_dashboard_options,
-        'tipo_huevo_label': 'Huevo liquido' if tipo_huevo_filtro == 'LIQUIDO' else tipo_huevo_map.get(tipo_huevo_filtro, ''),
+        'dashboard_tipo_huevo_choices': TIPO_HUEVO_DASHBOARD_CHOICES,
+        'tipo_huevo_label': (
+            'Todo liquido (huevo, yema y clara)'
+            if tipo_huevo_filtro == 'LIQUIDO'
+            else (
+                'Todo en polvo'
+                if tipo_huevo_filtro == 'POLVO'
+                else 'Todos'
+            )
+        ),
         'semanas_disponibles': _construir_selector_semanas(semanas_disponibles, semana_seleccionada),
         'semana': semana_seleccionada.isoformat() if semana_seleccionada else '',
         'semana_label': _semana_label_corta(semana_seleccionada),
@@ -3552,12 +3576,16 @@ def filtrar_pedidos(
     if tipo_huevo := request.GET.get('tipo_huevo'):
         tipo_huevo_valor = (tipo_huevo or '').strip().upper()
         if tipo_huevo_valor == 'LIQUIDO':
-            tipos_huevo_liquidos = [codigo for codigo, _ in TIPO_HUEVO_CHOICES if codigo.endswith('LU')]
-            qs = qs.filter(tipo_huevo__in=tipos_huevo_liquidos)
+            qs = qs.filter(tipo_huevo__in=TIPOS_HUEVO_LIQUIDOS)
             filtros['tipo_huevo'] = 'LIQUIDO'
+        elif tipo_huevo_valor == 'POLVO':
+            qs = qs.filter(tipo_huevo__in=TIPOS_HUEVO_POLVO)
+            filtros['tipo_huevo'] = 'POLVO'
+        elif tipo_huevo_valor == 'TODOS':
+            filtros['tipo_huevo'] = 'TODOS'
         else:
-            qs = qs.filter(tipo_huevo=tipo_huevo)
-            filtros['tipo_huevo'] = tipo_huevo
+            qs = qs.filter(tipo_huevo=tipo_huevo_valor)
+            filtros['tipo_huevo'] = tipo_huevo_valor
 
     if presentacion := request.GET.get('presentacion'):
         qs = qs.filter(presentacion=presentacion)
