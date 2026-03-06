@@ -210,16 +210,29 @@ Editar Pedido
                                 {% endif %}
                             </td>
                             <td data-label="Estado">
-                                <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }}">
+                                <span class="badge badge-estado badge-estado-{{ pedido.estado|lower }} js-estado-badge"
+                                    data-pedido-id="{{ pedido.id }}">
                                     {{ pedido.get_estado_display }}
                                 </span>
                             </td>
                             <td data-label="Acciones" class="table-actions">
                                 {% if pedido.puede_cambiar_estado_listado %}
-                                <a href="{% url 'editar_estado_pedido' pedido.id %}?next=editartablas"
-                                    class="btn btn-outline-primary btn-sm">
-                                    Cambiar estado
-                                </a>
+                                <form
+                                    method="post"
+                                    action="{% url 'editar_estado_pedido' pedido.id %}?next=editartablas"
+                                    class="form-inline js-inline-estado-form"
+                                    data-pedido-id="{{ pedido.id }}">
+                                    {% csrf_token %}
+                                    <select name="estado" class="form-control form-control-sm mr-2">
+                                        {% for value, label in pedido.estado_choices_listado %}
+                                        <option value="{{ value }}" {% if value == pedido.estado %}selected{% endif %}>
+                                            {{ label }}
+                                        </option>
+                                        {% endfor %}
+                                    </select>
+                                    <button type="submit" class="btn btn-outline-primary btn-sm mr-2">Guardar</button>
+                                    <span class="small text-muted js-inline-estado-msg"></span>
+                                </form>
                                 {% endif %}
                             </td>
                         </tr>
@@ -283,6 +296,99 @@ Editar Pedido
     </div>
 
 </div>
+
+<script>
+    document.addEventListener("DOMContentLoaded", function () {
+        const forms = document.querySelectorAll(".js-inline-estado-form");
+        if (!forms.length) {
+            return;
+        }
+
+        const updateBadge = (pedidoId, payload) => {
+            const badge = document.querySelector(`.js-estado-badge[data-pedido-id="${pedidoId}"]`);
+            if (!badge) {
+                return;
+            }
+            badge.textContent = payload.estado_label || badge.textContent;
+            const badgeEstadoClasses = Array.from(badge.classList).filter((className) => className.startsWith("badge-estado-"));
+            badgeEstadoClasses.forEach((className) => badge.classList.remove(className));
+            badge.classList.add(`badge-estado-${payload.estado_lower || ""}`);
+        };
+
+        const updateSelectOptions = (form, payload) => {
+            if (!payload || !payload.estado_options || !Array.isArray(payload.estado_options)) {
+                return;
+            }
+            const select = form.querySelector('select[name="estado"]');
+            if (!select) {
+                return;
+            }
+            const currentEstado = payload.estado;
+            select.innerHTML = "";
+            payload.estado_options.forEach((item) => {
+                const option = document.createElement("option");
+                option.value = item.value;
+                option.textContent = item.label;
+                if (item.value === currentEstado) {
+                    option.selected = true;
+                }
+                select.appendChild(option);
+            });
+        };
+
+        forms.forEach((form) => {
+            form.addEventListener("submit", function (event) {
+                event.preventDefault();
+                const pedidoId = form.dataset.pedidoId;
+                const msg = form.querySelector(".js-inline-estado-msg");
+                const submitBtn = form.querySelector('button[type="submit"]');
+                const formData = new FormData(form);
+
+                if (msg) {
+                    msg.textContent = "Guardando...";
+                    msg.classList.remove("text-danger", "text-success");
+                    msg.classList.add("text-muted");
+                }
+                if (submitBtn) {
+                    submitBtn.disabled = true;
+                }
+
+                fetch(form.action, {
+                    method: "POST",
+                    headers: {
+                        "X-Requested-With": "XMLHttpRequest",
+                    },
+                    body: formData
+                })
+                    .then(async (response) => {
+                        const payload = await response.json();
+                        if (!response.ok || !payload.ok) {
+                            throw new Error(payload.error || "No se pudo actualizar el estado.");
+                        }
+                        updateBadge(pedidoId, payload);
+                        updateSelectOptions(form, payload);
+                        if (msg) {
+                            msg.textContent = "Guardado";
+                            msg.classList.remove("text-muted", "text-danger");
+                            msg.classList.add("text-success");
+                        }
+                    })
+                    .catch((error) => {
+                        if (msg) {
+                            msg.textContent = error.message || "Error al guardar";
+                            msg.classList.remove("text-muted", "text-success");
+                            msg.classList.add("text-danger");
+                        }
+                    })
+                    .finally(() => {
+                        if (submitBtn) {
+                            submitBtn.disabled = false;
+                        }
+                    });
+            });
+        });
+    });
+</script>
 
 {% include "partials/delivery_calendar_assets.html" %}
 {% endblock %}

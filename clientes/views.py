@@ -209,15 +209,36 @@ def _usuario_puede_cambiar_estado_pedidos(user):
     return bool(_estados_permitidos_para_usuario(user))
 
 
+def _estados_permitidos_cambio_directo(user, pedido):
+    if not user.is_authenticated or not pedido:
+        return set()
+    rol = _obtener_rol_usuario(user)
+    if rol == 'auxiliar':
+        return {'ENTREGADO'} if pedido.estado == 'DESPACHADO' else set()
+    return _estados_permitidos_para_usuario(user)
+
+
+def _estado_choices_para_pedido(user, pedido):
+    if not pedido:
+        return []
+    estados_permitidos = _estados_permitidos_cambio_directo(user, pedido)
+    opciones = []
+    usados = set()
+    if pedido.estado in PEDIDO_ESTADO_LABELS:
+        opciones.append((pedido.estado, _estado_pedido_label(pedido.estado)))
+        usados.add(pedido.estado)
+    for value, label in PEDIDO_ESTADO_CHOICES:
+        if value in estados_permitidos and value not in usados:
+            opciones.append((value, label))
+            usados.add(value)
+    return opciones
+
+
 def _usuario_puede_cambiar_estado_pedido_en_listado(user, pedido):
     if not user.is_authenticated or not pedido:
         return False
-    if _usuario_puede_cambiar_estado_pedidos(user):
-        return True
-    rol = _obtener_rol_usuario(user)
-    if rol == 'auxiliar':
-        return pedido.estado == 'DESPACHADO'
-    return False
+    opciones = _estado_choices_para_pedido(user, pedido)
+    return any(value != pedido.estado for value, _ in opciones)
 
 
 def _semana_label_corta(semana_lunes):
@@ -3355,6 +3376,7 @@ def editartablas(request):
     )
     pedidos_page = list(page_obj.object_list)
     for pedido in pedidos_page:
+        pedido.estado_choices_listado = _estado_choices_para_pedido(request.user, pedido)
         pedido.puede_cambiar_estado_listado = _usuario_puede_cambiar_estado_pedido_en_listado(
             request.user,
             pedido,
@@ -3629,14 +3651,9 @@ def editar_estado_pedido(request, id):
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
 
     pedido = get_object_or_404(Pedido, id=id)
-    estados_permitidos = _estados_permitidos_para_usuario(request.user)
-    if es_auxiliar:
-        estados_permitidos = {'ENTREGADO'} if pedido.estado == 'DESPACHADO' else set()
-    estado_choices = [
-        (value, label)
-        for value, label in PEDIDO_ESTADO_CHOICES
-        if value in estados_permitidos or value == pedido.estado
-    ]
+    estados_permitidos = _estados_permitidos_cambio_directo(request.user, pedido)
+    estado_choices = _estado_choices_para_pedido(request.user, pedido)
+    is_ajax = request.headers.get('x-requested-with') == 'XMLHttpRequest'
     next_url = _resolver_next_url(request.GET.get('next'))
     error_message = None
     descripcion_estado = ''
@@ -3656,7 +3673,13 @@ def editar_estado_pedido(request, id):
             and nuevo_estado in PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION
             and not descripcion_estado
         ):
-            error_message = 'Debes agregar una descripcion para cerrar el pedido.'
+            if is_ajax:
+                descripcion_estado = (
+                    f"Cambio rapido desde listado por {_nombre_usuario(request.user)} "
+                    f"el {date.today().strftime('%d/%m/%Y')}."
+                )
+            else:
+                error_message = 'Debes agregar una descripcion para cerrar el pedido.'
         else:
             pedido.estado = nuevo_estado
             pedido.save()
@@ -3667,7 +3690,34 @@ def editar_estado_pedido(request, id):
                 request.user,
                 descripcion=descripcion_estado,
             )
+            if is_ajax:
+                nuevas_opciones = _estado_choices_para_pedido(request.user, pedido)
+                return JsonResponse({
+                    'ok': True,
+                    'pedido_id': pedido.id,
+                    'estado': pedido.estado,
+                    'estado_label': pedido.get_estado_display(),
+                    'estado_lower': (pedido.estado or '').lower(),
+                    'estado_options': [
+                        {'value': value, 'label': label}
+                        for value, label in nuevas_opciones
+                    ],
+                })
             return redirect(next_url)
+
+    if is_ajax:
+        return JsonResponse({
+            'ok': False,
+            'pedido_id': pedido.id,
+            'error': error_message or 'No fue posible actualizar el estado.',
+            'estado': pedido.estado,
+            'estado_label': pedido.get_estado_display(),
+            'estado_lower': (pedido.estado or '').lower(),
+            'estado_options': [
+                {'value': value, 'label': label}
+                for value, label in estado_choices
+            ],
+        }, status=400)
 
     return render(request, 'pedidos/editar_estado.html', {
         'pedido': pedido,
