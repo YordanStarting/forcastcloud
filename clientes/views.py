@@ -879,15 +879,17 @@ def inicio(request):
     fecha_inicio_semana = semana_seleccionada
     fecha_fin_semana = semana_seleccionada + timedelta(days=5) if semana_seleccionada else None
     total_materia_prima_semana = 0
+    insumo_dashboard_label = 'Materia prima'
     if fecha_inicio_semana and fecha_fin_semana:
         materia_prima_qs = MateriaPrima.objects.filter(
             fecha__gte=fecha_inicio_semana,
             fecha__lte=fecha_fin_semana,
         )
-        if tipo_huevo_filtro == 'LIQUIDO':
-            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=TIPOS_HUEVO_LIQUIDOS)
-        elif tipo_huevo_filtro == 'POLVO':
+        if tipo_huevo_filtro == 'POLVO':
             materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=TIPOS_HUEVO_POLVO)
+            insumo_dashboard_label = 'Inventario huevo en polvo'
+        elif tipo_huevo_filtro == 'LIQUIDO':
+            materia_prima_qs = materia_prima_qs.filter(tipo_huevo__in=TIPOS_HUEVO_LIQUIDOS)
         elif tipo_huevo_filtro in tipo_huevo_map:
             materia_prima_qs = materia_prima_qs.filter(tipo_huevo=tipo_huevo_filtro)
         total_materia_prima_semana = materia_prima_qs.aggregate(total=Sum('cantidad_kg'))['total'] or 0
@@ -964,6 +966,7 @@ def inicio(request):
         'chart_comerciales_data': chart_comerciales_data,
         'chart_balance_data': chart_balance_data,
         'chart_mp_labels': chart_mp_labels,
+        'insumo_dashboard_label': insumo_dashboard_label,
         'chart_year': date.today().year,
         'city_labels': city_labels,
         'city_data': city_data,
@@ -1415,6 +1418,24 @@ def _render_panel_operativo(request, *, tipo):
         'presentacion': '',
         'sucursal': '',
     }
+    inventario_polvo_choices = [
+        (codigo, label)
+        for codigo, label in TIPO_HUEVO_CHOICES
+        if codigo in TIPOS_HUEVO_POLVO
+    ]
+    inventario_polvo_default_tipo = inventario_polvo_choices[0][0] if inventario_polvo_choices else ''
+    inventario_polvo_form_data = {
+        'fecha': '',
+        'tipo_huevo': inventario_polvo_default_tipo,
+        'cantidad_kg': '',
+        'observaciones': '',
+    }
+    inventario_polvo_error = ''
+    inventario_polvo_success = 'Inventario de huevo en polvo guardado correctamente.' if request.GET.get('inv_polvo') == 'ok' else ''
+    inventario_polvo_registros = []
+    inventario_polvo_total_semana = 0
+    fecha_inicio_semana = None
+    fecha_fin_semana = None
 
     pedidos_panel_qs = _pedidos_panel_operativo_qs(estados_panel)
     semanas_disponibles = []
@@ -1451,6 +1472,21 @@ def _render_panel_operativo(request, *, tipo):
     if semana_seleccionada:
         pedidos_panel_qs = pedidos_panel_qs.filter(semana=semana_seleccionada)
         filtros_panel['semana'] = semana_seleccionada.isoformat()
+        fecha_inicio_semana = semana_seleccionada
+        fecha_fin_semana = semana_seleccionada + timedelta(days=5)
+
+    if tipo == 'produccion':
+        hoy = date.today()
+        if fecha_inicio_semana and fecha_fin_semana:
+            if hoy < fecha_inicio_semana:
+                fecha_default = fecha_inicio_semana
+            elif hoy > fecha_fin_semana:
+                fecha_default = fecha_fin_semana
+            else:
+                fecha_default = hoy
+        else:
+            fecha_default = hoy
+        inventario_polvo_form_data['fecha'] = fecha_default.isoformat()
 
     if request.method == 'POST':
         action = (request.POST.get('action') or '').strip()
@@ -1461,107 +1497,199 @@ def _render_panel_operativo(request, *, tipo):
                 tab_origen = 'producto'
         elif tab_origen not in {'producto', 'resumen'}:
             tab_origen = 'producto'
-        cantidad_attr_post = 'fabricado_kg'
-        pedido_id = request.POST.get('pedido_id')
-        pedido = get_object_or_404(
-            Pedido.objects.filter(estado__in=estados_panel),
-            id=pedido_id,
-        )
-        if action == 'guardar_cantidad' and puede_editar_cantidad:
-            valor_anterior = int(getattr(pedido, cantidad_attr_post, 0) or 0)
-            nuevo_valor = request.POST.get('gestion_kg')
+        inventory_action_with_error = False
+
+        if tipo == 'produccion' and action == 'guardar_inventario_polvo':
+            if not _usuario_puede_registrar_materia_prima(request.user):
+                return HttpResponseForbidden("No tienes permisos para registrar inventario de huevo en polvo.")
+
+            inventario_polvo_form_data = {
+                'fecha': (request.POST.get('fecha') or '').strip(),
+                'tipo_huevo': (request.POST.get('tipo_huevo') or '').strip().upper(),
+                'cantidad_kg': (request.POST.get('cantidad_kg') or '').strip(),
+                'observaciones': (request.POST.get('observaciones') or '').strip(),
+            }
+            fecha_raw = inventario_polvo_form_data['fecha']
+            tipo_huevo_polvo = inventario_polvo_form_data['tipo_huevo']
+            cantidad_raw = inventario_polvo_form_data['cantidad_kg']
+
             try:
-                nuevo_valor_int = int(nuevo_valor)
+                fecha_inventario = date.fromisoformat(fecha_raw)
             except (TypeError, ValueError):
-                nuevo_valor_int = 0
-            total = _cantidad_total_pedido(pedido)
-            nuevo_valor_int = max(0, min(nuevo_valor_int, total))
-            if nuevo_valor_int != valor_anterior:
-                setattr(pedido, cantidad_attr_post, nuevo_valor_int)
-                pedido.save(update_fields=[cantidad_attr_post])
-                if tab_origen != 'estimado':
-                    _registrar_log_produccion(
-                        pedido=pedido,
-                        usuario=request.user,
-                        accion='FABRICADO_ACTUALIZADO',
-                        valor_anterior=valor_anterior,
-                        valor_nuevo=nuevo_valor_int,
-                        cantidad_kg=nuevo_valor_int,
-                        detalle='Actualizacion de fabricado desde panel de produccion.',
-                    )
-            if request.headers.get('x-requested-with') == 'XMLHttpRequest':
-                gestion_guardada = int(getattr(pedido, cantidad_attr_post, 0) or 0)
-                return JsonResponse({
-                    'ok': True,
-                    'pedido_id': pedido.id,
-                    'gestion_kg': gestion_guardada,
-                    'total_kg': total,
-                    'pendiente_kg': max(total - gestion_guardada, 0),
-                    'fabricado_kg': int(getattr(pedido, 'fabricado_kg', 0) or 0),
-                    'estimado_kg': int(getattr(pedido, 'estimado_kg', 0) or 0),
-                })
-        elif action == 'cambiar_estado' and tab_origen != 'estimado':
-            estado_anterior = pedido.estado
-            estado_nuevo = (request.POST.get('estado') or '').strip()
-            cambio_aplicado = False
-            if (
-                estado_nuevo in set(estado_permitidos)
-                and _cambio_estado_permitido_en_panel(
-                    user=request.user,
-                    tipo=tipo,
-                    estado_anterior=estado_anterior,
-                    estado_nuevo=estado_nuevo,
-                )
+                fecha_inventario = None
+
+            try:
+                cantidad_inventario = int(cantidad_raw)
+            except (TypeError, ValueError):
+                cantidad_inventario = None
+
+            polvo_validos = {codigo for codigo, _ in inventario_polvo_choices}
+            if not fecha_inventario:
+                inventario_polvo_error = 'Debes seleccionar una fecha valida.'
+            elif tipo_huevo_polvo not in polvo_validos:
+                inventario_polvo_error = 'Debes seleccionar un tipo de huevo en polvo valido.'
+            elif cantidad_inventario is None:
+                inventario_polvo_error = 'Debes ingresar una cantidad valida en kg.'
+            elif cantidad_inventario <= 0:
+                inventario_polvo_error = 'La cantidad debe ser mayor a 0 kg.'
+            elif (
+                fecha_inicio_semana
+                and fecha_fin_semana
+                and (fecha_inventario < fecha_inicio_semana or fecha_inventario > fecha_fin_semana)
             ):
-                pedido.estado = estado_nuevo
-                pedido.save(update_fields=['estado'])
-                cambio_aplicado = True
-                _registrar_cambio_estado_pedido(
-                    pedido,
-                    estado_anterior,
-                    estado_nuevo,
-                    request.user,
-                    descripcion=f"Cambio desde panel {tipo}.",
+                inventario_polvo_error = (
+                    "La fecha debe estar dentro de la semana seleccionada "
+                    f"({fecha_inicio_semana.strftime('%d/%m/%Y')} - {fecha_fin_semana.strftime('%d/%m/%Y')})."
                 )
-                if (
-                    tipo == 'produccion'
-                    and estado_nuevo == 'EN_PRODUCCION'
-                    and estado_nuevo != estado_anterior
-                ):
-                    _registrar_log_produccion(
-                        pedido=pedido,
-                        usuario=request.user,
-                        accion='ESTADO_EN_PRODUCCION',
-                        detalle='Pedido movido a En produccion desde panel de produccion.',
-                    )
-            if is_ajax:
-                puede_cambiar_estado_row = False
-                estado_options_row = []
-                if tipo == 'logistica':
-                    permitidos_row = _estados_permitidos_logistica_para_estado(
-                        request.user,
-                        pedido.estado,
-                    )
-                    puede_cambiar_estado_row = bool(permitidos_row)
-                    estado_options_row = _opciones_estado_para_panel(
-                        pedido.estado,
-                        permitidos_row,
-                    )
-                else:
-                    puede_cambiar_estado_row = _usuario_puede_cambiar_estado_panel(
-                        request.user,
-                        tipo='produccion',
-                        estado_nuevo='EN_PRODUCCION',
-                    )
-                    estado_options_row = _opciones_estado_para_panel(
-                        pedido.estado,
-                        ['EN_PRODUCCION'] if puede_cambiar_estado_row else [],
-                    )
-                if not cambio_aplicado:
+            else:
+                registro_inventario = MateriaPrima.objects.create(
+                    fecha=fecha_inventario,
+                    tipo_huevo=tipo_huevo_polvo,
+                    cantidad_kg=cantidad_inventario,
+                    observaciones=inventario_polvo_form_data['observaciones'],
+                    creado_por=request.user,
+                )
+                _registrar_log_produccion(
+                    pedido=None,
+                    usuario=request.user,
+                    accion='MATERIA_PRIMA_REGISTRADA',
+                    sucursal=_obtener_ciudad_usuario(request.user) or '',
+                    compania='Inventario huevo en polvo',
+                    tipo_huevo=dict(TIPO_HUEVO_CHOICES).get(tipo_huevo_polvo, tipo_huevo_polvo),
+                    presentacion='Inventario',
+                    cantidad_kg=cantidad_inventario,
+                    detalle=(
+                        f"Inventario de polvo registrado para {fecha_inventario.strftime('%d/%m/%Y')} "
+                        f"(registro #{registro_inventario.id})."
+                    ),
+                )
+                redirect_params = {'tab': 'producto', 'inv_polvo': 'ok'}
+                sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
+                vida_util_post = (request.POST.get('vida_util') or '').strip().upper()
+                semana_post = _ajustar_a_lunes(request.POST.get('semana'))
+                if sucursal_post in ciudad_valores:
+                    redirect_params['sucursal'] = sucursal_post
+                if vida_util_post in presentacion_valores:
+                    redirect_params['vida_util'] = vida_util_post
+                if semana_post:
+                    redirect_params['semana'] = semana_post.isoformat()
+                return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
+            inventory_action_with_error = True
+
+        if not inventory_action_with_error:
+            cantidad_attr_post = 'fabricado_kg'
+            pedido_id = request.POST.get('pedido_id')
+            pedido = get_object_or_404(
+                Pedido.objects.filter(estado__in=estados_panel),
+                id=pedido_id,
+            )
+            if action == 'guardar_cantidad' and puede_editar_cantidad:
+                valor_anterior = int(getattr(pedido, cantidad_attr_post, 0) or 0)
+                nuevo_valor = request.POST.get('gestion_kg')
+                try:
+                    nuevo_valor_int = int(nuevo_valor)
+                except (TypeError, ValueError):
+                    nuevo_valor_int = 0
+                total = _cantidad_total_pedido(pedido)
+                nuevo_valor_int = max(0, min(nuevo_valor_int, total))
+                if nuevo_valor_int != valor_anterior:
+                    setattr(pedido, cantidad_attr_post, nuevo_valor_int)
+                    pedido.save(update_fields=[cantidad_attr_post])
+                    if tab_origen != 'estimado':
+                        _registrar_log_produccion(
+                            pedido=pedido,
+                            usuario=request.user,
+                            accion='FABRICADO_ACTUALIZADO',
+                            valor_anterior=valor_anterior,
+                            valor_nuevo=nuevo_valor_int,
+                            cantidad_kg=nuevo_valor_int,
+                            detalle='Actualizacion de fabricado desde panel de produccion.',
+                        )
+                if request.headers.get('x-requested-with') == 'XMLHttpRequest':
+                    gestion_guardada = int(getattr(pedido, cantidad_attr_post, 0) or 0)
                     return JsonResponse({
-                        'ok': False,
+                        'ok': True,
                         'pedido_id': pedido.id,
-                        'error': 'No fue posible actualizar el estado con tus permisos o transicion.',
+                        'gestion_kg': gestion_guardada,
+                        'total_kg': total,
+                        'pendiente_kg': max(total - gestion_guardada, 0),
+                        'fabricado_kg': int(getattr(pedido, 'fabricado_kg', 0) or 0),
+                        'estimado_kg': int(getattr(pedido, 'estimado_kg', 0) or 0),
+                    })
+            elif action == 'cambiar_estado' and tab_origen != 'estimado':
+                estado_anterior = pedido.estado
+                estado_nuevo = (request.POST.get('estado') or '').strip()
+                cambio_aplicado = False
+                if (
+                    estado_nuevo in set(estado_permitidos)
+                    and _cambio_estado_permitido_en_panel(
+                        user=request.user,
+                        tipo=tipo,
+                        estado_anterior=estado_anterior,
+                        estado_nuevo=estado_nuevo,
+                    )
+                ):
+                    pedido.estado = estado_nuevo
+                    pedido.save(update_fields=['estado'])
+                    cambio_aplicado = True
+                    _registrar_cambio_estado_pedido(
+                        pedido,
+                        estado_anterior,
+                        estado_nuevo,
+                        request.user,
+                        descripcion=f"Cambio desde panel {tipo}.",
+                    )
+                    if (
+                        tipo == 'produccion'
+                        and estado_nuevo == 'EN_PRODUCCION'
+                        and estado_nuevo != estado_anterior
+                    ):
+                        _registrar_log_produccion(
+                            pedido=pedido,
+                            usuario=request.user,
+                            accion='ESTADO_EN_PRODUCCION',
+                            detalle='Pedido movido a En produccion desde panel de produccion.',
+                        )
+                if is_ajax:
+                    puede_cambiar_estado_row = False
+                    estado_options_row = []
+                    if tipo == 'logistica':
+                        permitidos_row = _estados_permitidos_logistica_para_estado(
+                            request.user,
+                            pedido.estado,
+                        )
+                        puede_cambiar_estado_row = bool(permitidos_row)
+                        estado_options_row = _opciones_estado_para_panel(
+                            pedido.estado,
+                            permitidos_row,
+                        )
+                    else:
+                        puede_cambiar_estado_row = _usuario_puede_cambiar_estado_panel(
+                            request.user,
+                            tipo='produccion',
+                            estado_nuevo='EN_PRODUCCION',
+                        )
+                        estado_options_row = _opciones_estado_para_panel(
+                            pedido.estado,
+                            ['EN_PRODUCCION'] if puede_cambiar_estado_row else [],
+                        )
+                    if not cambio_aplicado:
+                        return JsonResponse({
+                            'ok': False,
+                            'pedido_id': pedido.id,
+                            'error': 'No fue posible actualizar el estado con tus permisos o transicion.',
+                            'estado': pedido.estado,
+                            'estado_label': pedido.get_estado_display(),
+                            'estado_lower': (pedido.estado or '').lower(),
+                            'puede_cambiar_estado': puede_cambiar_estado_row,
+                            'estado_options': [
+                                {'value': value, 'label': label}
+                                for value, label in estado_options_row
+                            ],
+                        }, status=400)
+                    return JsonResponse({
+                        'ok': True,
+                        'pedido_id': pedido.id,
                         'estado': pedido.estado,
                         'estado_label': pedido.get_estado_display(),
                         'estado_lower': (pedido.estado or '').lower(),
@@ -1570,41 +1698,29 @@ def _render_panel_operativo(request, *, tipo):
                             {'value': value, 'label': label}
                             for value, label in estado_options_row
                         ],
-                    }, status=400)
-                return JsonResponse({
-                    'ok': True,
-                    'pedido_id': pedido.id,
-                    'estado': pedido.estado,
-                    'estado_label': pedido.get_estado_display(),
-                    'estado_lower': (pedido.estado or '').lower(),
-                    'puede_cambiar_estado': puede_cambiar_estado_row,
-                    'estado_options': [
-                        {'value': value, 'label': label}
-                        for value, label in estado_options_row
-                    ],
-                })
-        if tipo == 'produccion':
-            redirect_params = {'tab': tab_origen}
-            sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
-            vida_util_post = (request.POST.get('vida_util') or '').strip().upper()
+                    })
+            if tipo == 'produccion':
+                redirect_params = {'tab': tab_origen}
+                sucursal_post = (request.POST.get('sucursal') or '').strip().upper()
+                vida_util_post = (request.POST.get('vida_util') or '').strip().upper()
+                semana_post = _ajustar_a_lunes(request.POST.get('semana'))
+                if sucursal_post in ciudad_valores:
+                    redirect_params['sucursal'] = sucursal_post
+                if vida_util_post in presentacion_valores:
+                    redirect_params['vida_util'] = vida_util_post
+                if semana_post:
+                    redirect_params['semana'] = semana_post.isoformat()
+                return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
+            redirect_params = {}
             semana_post = _ajustar_a_lunes(request.POST.get('semana'))
-            if sucursal_post in ciudad_valores:
-                redirect_params['sucursal'] = sucursal_post
-            if vida_util_post in presentacion_valores:
-                redirect_params['vida_util'] = vida_util_post
+            tab_post = (request.POST.get('tab') or '').strip().lower()
+            if tab_post in {'producto', 'resumen'}:
+                redirect_params['tab'] = tab_post
             if semana_post:
                 redirect_params['semana'] = semana_post.isoformat()
-            return redirect(f"{reverse('panel_produccion')}?{urlencode(redirect_params)}")
-        redirect_params = {}
-        semana_post = _ajustar_a_lunes(request.POST.get('semana'))
-        tab_post = (request.POST.get('tab') or '').strip().lower()
-        if tab_post in {'producto', 'resumen'}:
-            redirect_params['tab'] = tab_post
-        if semana_post:
-            redirect_params['semana'] = semana_post.isoformat()
-        if redirect_params:
-            return redirect(f"{reverse('panel_logistica')}?{urlencode(redirect_params)}")
-        return redirect('panel_logistica')
+            if redirect_params:
+                return redirect(f"{reverse('panel_logistica')}?{urlencode(redirect_params)}")
+            return redirect('panel_logistica')
 
     pedidos = list(pedidos_panel_qs)
     panel_data = _construir_panel_operativo(pedidos, cantidad_attr=cantidad_attr)
@@ -1743,6 +1859,23 @@ def _render_panel_operativo(request, *, tipo):
             for key, value in filtros_panel.items()
             if value
         })
+        inventario_polvo_qs = (
+            MateriaPrima.objects
+            .select_related('creado_por')
+            .filter(tipo_huevo__in=TIPOS_HUEVO_POLVO)
+        )
+        if fecha_inicio_semana and fecha_fin_semana:
+            inventario_polvo_qs = inventario_polvo_qs.filter(
+                fecha__gte=fecha_inicio_semana,
+                fecha__lte=fecha_fin_semana,
+            )
+        inventario_polvo_total_semana = (
+            inventario_polvo_qs.aggregate(total=Sum('cantidad_kg')).get('total')
+            or 0
+        )
+        inventario_polvo_registros = list(
+            inventario_polvo_qs.order_by('-fecha', '-id')[:20]
+        )
 
     context = {
         'panel_titulo': titulo,
@@ -1782,6 +1915,13 @@ def _render_panel_operativo(request, *, tipo):
             'panel_label_lower': panel_label.lower(),
             'panel_query_string': panel_query_string,
             'puede_editar_gestion_produccion': puede_editar_cantidad,
+            'inventario_polvo_choices': inventario_polvo_choices,
+            'inventario_polvo_form_data': inventario_polvo_form_data,
+            'inventario_polvo_error': inventario_polvo_error,
+            'inventario_polvo_success': inventario_polvo_success,
+            'inventario_polvo_registros': inventario_polvo_registros,
+            'inventario_polvo_total_semana': inventario_polvo_total_semana,
+            'puede_registrar_inventario_polvo': _usuario_puede_registrar_materia_prima(request.user),
         })
     else:
         context.update({

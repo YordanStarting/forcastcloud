@@ -159,6 +159,108 @@ Produccion
                 {% endif %}
                 {% endif %}
 
+                {% if active_tab == 'producto' %}
+                <div class="card border mb-3">
+                    <div class="card-header py-2 d-flex justify-content-between align-items-center">
+                        <strong class="text-primary mb-0">INVENTARIO HUEVO EN POLVO</strong>
+                        <span class="small text-muted">Total semana: <strong>{{ inventario_polvo_total_semana }} kg</strong></span>
+                    </div>
+                    <div class="card-body">
+                        {% if inventario_polvo_error %}
+                        <div class="alert alert-danger py-2">{{ inventario_polvo_error }}</div>
+                        {% endif %}
+                        {% if inventario_polvo_success %}
+                        <div class="alert alert-success py-2">{{ inventario_polvo_success }}</div>
+                        {% endif %}
+
+                        <form method="post" class="mb-3">
+                            {% csrf_token %}
+                            <input type="hidden" name="tab" value="producto">
+                            <input type="hidden" name="action" value="guardar_inventario_polvo">
+                            <input type="hidden" name="semana" value="{{ filtros_panel.semana }}">
+                            <input type="hidden" name="sucursal" value="{{ filtros_panel.sucursal }}">
+                            <input type="hidden" name="vida_util" value="{{ filtros_panel.vida_util }}">
+                            <div class="form-row">
+                                <div class="col-12 col-md-2 mb-2">
+                                    <label class="mb-1">Fecha</label>
+                                    <input
+                                        type="date"
+                                        class="form-control form-control-sm"
+                                        name="fecha"
+                                        value="{{ inventario_polvo_form_data.fecha }}"
+                                        required>
+                                </div>
+                                <div class="col-12 col-md-3 mb-2">
+                                    <label class="mb-1">Tipo huevo en polvo</label>
+                                    <select name="tipo_huevo" class="form-control form-control-sm" required>
+                                        {% for value, label in inventario_polvo_choices %}
+                                        <option value="{{ value }}" {% if inventario_polvo_form_data.tipo_huevo == value %}selected{% endif %}>{{ label }}</option>
+                                        {% endfor %}
+                                    </select>
+                                </div>
+                                <div class="col-12 col-md-2 mb-2">
+                                    <label class="mb-1">Cantidad (kg)</label>
+                                    <input
+                                        type="number"
+                                        class="form-control form-control-sm"
+                                        name="cantidad_kg"
+                                        min="1"
+                                        step="1"
+                                        value="{{ inventario_polvo_form_data.cantidad_kg }}"
+                                        required>
+                                </div>
+                                <div class="col-12 col-md-3 mb-2">
+                                    <label class="mb-1">Observaciones</label>
+                                    <input
+                                        type="text"
+                                        class="form-control form-control-sm"
+                                        name="observaciones"
+                                        maxlength="255"
+                                        value="{{ inventario_polvo_form_data.observaciones }}">
+                                </div>
+                                <div class="col-12 col-md-2 mb-2 d-flex align-items-end">
+                                    <button
+                                        type="submit"
+                                        class="btn btn-primary btn-sm btn-block"
+                                        {% if not puede_registrar_inventario_polvo %}disabled{% endif %}>
+                                        Guardar
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+
+                        <div class="table-responsive">
+                            <table class="table table-sm table-bordered mb-0">
+                                <thead>
+                                    <tr>
+                                        <th>FECHA</th>
+                                        <th>TIPO HUEVO</th>
+                                        <th>CANTIDAD (KG)</th>
+                                        <th>USUARIO</th>
+                                        <th>OBSERVACIONES</th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for item in inventario_polvo_registros %}
+                                    <tr>
+                                        <td>{{ item.fecha|date:"d/m/Y" }}</td>
+                                        <td>{{ item.get_tipo_huevo_display }}</td>
+                                        <td>{{ item.cantidad_kg }}</td>
+                                        <td>{{ item.creado_por.username|default:"Sistema" }}</td>
+                                        <td>{{ item.observaciones|default:"-" }}</td>
+                                    </tr>
+                                    {% empty %}
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted">Sin inventario de polvo registrado para la semana.</td>
+                                    </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+                {% endif %}
+
                 {% if active_tab != 'estimado' %}
                 {% for bloque in bloques_ciudad %}
                 <div class="card border mb-3 js-panel-city-card" data-sucursal="{{ bloque.codigo }}">
