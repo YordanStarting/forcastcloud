@@ -589,7 +589,8 @@ def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
     if not user.is_authenticated or user.is_superuser:
         return proveedores
 
-    if _obtener_rol_usuario(user) in {'comercial', 'auxiliar'}:
+    rol = _obtener_rol_usuario(user)
+    if rol == 'comercial':
         ciudad_usuario = _obtener_ciudad_usuario(user)
         if not ciudad_usuario:
             return proveedores.none()
@@ -712,7 +713,10 @@ def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
         return False
     if _usuario_es_admin(user):
         return True
-    if _obtener_rol_usuario(user) not in {'comercial', 'auxiliar'}:
+    rol = _obtener_rol_usuario(user)
+    if rol == 'auxiliar':
+        return True
+    if rol != 'comercial':
         return False
     ciudad_usuario = _obtener_ciudad_usuario(user)
     return bool(ciudad_usuario and pedido.ciudad == ciudad_usuario)
@@ -721,7 +725,10 @@ def _usuario_puede_editar_pedido_por_ciudad(user, pedido):
 def _filtrar_pedidos_editables_por_usuario(user, qs):
     if _usuario_es_admin(user):
         return qs
-    if _obtener_rol_usuario(user) not in {'comercial', 'auxiliar'}:
+    rol = _obtener_rol_usuario(user)
+    if rol == 'auxiliar':
+        return qs
+    if rol != 'comercial':
         return qs.none()
     ciudad_usuario = _obtener_ciudad_usuario(user)
     if not ciudad_usuario:
@@ -2776,6 +2783,21 @@ def crear_pedido(request):
             )
             return render(request, 'pedidos/crear_pedido.html', context)
 
+        presentacion_valida = {value for value, _ in PRESENTACION_CHOICES}
+        presentacion_seleccionada = (request.POST.get('presentacion') or '').strip()
+        if not presentacion_seleccionada:
+            presentacion_seleccionada = proveedor.presentacion
+        if presentacion_seleccionada not in presentacion_valida:
+            context = _build_pedido_form_context(
+                proveedores,
+                comerciales,
+                entregas=entregas_form,
+                form_data=request.POST,
+                error_message='Debes seleccionar una presentacion valida.',
+                total_entregas=total_entregas,
+            )
+            return render(request, 'pedidos/crear_pedido.html', context)
+
         fecha_principal = None
         if entregas:
             fecha_principal = max(fecha for fecha, _ in entregas)
@@ -2785,7 +2807,7 @@ def crear_pedido(request):
             comercial_id=comercial_id,
             ciudad=ciudad_comercial,
             tipo_huevo=request.POST.get('tipo_huevo'),
-            presentacion=proveedor.presentacion,
+            presentacion=presentacion_seleccionada,
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,
@@ -3020,14 +3042,14 @@ def editarpedido(request, id):
     if not _usuario_puede_editar_pedido_por_ciudad(request.user, pedido):
         return HttpResponseForbidden(
             "No puedes editar pedidos de otra sucursal. "
-            "Solo administradores o comerciales de la misma ciudad pueden editarlo."
+            "Solo administradores, auxiliares o comerciales de la misma ciudad pueden editarlo."
         )
     if pedido.estado in PEDIDO_ESTADOS_HISTORIAL and not _usuario_es_admin(request.user):
         return HttpResponseForbidden("Solo un administrador puede editar pedidos del historial.")
 
     proveedores = _proveedores_disponibles_para_usuario(request.user, solo_activos=True)
     comerciales = User.objects.only('id', 'username', 'first_name', 'last_name')
-    if _usuario_es_admin(request.user):
+    if _usuario_es_admin(request.user) or _obtener_rol_usuario(request.user) == 'auxiliar':
         comerciales = comerciales.all()
     else:
         ciudad_usuario = _obtener_ciudad_usuario(request.user)
@@ -3132,7 +3154,7 @@ def editarpedido(request, id):
                 total_entregas=total_entregas,
             )
             return render(request, 'pedidos/editar_pedido.html', context)
-        if not _usuario_es_admin(request.user):
+        if not _usuario_es_admin(request.user) and _obtener_rol_usuario(request.user) != 'auxiliar':
             ciudad_usuario = _obtener_ciudad_usuario(request.user)
             if ciudad_comercial != ciudad_usuario:
                 context = _build_pedido_form_context(
@@ -3318,8 +3340,8 @@ def editartablas(request):
         pedidos_visibles_qs = pedidos_base_qs
     else:
         pedidos_visibles_qs = pedidos_base_qs
-        if rol_usuario in {'comercial', 'auxiliar'}:
-            # Comercial/Auxiliar inicia viendo sus pedidos; cambia alcance al usar filtro de ciudad.
+        if rol_usuario == 'comercial':
+            # Comercial inicia viendo sus pedidos; cambia alcance al usar filtro de ciudad.
             if not ciudad_param:
                 pedidos_visibles_qs = pedidos_visibles_qs.filter(comercial=request.user)
 
@@ -3981,13 +4003,19 @@ def crear_pedido_semanal(request):
         )
         if not proveedor:
             return redirect('inicio')
+        presentacion_valida = {value for value, _ in PRESENTACION_CHOICES}
+        presentacion_seleccionada = (request.POST.get('presentacion') or '').strip()
+        if not presentacion_seleccionada:
+            presentacion_seleccionada = proveedor.presentacion
+        if presentacion_seleccionada not in presentacion_valida:
+            return redirect('inicio')
 
         pedido = Pedido.objects.create(
             proveedor=proveedor,
             comercial_id=comercial_id,
             ciudad=ciudad_comercial,
             tipo_huevo=request.POST['tipo_huevo'],
-            presentacion=proveedor.presentacion,
+            presentacion=presentacion_seleccionada,
             cantidad=cantidad_total_int,
             fecha_entrega=fecha_principal,
             cantidad_total=cantidad_total_int,

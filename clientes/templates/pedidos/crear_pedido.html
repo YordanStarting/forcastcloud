@@ -205,7 +205,7 @@ Crear pedido semanal
 
             <div class="form-group col-md-4">
                 <label>Presentacion (automatica por cliente)</label>
-                <select id="presentacion_display" class="form-control">
+                <select id="presentacion_select" name="presentacion" class="form-control" required>
                     <option value="">Escoger</option>
                     {% for value, label in PRESENTACION_CHOICES %}
                     <option value="{{ value }}" {% if form_data.presentacion == value %}selected{% endif %}>
@@ -213,7 +213,6 @@ Crear pedido semanal
                     </option>
                     {% endfor %}
                 </select>
-                <input type="hidden" name="presentacion" id="presentacion_hidden" value="{{ form_data.presentacion|default:'' }}">
             </div>
 
             <div class="form-group col-md-6">
@@ -363,8 +362,8 @@ Crear pedido semanal
                 const proveedorHidden = document.getElementById('proveedor_hidden');
                 const proveedorSearch = document.getElementById('proveedor-search');
                 const proveedorError = document.getElementById('proveedor-error');
-                const presentacionDisplay = document.getElementById('presentacion_display');
-                const presentacionHidden = document.getElementById('presentacion_hidden');
+                const presentacionSelect = document.getElementById('presentacion_select');
+                const presentacionInicial = presentacionSelect ? presentacionSelect.value : '';
                 const proveedorOptions = Array.from(document.querySelectorAll('.proveedor-option'));
                 let selectedProveedorButton = null;
                 let initialEntregasApplied = false;
@@ -377,15 +376,17 @@ Crear pedido semanal
                     {% endfor %}
                 ];
 
-                const syncPresentacionConProveedor = () => {
-                    if (!presentacionDisplay || !presentacionHidden) {
+                const syncPresentacionConProveedor = (force = false) => {
+                    if (!presentacionSelect) {
+                        return;
+                    }
+                    if (!force && presentacionSelect.value) {
                         return;
                     }
                     const presentacion = selectedProveedorButton
                         ? selectedProveedorButton.dataset.presentacion || ''
                         : '';
-                    presentacionDisplay.value = presentacion;
-                    presentacionHidden.value = presentacion;
+                    presentacionSelect.value = presentacion;
                 };
 
                 const closeProveedorMenu = () => {
@@ -405,7 +406,7 @@ Crear pedido semanal
                     }
                 };
 
-                const setProveedorSeleccion = (id) => {
+                const setProveedorSeleccion = (id, forcePresentacion = false) => {
                     selectedProveedorButton = null;
                     proveedorOptions.forEach((option) => {
                         const isSelected = option.dataset.id === id;
@@ -425,7 +426,7 @@ Crear pedido semanal
                     if (proveedorError && proveedorHidden && proveedorHidden.value) {
                         proveedorError.classList.add('d-none');
                     }
-                    syncPresentacionConProveedor();
+                    syncPresentacionConProveedor(forcePresentacion);
                 };
 
                 const filtrarProveedores = () => {
@@ -736,7 +737,7 @@ Crear pedido semanal
                 }
                 proveedorOptions.forEach((option) => {
                     option.addEventListener('click', () => {
-                        setProveedorSeleccion(option.dataset.id);
+                        setProveedorSeleccion(option.dataset.id, true);
                         closeProveedorMenu();
                     });
                 });
@@ -765,7 +766,7 @@ Crear pedido semanal
                         }
                     });
                 }
-                setProveedorSeleccion(proveedorHidden ? proveedorHidden.value : '');
+                setProveedorSeleccion(proveedorHidden ? proveedorHidden.value : '', !presentacionInicial);
                 if (semanaInput && window.flatpickr) {
                     flatpickr(semanaInput, {
                         dateFormat: "Y-m-d",
