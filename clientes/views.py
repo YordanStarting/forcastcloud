@@ -111,7 +111,12 @@ def _obtener_perfil_usuario(user):
 
 
 def _estado_pedido_label(estado):
-    return PEDIDO_ESTADO_LABELS.get(estado, estado)
+    codigo = _normalizar_estado_codigo(estado)
+    return PEDIDO_ESTADO_LABELS.get(codigo, codigo or estado)
+
+
+def _normalizar_estado_codigo(valor):
+    return (valor or '').strip().upper()
 
 
 def _nombre_usuario(usuario):
@@ -213,8 +218,9 @@ def _estados_permitidos_cambio_directo(user, pedido):
     if not user.is_authenticated or not pedido:
         return set()
     rol = _obtener_rol_usuario(user)
+    estado_actual = _normalizar_estado_codigo(getattr(pedido, 'estado', ''))
     if rol == 'auxiliar':
-        return {'ENTREGADO'} if pedido.estado == 'DESPACHADO' else set()
+        return {'ENTREGADO'} if estado_actual == 'DESPACHADO' else set()
     return _estados_permitidos_para_usuario(user)
 
 
@@ -222,11 +228,12 @@ def _estado_choices_para_pedido(user, pedido):
     if not pedido:
         return []
     estados_permitidos = _estados_permitidos_cambio_directo(user, pedido)
+    estado_actual = _normalizar_estado_codigo(getattr(pedido, 'estado', ''))
     opciones = []
     usados = set()
-    if pedido.estado in PEDIDO_ESTADO_LABELS:
-        opciones.append((pedido.estado, _estado_pedido_label(pedido.estado)))
-        usados.add(pedido.estado)
+    if estado_actual in PEDIDO_ESTADO_LABELS:
+        opciones.append((estado_actual, _estado_pedido_label(estado_actual)))
+        usados.add(estado_actual)
     for value, label in PEDIDO_ESTADO_CHOICES:
         if value in estados_permitidos and value not in usados:
             opciones.append((value, label))
@@ -238,7 +245,8 @@ def _usuario_puede_cambiar_estado_pedido_en_listado(user, pedido):
     if not user.is_authenticated or not pedido:
         return False
     opciones = _estado_choices_para_pedido(user, pedido)
-    return any(value != pedido.estado for value, _ in opciones)
+    estado_actual = _normalizar_estado_codigo(getattr(pedido, 'estado', ''))
+    return any(value != estado_actual for value, _ in opciones)
 
 
 def _semana_label_corta(semana_lunes):
@@ -3649,15 +3657,16 @@ def marcar_pedido_realizado(request, id):
     if not _usuario_puede_cambiar_estado_pedidos(request.user) and not es_auxiliar:
         return HttpResponseForbidden("No tienes permisos para cambiar el estado del pedido.")
     pedido = get_object_or_404(Pedido, id=id)
+    estado_actual = _normalizar_estado_codigo(pedido.estado)
     estados_permitidos = _estados_permitidos_para_usuario(request.user)
     if es_auxiliar:
-        if pedido.estado != 'DESPACHADO':
+        if estado_actual != 'DESPACHADO':
             return HttpResponseForbidden(
                 "Solo puedes marcar como entregado pedidos en estado Despachado."
             )
     elif 'ENTREGADO' not in estados_permitidos:
         return HttpResponseForbidden("No tienes permisos para cambiar el pedido a entregado.")
-    estado_anterior = pedido.estado
+    estado_anterior = estado_actual
     pedido.estado = 'ENTREGADO'
     pedido.save()
     detalle = (
@@ -3691,8 +3700,8 @@ def editar_estado_pedido(request, id):
 
     if request.method == 'POST':
         next_url = _resolver_next_url(request.POST.get('next') or request.GET.get('next'))
-        estado_anterior = pedido.estado
-        nuevo_estado = request.POST.get('estado')
+        estado_anterior = _normalizar_estado_codigo(pedido.estado)
+        nuevo_estado = _normalizar_estado_codigo(request.POST.get('estado'))
         descripcion_estado = (request.POST.get('descripcion_estado') or '').strip()
 
         if nuevo_estado not in PEDIDO_ESTADOS_VALIDOS:
@@ -3732,7 +3741,7 @@ def editar_estado_pedido(request, id):
                 return JsonResponse({
                     'ok': True,
                     'pedido_id': pedido.id,
-                    'estado': pedido.estado,
+                    'estado': _normalizar_estado_codigo(pedido.estado),
                     'estado_label': pedido.get_estado_display(),
                     'estado_lower': (pedido.estado or '').lower(),
                     'estado_options': [
@@ -3747,7 +3756,7 @@ def editar_estado_pedido(request, id):
             'ok': False,
             'pedido_id': pedido.id,
             'error': error_message or 'No fue posible actualizar el estado.',
-            'estado': pedido.estado,
+            'estado': _normalizar_estado_codigo(pedido.estado),
             'estado_label': pedido.get_estado_display(),
             'estado_lower': (pedido.estado or '').lower(),
             'estado_options': [
