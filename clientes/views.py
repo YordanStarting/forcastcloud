@@ -563,22 +563,31 @@ def _build_pedido_form_context(
 
 def _obtener_rol_usuario(user):
     perfil = _obtener_perfil_usuario(user)
-    return perfil.rol if perfil else None
+    if not perfil:
+        return None
+    rol = (perfil.rol or '').strip().lower()
+    return rol or None
 
 
 def _obtener_ciudad_usuario(user):
     perfil = _obtener_perfil_usuario(user)
-    return perfil.ciudad if perfil else None
+    if not perfil:
+        return None
+    ciudad = (perfil.ciudad or '').strip().upper()
+    return ciudad or None
 
 
 def _obtener_ciudad_usuario_id(usuario_id):
     if not usuario_id:
         return None
-    return (
+    ciudad = (
         PerfilUsuario.objects.filter(usuario_id=usuario_id)
         .values_list('ciudad', flat=True)
         .first()
     )
+    if not ciudad:
+        return None
+    return ciudad.strip().upper() or None
 
 
 def _proveedores_disponibles_para_usuario(user, *, solo_activos=True):
@@ -3689,7 +3698,13 @@ def editar_estado_pedido(request, id):
         if nuevo_estado not in PEDIDO_ESTADOS_VALIDOS:
             error_message = 'Debes seleccionar un estado valido.'
         elif nuevo_estado != estado_anterior and nuevo_estado not in estados_permitidos:
-            error_message = 'No tienes permisos para cambiar el pedido a ese estado.'
+            if es_auxiliar:
+                error_message = (
+                    'Como auxiliar, solo puedes cambiar pedidos de '
+                    'Despachado a Entregado.'
+                )
+            else:
+                error_message = 'No tienes permisos para cambiar el pedido a ese estado.'
         elif (
             nuevo_estado != estado_anterior
             and nuevo_estado in PEDIDO_ESTADOS_REQUIEREN_DESCRIPCION

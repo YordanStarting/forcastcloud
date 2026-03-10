@@ -16,6 +16,12 @@ Editar Pedido
 
     <!-- Page Heading -->
     <h1 class="h3 mb-2 text-gray-800">LISTADO DE PEDIDOS</h1>
+    {% if rol_usuario == 'auxiliar' %}
+    <div class="alert alert-info py-2" role="alert">
+        Como auxiliar, en este listado solo puedes mover pedidos de <strong>Despachado</strong> a
+        <strong>Entregado</strong>.
+    </div>
+    {% endif %}
 
     <form method="get" class="mb-4">
         <div class="form-row align-items-end">
