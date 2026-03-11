@@ -1399,7 +1399,7 @@ def _cambio_estado_permitido_en_panel(*, user, tipo, estado_anterior, estado_nue
     if not _usuario_puede_cambiar_estado_panel(user, tipo=tipo, estado_nuevo=estado_nuevo):
         return False
     if tipo == 'logistica' and estado_nuevo == 'DESPACHADO':
-        return estado_anterior == 'EN_PRODUCCION'
+        return estado_anterior in {'CONFIRMADO', 'EN_PRODUCCION'}
     if tipo == 'logistica' and estado_nuevo == 'ENTREGADO':
         return estado_anterior == 'DESPACHADO'
     return True

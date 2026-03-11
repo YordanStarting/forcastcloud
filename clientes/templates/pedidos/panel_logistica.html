@@ -6,14 +6,24 @@ Logistica
 
 {% block extra_head %}
 <style>
-    .dispatch-highlight > td {
+    .dispatch-highlight-orange > td {
         background-color: rgba(255, 216, 0, 0.25) !important;
         color: #7a5a00 !important;
     }
 
-    .dispatch-highlight .btn-link,
-    .dispatch-highlight i {
+    .dispatch-highlight-orange .btn-link,
+    .dispatch-highlight-orange i {
         color: #7a5a00 !important;
+    }
+
+    .dispatch-highlight-green > td {
+        background-color: rgba(134, 239, 172, 0.3) !important;
+        color: #065f46 !important;
+    }
+
+    .dispatch-highlight-green .btn-link,
+    .dispatch-highlight-green i {
+        color: #065f46 !important;
     }
 
     .js-main-dispatch-cart,
@@ -21,9 +31,14 @@ Logistica
         color: #94a3b8;
     }
 
-    .js-main-dispatch-cart.is-active,
-    .js-dispatch-cart.is-active {
+    .js-main-dispatch-cart.is-orange,
+    .js-dispatch-cart.is-orange {
         color: #b45309;
+    }
+
+    .js-main-dispatch-cart.is-green,
+    .js-dispatch-cart.is-green {
+        color: #15803d;
     }
 
     .dispatch-calendar {
@@ -729,6 +744,40 @@ Logistica
             });
         });
 
+        const normalizeDispatchState = (value) => {
+            if (value === true) {
+                return "orange";
+            }
+            if (value === "orange" || value === "green") {
+                return value;
+            }
+            return "off";
+        };
+
+        const nextDispatchState = (currentState) => {
+            const normalized = normalizeDispatchState(currentState);
+            if (normalized === "off") {
+                return "orange";
+            }
+            if (normalized === "orange") {
+                return "green";
+            }
+            return "off";
+        };
+
+        const applyDispatchState = (row, button, state) => {
+            const normalized = normalizeDispatchState(state);
+            row.classList.remove("dispatch-highlight");
+            row.classList.toggle("dispatch-highlight-orange", normalized === "orange");
+            row.classList.toggle("dispatch-highlight-green", normalized === "green");
+            if (button) {
+                button.classList.remove("is-active");
+                button.classList.toggle("is-orange", normalized === "orange");
+                button.classList.toggle("is-green", normalized === "green");
+                button.setAttribute("aria-pressed", normalized === "off" ? "false" : "true");
+            }
+        };
+
         const dispatchMainTableKey = `dispatch-main-highlight-user-{{ request.user.id|default:'0' }}`;
         const dispatchMainRowState = (() => {
             try {
@@ -745,12 +794,8 @@ Logistica
         const applyMainDispatchHighlight = (row) => {
             const rowKey = row?.dataset?.rowKey;
             const button = row?.querySelector(".js-main-dispatch-cart");
-            const active = Boolean(rowKey && dispatchMainRowState[rowKey]);
-            row.classList.toggle("dispatch-highlight", active);
-            if (button) {
-                button.classList.toggle("is-active", active);
-                button.setAttribute("aria-pressed", active ? "true" : "false");
-            }
+            const state = rowKey ? normalizeDispatchState(dispatchMainRowState[rowKey]) : "off";
+            applyDispatchState(row, button, state);
         };
 
         document.querySelectorAll("tr[data-row-key]").forEach((row) => {
@@ -768,10 +813,11 @@ Logistica
                 if (!rowKey) {
                     return;
                 }
-                if (dispatchMainRowState[rowKey]) {
+                const nextState = nextDispatchState(dispatchMainRowState[rowKey]);
+                if (nextState === "off") {
                     delete dispatchMainRowState[rowKey];
                 } else {
-                    dispatchMainRowState[rowKey] = true;
+                    dispatchMainRowState[rowKey] = nextState;
                 }
                 saveDispatchMainRowState();
                 applyMainDispatchHighlight(row);
@@ -798,17 +844,16 @@ Logistica
                 return;
             }
             const applyHighlight = () => {
-                const active = Boolean(dispatchRowState[rowKey]);
-                row.classList.toggle("dispatch-highlight", active);
-                button.classList.toggle("is-active", active);
-                button.setAttribute("aria-pressed", active ? "true" : "false");
+                const state = normalizeDispatchState(dispatchRowState[rowKey]);
+                applyDispatchState(row, button, state);
             };
             button.addEventListener("click", function (event) {
                 event.preventDefault();
-                if (dispatchRowState[rowKey]) {
+                const nextState = nextDispatchState(dispatchRowState[rowKey]);
+                if (nextState === "off") {
                     delete dispatchRowState[rowKey];
                 } else {
-                    dispatchRowState[rowKey] = true;
+                    dispatchRowState[rowKey] = nextState;
                 }
                 saveDispatchRowState();
                 applyHighlight();
