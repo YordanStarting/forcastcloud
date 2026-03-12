@@ -106,11 +106,13 @@ Produccion
     </ul>
 
     <div class="{% if active_tab == 'log' %}d-none{% endif %}" id="tabProductoGestion">
-        <div class="card shadow mb-4">
+        <div class="{% if active_tab == 'estimado' %}mb-4{% else %}card shadow mb-4{% endif %}">
+            {% if active_tab != 'estimado' %}
             <div class="card-header py-3">
                 <h6 class="m-0 font-weight-bold text-primary">TABLAS POR SUCURSAL</h6>
             </div>
-            <div class="card-body">
+            {% endif %}
+            <div class="{% if active_tab != 'estimado' %}card-body{% endif %}">
                 {% if active_tab != 'estimado' %}
                 <form method="get" class="mb-3">
                     <input type="hidden" name="tab" value="{% if active_tab == 'estimado' %}estimado{% else %}producto{% endif %}">
@@ -429,18 +431,24 @@ Produccion
                 {% endif %}
 
                 {% if active_tab == 'estimado' %}
-                <div class="card border mt-4">
+                <div class="card border">
                     <div class="card-header py-2">
                         <strong class="text-primary">PRODUCTO ESTIMADO - TABLA MANUAL</strong>
                     </div>
                     <div class="card-body">
-                        <div class="d-flex align-items-center justify-content-between mb-3">
-                            <p class="small text-muted mb-0">
+                        <div class="d-flex flex-column flex-lg-row align-items-lg-end justify-content-between mb-3">
+                            <p class="small text-muted mb-2 mb-lg-0">
                                 Registro manual local (sin base de datos). Usa Guardar para conservar en este navegador.
                             </p>
-                            <div>
-                                <button type="button" class="btn btn-sm btn-primary mr-2" id="estimadoSaveBtn">Guardar</button>
-                                <button type="button" class="btn btn-sm btn-outline-secondary" id="estimadoClearBtn">Limpiar</button>
+                            <div class="d-flex flex-column flex-sm-row align-items-sm-end">
+                                <div class="mr-sm-3 mb-2 mb-sm-0">
+                                    <label class="mb-1" for="estimadoFechaInput">Fecha</label>
+                                    <input type="date" class="form-control form-control-sm" id="estimadoFechaInput">
+                                </div>
+                                <div>
+                                    <button type="button" class="btn btn-sm btn-primary mr-2" id="estimadoSaveBtn">Guardar</button>
+                                    <button type="button" class="btn btn-sm btn-outline-secondary" id="estimadoClearBtn">Limpiar</button>
+                                </div>
                             </div>
                         </div>
                         <p class="small text-muted mb-3" id="estimadoStatus"></p>
@@ -951,6 +959,7 @@ Produccion
         if (estimadoContainer) {
             const estimadoStorageKey = `panel-produccion-estimado-user-${userId}-${semanaKey || "sin-semana"}`;
             const estimadoRows = Array.from(estimadoContainer.querySelectorAll(".js-estimado-row"));
+            const estimadoFechaInput = document.getElementById("estimadoFechaInput");
             const estimadoTotalPedidos = document.getElementById("estimadoTotalPedidos");
             const estimadoTotalFabricado = document.getElementById("estimadoTotalFabricado");
             const estimadoPendienteTotal = document.getElementById("estimadoPendienteTotal");
@@ -984,6 +993,19 @@ Produccion
                 return { hasValue: true, value: Math.trunc(parsed) };
             };
 
+            const normalizeEstimadoSavedData = (savedDataRaw) => {
+                if (!savedDataRaw || typeof savedDataRaw !== "object") {
+                    return { rows: {}, fecha: "" };
+                }
+                if (savedDataRaw.rows && typeof savedDataRaw.rows === "object") {
+                    return {
+                        rows: savedDataRaw.rows,
+                        fecha: typeof savedDataRaw.fecha === "string" ? savedDataRaw.fecha : "",
+                    };
+                }
+                return { rows: savedDataRaw, fecha: "" };
+            };
+
             const applyEstimadoDefaults = () => {
                 estimadoRows.forEach((row) => {
                     const totalInput = row.querySelector(".js-est-total");
@@ -1004,19 +1026,23 @@ Produccion
                 } catch (error) {
                     savedData = {};
                 }
+                const normalizedSavedData = normalizeEstimadoSavedData(savedData);
+                if (estimadoFechaInput) {
+                    estimadoFechaInput.value = normalizedSavedData.fecha || "";
+                }
 
                 estimadoRows.forEach((row) => {
                     const rowId = row.dataset.rowId || "";
                     const totalInput = row.querySelector(".js-est-total");
                     const fabricadoInput = row.querySelector(".js-est-fabricado");
-                    if (!rowId || !savedData[rowId]) {
+                    if (!rowId || !normalizedSavedData.rows[rowId]) {
                         return;
                     }
-                    if (totalInput && typeof savedData[rowId].total !== "undefined") {
-                        totalInput.value = savedData[rowId].total;
+                    if (totalInput && typeof normalizedSavedData.rows[rowId].total !== "undefined") {
+                        totalInput.value = normalizedSavedData.rows[rowId].total;
                     }
-                    if (fabricadoInput && typeof savedData[rowId].fabricado !== "undefined") {
-                        fabricadoInput.value = savedData[rowId].fabricado;
+                    if (fabricadoInput && typeof normalizedSavedData.rows[rowId].fabricado !== "undefined") {
+                        fabricadoInput.value = normalizedSavedData.rows[rowId].fabricado;
                     }
                 });
             };
@@ -1074,7 +1100,10 @@ Produccion
 
             if (estimadoSaveBtn) {
                 estimadoSaveBtn.addEventListener("click", function () {
-                    const payload = {};
+                    const payload = {
+                        fecha: estimadoFechaInput ? String(estimadoFechaInput.value || "").trim() : "",
+                        rows: {},
+                    };
                     estimadoRows.forEach((row) => {
                         const rowId = row.dataset.rowId || "";
                         if (!rowId) {
@@ -1082,7 +1111,7 @@ Produccion
                         }
                         const totalInput = row.querySelector(".js-est-total");
                         const fabricadoInput = row.querySelector(".js-est-fabricado");
-                        payload[rowId] = {
+                        payload.rows[rowId] = {
                             total: totalInput ? String(totalInput.value || "").trim() : "",
                             fabricado: fabricadoInput ? String(fabricadoInput.value || "").trim() : "",
                         };
@@ -1096,6 +1125,9 @@ Produccion
                 estimadoClearBtn.addEventListener("click", function () {
                     localStorage.removeItem(estimadoStorageKey);
                     applyEstimadoDefaults();
+                    if (estimadoFechaInput) {
+                        estimadoFechaInput.value = "";
+                    }
                     recalculateEstimado();
                     setEstimadoStatus("Datos limpiados.", false);
                 });

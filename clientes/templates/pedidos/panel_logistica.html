@@ -480,6 +480,35 @@ Logistica
     </div>
 </div>
 
+<div class="modal fade" id="logisticaEntregaComentarioModal" tabindex="-1" role="dialog" aria-labelledby="logisticaEntregaComentarioModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="logisticaEntregaComentarioModalLabel">Comentario de entregado</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <label class="mb-1" for="logisticaEntregaComentarioInput">Detalle de la entrega</label>
+                <textarea
+                    id="logisticaEntregaComentarioInput"
+                    class="form-control"
+                    rows="4"
+                    maxlength="500"
+                    placeholder="Ej: Entregado a recepcion, nombre de quien recibe, fecha y hora."></textarea>
+                <div class="small text-danger mt-2 d-none" id="logisticaEntregaComentarioError">
+                    Debes escribir un comentario para marcar como entregado.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="logisticaEntregaComentarioConfirmBtn">Guardar y actualizar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <div class="modal fade" id="despachoCalendarModal" tabindex="-1" role="dialog" aria-labelledby="despachoCalendarModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-lg modal-dialog-centered" role="document">
         <div class="modal-content">
@@ -697,39 +726,110 @@ Logistica
             }
         }
 
+        const entregaComentarioModalElement = document.getElementById("logisticaEntregaComentarioModal");
+        const entregaComentarioInput = document.getElementById("logisticaEntregaComentarioInput");
+        const entregaComentarioError = document.getElementById("logisticaEntregaComentarioError");
+        const entregaComentarioConfirmBtn = document.getElementById("logisticaEntregaComentarioConfirmBtn");
+        const entregaComentarioModal = entregaComentarioModalElement && window.jQuery
+            ? window.jQuery(entregaComentarioModalElement)
+            : null;
+        let pendingEntregaSubmit = null;
+
+        const submitEstadoLogistica = (form, descripcionEstado) => {
+            const formData = new FormData(form);
+            if (descripcionEstado) {
+                formData.set("descripcion_estado", descripcionEstado);
+            } else {
+                formData.delete("descripcion_estado");
+            }
+            const row = form.closest("tr[data-pedido-id]");
+            const badge = row?.querySelector(".js-row-estado-badge");
+            const actionCell = row?.querySelector(".js-row-estado-action");
+            fetch(window.location.href, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: formData
+            })
+                .then((response) => response.json().then((data) => ({ okHttp: response.ok, data })))
+                .then((payload) => {
+                    if (!payload.okHttp || !payload.data || !payload.data.ok) {
+                        throw new Error(payload?.data?.error || "No se pudo actualizar el estado.");
+                    }
+                    if (badge) {
+                        const estadoLower = payload.data.estado_lower || "";
+                        badge.className = `badge badge-estado badge-estado-${estadoLower} js-row-estado-badge`;
+                        badge.textContent = payload.data.estado_label || payload.data.estado || "-";
+                    }
+                    if (actionCell && !payload.data.puede_cambiar_estado) {
+                        actionCell.innerHTML = '<span class="text-muted small">Sin cambios de estado disponibles.</span>';
+                    }
+                })
+                .catch((error) => {
+                    alert(error.message || "No se pudo actualizar el estado.");
+                });
+        };
+
         document.querySelectorAll(".js-logistica-estado-form").forEach((form) => {
             form.addEventListener("submit", function (event) {
                 event.preventDefault();
-                const formData = new FormData(form);
-                const row = form.closest("tr[data-pedido-id]");
-                const badge = row?.querySelector(".js-row-estado-badge");
-                const actionCell = row?.querySelector(".js-row-estado-action");
-                fetch(window.location.href, {
-                    method: "POST",
-                    headers: {
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                    body: formData
-                })
-                    .then((response) => response.json().then((data) => ({ okHttp: response.ok, data })))
-                    .then((payload) => {
-                        if (!payload.okHttp || !payload.data || !payload.data.ok) {
-                            throw new Error(payload?.data?.error || "No se pudo actualizar el estado.");
-                        }
-                        if (badge) {
-                            const estadoLower = payload.data.estado_lower || "";
-                            badge.className = `badge badge-estado badge-estado-${estadoLower} js-row-estado-badge`;
-                            badge.textContent = payload.data.estado_label || payload.data.estado || "-";
-                        }
-                        if (actionCell && !payload.data.puede_cambiar_estado) {
-                            actionCell.innerHTML = '<span class="text-muted small">Sin cambios de estado disponibles.</span>';
-                        }
-                    })
-                    .catch((error) => {
-                        alert(error.message || "No se pudo actualizar el estado.");
-                    });
+                const estadoSelect = form.querySelector(".js-logistica-estado-select");
+                const estadoSeleccionado = (estadoSelect?.value || "").trim().toUpperCase();
+
+                if (estadoSeleccionado === "ENTREGADO" && entregaComentarioModal && entregaComentarioInput) {
+                    pendingEntregaSubmit = form;
+                    entregaComentarioInput.value = form.dataset.lastDescripcionEstado || "";
+                    if (entregaComentarioError) {
+                        entregaComentarioError.classList.add("d-none");
+                    }
+                    entregaComentarioModal.modal("show");
+                    setTimeout(() => {
+                        entregaComentarioInput.focus();
+                    }, 120);
+                    return;
+                }
+
+                submitEstadoLogistica(form, "");
             });
         });
+
+        if (entregaComentarioConfirmBtn) {
+            entregaComentarioConfirmBtn.addEventListener("click", function () {
+                if (!pendingEntregaSubmit) {
+                    return;
+                }
+                const comentario = String(entregaComentarioInput?.value || "").trim();
+                if (!comentario) {
+                    if (entregaComentarioError) {
+                        entregaComentarioError.classList.remove("d-none");
+                    }
+                    return;
+                }
+                if (entregaComentarioError) {
+                    entregaComentarioError.classList.add("d-none");
+                }
+                const form = pendingEntregaSubmit;
+                form.dataset.lastDescripcionEstado = comentario;
+                pendingEntregaSubmit = null;
+                if (entregaComentarioModal) {
+                    entregaComentarioModal.modal("hide");
+                }
+                submitEstadoLogistica(form, comentario);
+            });
+        }
+
+        if (entregaComentarioModal) {
+            entregaComentarioModal.on("hidden.bs.modal", function () {
+                pendingEntregaSubmit = null;
+                if (entregaComentarioInput) {
+                    entregaComentarioInput.value = "";
+                }
+                if (entregaComentarioError) {
+                    entregaComentarioError.classList.add("d-none");
+                }
+            });
+        }
 
         const commentModalTitle = document.getElementById("commentModalTitle");
         const commentModalText = document.getElementById("commentModalText");

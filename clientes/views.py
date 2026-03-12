@@ -61,7 +61,7 @@ ROL_ESTADOS_PERMITIDOS = {
     'admin': PEDIDO_ESTADOS_VALIDOS - {'DEVUELTO', 'EN_PRODUCCION'},
     'comercial': {'PENDIENTE', 'CONFIRMADO', 'CANCELADO'},
     # Auxiliar no usa el flujo general de cambio de estado.
-    # En logistica solo puede mover DESPACHADO -> ENTREGADO.
+    # En paneles/listados se valida la transicion permitida para ENTREGADO.
     'auxiliar': set(),
     'produccion': {'EN_PRODUCCION', 'DEVUELTO'},
     # Compatibilidad con perfiles existentes antes del rol "produccion".
@@ -220,7 +220,7 @@ def _estados_permitidos_cambio_directo(user, pedido):
     rol = _obtener_rol_usuario(user)
     estado_actual = _normalizar_estado_codigo(getattr(pedido, 'estado', ''))
     if rol == 'auxiliar':
-        return {'ENTREGADO'} if estado_actual == 'DESPACHADO' else set()
+        return {'ENTREGADO'} if estado_actual in {'EN_PRODUCCION', 'DESPACHADO'} else set()
     return _estados_permitidos_para_usuario(user)
 
 
@@ -1401,7 +1401,7 @@ def _cambio_estado_permitido_en_panel(*, user, tipo, estado_anterior, estado_nue
     if tipo == 'logistica' and estado_nuevo == 'DESPACHADO':
         return estado_anterior in {'CONFIRMADO', 'EN_PRODUCCION'}
     if tipo == 'logistica' and estado_nuevo == 'ENTREGADO':
-        return estado_anterior == 'DESPACHADO'
+        return estado_anterior in {'EN_PRODUCCION', 'DESPACHADO'}
     return True
 
 
@@ -1675,6 +1675,7 @@ def _render_panel_operativo(request, *, tipo):
             elif action == 'cambiar_estado' and tab_origen != 'estimado':
                 estado_anterior = pedido.estado
                 estado_nuevo = (request.POST.get('estado') or '').strip()
+                descripcion_estado = (request.POST.get('descripcion_estado') or '').strip()
                 cambio_aplicado = False
                 if (
                     estado_nuevo in set(estado_permitidos)
@@ -1693,7 +1694,7 @@ def _render_panel_operativo(request, *, tipo):
                         estado_anterior,
                         estado_nuevo,
                         request.user,
-                        descripcion=f"Cambio desde panel {tipo}.",
+                        descripcion=descripcion_estado or f"Cambio desde panel {tipo}.",
                     )
                     if (
                         tipo == 'produccion'
@@ -3660,9 +3661,9 @@ def marcar_pedido_realizado(request, id):
     estado_actual = _normalizar_estado_codigo(pedido.estado)
     estados_permitidos = _estados_permitidos_para_usuario(request.user)
     if es_auxiliar:
-        if estado_actual != 'DESPACHADO':
+        if estado_actual not in {'EN_PRODUCCION', 'DESPACHADO'}:
             return HttpResponseForbidden(
-                "Solo puedes marcar como entregado pedidos en estado Despachado."
+                "Solo puedes marcar como entregado pedidos en estado En produccion o Despachado."
             )
     elif 'ENTREGADO' not in estados_permitidos:
         return HttpResponseForbidden("No tienes permisos para cambiar el pedido a entregado.")
@@ -3710,7 +3711,7 @@ def editar_estado_pedido(request, id):
             if es_auxiliar:
                 error_message = (
                     'Como auxiliar, solo puedes cambiar pedidos de '
-                    'Despachado a Entregado.'
+                    'En produccion o Despachado a Entregado.'
                 )
             else:
                 error_message = 'No tienes permisos para cambiar el pedido a ese estado.'

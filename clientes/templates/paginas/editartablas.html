@@ -18,7 +18,7 @@ Editar Pedido
     <h1 class="h3 mb-2 text-gray-800">LISTADO DE PEDIDOS</h1>
     {% if rol_usuario == 'auxiliar' %}
     <div class="alert alert-info py-2" role="alert">
-        Como auxiliar, en este listado solo puedes mover pedidos de <strong>Despachado</strong> a
+        Como auxiliar, en este listado solo puedes mover pedidos de <strong>En produccion</strong> o <strong>Despachado</strong> a
         <strong>Entregado</strong>.
     </div>
     {% endif %}
@@ -303,12 +303,47 @@ Editar Pedido
 
 </div>
 
+<div class="modal fade" id="entregadoComentarioModal" tabindex="-1" role="dialog" aria-labelledby="entregadoComentarioModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="entregadoComentarioModalLabel">Comentario de entregado</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Cerrar">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <div class="modal-body">
+                <label for="entregadoComentarioInput" class="mb-1">Detalle de la entrega</label>
+                <textarea
+                    id="entregadoComentarioInput"
+                    class="form-control"
+                    rows="4"
+                    maxlength="500"
+                    placeholder="Ej: Entregado a recepcion, nombre de quien recibe, fecha y hora."></textarea>
+                <div class="small text-danger mt-2 d-none" id="entregadoComentarioError">
+                    Debes escribir un comentario para marcar como entregado.
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-outline-secondary" data-dismiss="modal">Cancelar</button>
+                <button type="button" class="btn btn-primary" id="entregadoComentarioConfirmBtn">Guardar y actualizar</button>
+            </div>
+        </div>
+    </div>
+</div>
+
 <script>
     document.addEventListener("DOMContentLoaded", function () {
         const forms = document.querySelectorAll(".js-inline-estado-form");
         if (!forms.length) {
             return;
         }
+        const comentarioModal = document.getElementById("entregadoComentarioModal");
+        const comentarioInput = document.getElementById("entregadoComentarioInput");
+        const comentarioError = document.getElementById("entregadoComentarioError");
+        const comentarioConfirmBtn = document.getElementById("entregadoComentarioConfirmBtn");
+        const modalInstance = comentarioModal && window.jQuery ? window.jQuery(comentarioModal) : null;
+        let pendingSubmitData = null;
 
         const updateBadge = (pedidoId, payload) => {
             const badge = document.querySelector(`.js-estado-badge[data-pedido-id="${pedidoId}"]`);
@@ -342,57 +377,136 @@ Editar Pedido
             });
         };
 
+        const showComentarioModal = (initialValue) => {
+            if (!modalInstance || !comentarioInput) {
+                return false;
+            }
+            comentarioInput.value = initialValue || "";
+            if (comentarioError) {
+                comentarioError.classList.add("d-none");
+            }
+            modalInstance.modal("show");
+            setTimeout(() => {
+                comentarioInput.focus();
+            }, 120);
+            return true;
+        };
+
+        const hideComentarioModal = () => {
+            if (modalInstance) {
+                modalInstance.modal("hide");
+            }
+        };
+
+        const setFormMessage = (msgNode, message, tone) => {
+            if (!msgNode) {
+                return;
+            }
+            msgNode.textContent = message || "";
+            msgNode.classList.remove("text-muted", "text-danger", "text-success");
+            if (tone) {
+                msgNode.classList.add(tone);
+            }
+        };
+
+        const submitEstadoForm = (form, pedidoId, descripcionEstado) => {
+            const msg = form.querySelector(".js-inline-estado-msg");
+            const submitBtn = form.querySelector('button[type="submit"]');
+            const formData = new FormData(form);
+
+            if (descripcionEstado) {
+                formData.set("descripcion_estado", descripcionEstado);
+            } else {
+                formData.delete("descripcion_estado");
+            }
+
+            setFormMessage(msg, "Guardando...", "text-muted");
+            if (submitBtn) {
+                submitBtn.disabled = true;
+            }
+
+            fetch(form.action, {
+                method: "POST",
+                headers: {
+                    "X-Requested-With": "XMLHttpRequest",
+                },
+                body: formData
+            })
+                .then(async (response) => {
+                    const payload = await response.json();
+                    if (!response.ok || !payload.ok) {
+                        throw new Error(payload.error || "No se pudo actualizar el estado.");
+                    }
+                    updateBadge(pedidoId, payload);
+                    updateSelectOptions(form, payload);
+                    setFormMessage(msg, "Guardado", "text-success");
+                })
+                .catch((error) => {
+                    setFormMessage(msg, error.message || "Error al guardar", "text-danger");
+                })
+                .finally(() => {
+                    if (submitBtn) {
+                        submitBtn.disabled = false;
+                    }
+                });
+        };
+
         forms.forEach((form) => {
             form.addEventListener("submit", function (event) {
                 event.preventDefault();
                 const pedidoId = form.dataset.pedidoId;
-                const msg = form.querySelector(".js-inline-estado-msg");
-                const submitBtn = form.querySelector('button[type="submit"]');
-                const formData = new FormData(form);
+                const estadoSelect = form.querySelector('select[name="estado"]');
+                const estadoSeleccionado = (estadoSelect?.value || "").trim().toUpperCase();
 
-                if (msg) {
-                    msg.textContent = "Guardando...";
-                    msg.classList.remove("text-danger", "text-success");
-                    msg.classList.add("text-muted");
-                }
-                if (submitBtn) {
-                    submitBtn.disabled = true;
+                if (estadoSeleccionado === "ENTREGADO") {
+                    pendingSubmitData = {
+                        form,
+                        pedidoId,
+                    };
+                    const opened = showComentarioModal(form.dataset.lastDescripcionEstado || "");
+                    if (opened) {
+                        return;
+                    }
                 }
 
-                fetch(form.action, {
-                    method: "POST",
-                    headers: {
-                        "X-Requested-With": "XMLHttpRequest",
-                    },
-                    body: formData
-                })
-                    .then(async (response) => {
-                        const payload = await response.json();
-                        if (!response.ok || !payload.ok) {
-                            throw new Error(payload.error || "No se pudo actualizar el estado.");
-                        }
-                        updateBadge(pedidoId, payload);
-                        updateSelectOptions(form, payload);
-                        if (msg) {
-                            msg.textContent = "Guardado";
-                            msg.classList.remove("text-muted", "text-danger");
-                            msg.classList.add("text-success");
-                        }
-                    })
-                    .catch((error) => {
-                        if (msg) {
-                            msg.textContent = error.message || "Error al guardar";
-                            msg.classList.remove("text-muted", "text-success");
-                            msg.classList.add("text-danger");
-                        }
-                    })
-                    .finally(() => {
-                        if (submitBtn) {
-                            submitBtn.disabled = false;
-                        }
-                    });
+                submitEstadoForm(form, pedidoId, "");
             });
         });
+
+        if (comentarioConfirmBtn) {
+            comentarioConfirmBtn.addEventListener("click", function () {
+                if (!pendingSubmitData) {
+                    return;
+                }
+                const comentario = String(comentarioInput?.value || "").trim();
+                if (!comentario) {
+                    if (comentarioError) {
+                        comentarioError.classList.remove("d-none");
+                    }
+                    return;
+                }
+                if (comentarioError) {
+                    comentarioError.classList.add("d-none");
+                }
+                const { form, pedidoId } = pendingSubmitData;
+                form.dataset.lastDescripcionEstado = comentario;
+                pendingSubmitData = null;
+                hideComentarioModal();
+                submitEstadoForm(form, pedidoId, comentario);
+            });
+        }
+
+        if (modalInstance) {
+            modalInstance.on("hidden.bs.modal", function () {
+                if (comentarioError) {
+                    comentarioError.classList.add("d-none");
+                }
+                if (comentarioInput) {
+                    comentarioInput.value = "";
+                }
+                pendingSubmitData = null;
+            });
+        }
     });
 </script>
 
