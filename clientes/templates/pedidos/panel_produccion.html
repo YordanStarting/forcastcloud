@@ -451,6 +451,9 @@ Produccion
                                 </div>
                             </div>
                         </div>
+                        <p class="small text-muted mb-3">
+                            Fecha estimada visible: <strong id="estimadoFechaVisible">Sin fecha</strong>
+                        </p>
                         <p class="small text-muted mb-3" id="estimadoStatus"></p>
                         <div class="table-responsive" id="estimadoPlanner">
                             <table class="table table-sm mb-0 estimado-custom-table">
@@ -960,6 +963,7 @@ Produccion
             const estimadoStorageKey = `panel-produccion-estimado-user-${userId}-${semanaKey || "sin-semana"}`;
             const estimadoRows = Array.from(estimadoContainer.querySelectorAll(".js-estimado-row"));
             const estimadoFechaInput = document.getElementById("estimadoFechaInput");
+            const estimadoFechaVisible = document.getElementById("estimadoFechaVisible");
             const estimadoTotalPedidos = document.getElementById("estimadoTotalPedidos");
             const estimadoTotalFabricado = document.getElementById("estimadoTotalFabricado");
             const estimadoPendienteTotal = document.getElementById("estimadoPendienteTotal");
@@ -991,6 +995,27 @@ Produccion
                     return { hasValue: false, value: 0 };
                 }
                 return { hasValue: true, value: Math.trunc(parsed) };
+            };
+
+            const formatEstimadoFecha = (rawValue) => {
+                const value = String(rawValue || "").trim();
+                if (!value) {
+                    return "Sin fecha";
+                }
+                const parts = value.split("-");
+                if (parts.length !== 3) {
+                    return value;
+                }
+                return `${parts[2]}/${parts[1]}/${parts[0]}`;
+            };
+
+            const syncEstimadoFechaVisible = () => {
+                if (!estimadoFechaVisible) {
+                    return;
+                }
+                estimadoFechaVisible.textContent = formatEstimadoFecha(
+                    estimadoFechaInput ? estimadoFechaInput.value : ""
+                );
             };
 
             const normalizeEstimadoSavedData = (savedDataRaw) => {
@@ -1030,6 +1055,7 @@ Produccion
                 if (estimadoFechaInput) {
                     estimadoFechaInput.value = normalizedSavedData.fecha || "";
                 }
+                syncEstimadoFechaVisible();
 
                 estimadoRows.forEach((row) => {
                     const rowId = row.dataset.rowId || "";
@@ -1117,6 +1143,7 @@ Produccion
                         };
                     });
                     localStorage.setItem(estimadoStorageKey, JSON.stringify(payload));
+                    syncEstimadoFechaVisible();
                     setEstimadoStatus("Datos guardados localmente.", false);
                 });
             }
@@ -1128,13 +1155,20 @@ Produccion
                     if (estimadoFechaInput) {
                         estimadoFechaInput.value = "";
                     }
+                    syncEstimadoFechaVisible();
                     recalculateEstimado();
                     setEstimadoStatus("Datos limpiados.", false);
                 });
             }
 
+            if (estimadoFechaInput) {
+                estimadoFechaInput.addEventListener("change", syncEstimadoFechaVisible);
+                estimadoFechaInput.addEventListener("input", syncEstimadoFechaVisible);
+            }
+
             applyEstimadoDefaults();
             loadEstimadoSavedData();
+            syncEstimadoFechaVisible();
             recalculateEstimado();
         }
 
