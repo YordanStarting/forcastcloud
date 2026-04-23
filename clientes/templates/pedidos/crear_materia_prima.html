@@ -104,6 +104,7 @@ Agregar materia prima
                             <th>CANTIDAD (KG)</th>
                             <th>USUARIO</th>
                             <th>OBSERVACIONES</th>
+                            <th>ACCIONES</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -122,10 +123,17 @@ Agregar materia prima
                                 {% endif %}
                             </td>
                             <td data-label="Observaciones">{{ item.observaciones|default:"-" }}</td>
+                            <td data-label="Acciones" class="text-center">
+                                <form method="post" action="{% url 'eliminar_materia_prima' item.id %}" onsubmit="return confirm('Seguro que deseas eliminar este registro?');">
+                                    {% csrf_token %}
+                                    <input type="hidden" name="semana" value="{{ semana }}">
+                                    <button type="submit" class="btn btn-sm btn-outline-danger">Eliminar</button>
+                                </form>
+                            </td>
                         </tr>
                         {% empty %}
                         <tr>
-                            <td colspan="5" class="text-center text-muted">
+                            <td colspan="6" class="text-center text-muted">
                                 Sin registros de materia prima para la semana seleccionada.
                             </td>
                         </tr>

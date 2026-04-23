@@ -2952,8 +2952,18 @@ def crear_materia_prima(request):
     else:
         fecha_default = hoy
 
+    status = (request.GET.get('status') or '').strip().lower()
     error_message = None
     success_message = None
+    if status == 'created':
+        success_message = 'Materia prima registrada correctamente.'
+    elif status == 'deleted':
+        success_message = 'Registro de materia prima eliminado correctamente.'
+    elif status == 'duplicate':
+        error_message = (
+            'Ese registro ya fue guardado hace un momento. '
+            'Revisa la tabla antes de volver a crearlo.'
+        )
     form_data = {
         'fecha': fecha_default.isoformat(),
         'semana': semana_seleccionada.isoformat(),
@@ -2967,7 +2977,7 @@ def crear_materia_prima(request):
         fecha_raw = request.POST.get('fecha')
         tipo_huevo = request.POST.get('tipo_huevo')
         cantidad_raw = request.POST.get('cantidad_kg')
-        observaciones = request.POST.get('observaciones')
+        observaciones = (request.POST.get('observaciones') or '').strip()
 
         try:
             fecha = date.fromisoformat(fecha_raw or '')
@@ -2995,6 +3005,26 @@ def crear_materia_prima(request):
                 f"({fecha_inicio_semana.strftime('%d/%m/%Y')} - {fecha_fin_semana.strftime('%d/%m/%Y')})."
             )
         else:
+            registros_duplicados_qs = MateriaPrima.objects.filter(
+                fecha=fecha,
+                tipo_huevo=tipo_huevo,
+                cantidad_kg=cantidad_kg,
+                creado_por=request.user,
+                fecha_creacion__gte=timezone.now() - timedelta(minutes=2),
+            )
+            if observaciones:
+                registros_duplicados_qs = registros_duplicados_qs.filter(observaciones=observaciones)
+            else:
+                registros_duplicados_qs = registros_duplicados_qs.filter(
+                    Q(observaciones__isnull=True) | Q(observaciones='')
+                )
+            if registros_duplicados_qs.exists():
+                redirect_params = {
+                    'semana': semana_seleccionada.isoformat(),
+                    'status': 'duplicate',
+                }
+                return redirect(f"{reverse('crear_materia_prima')}?{urlencode(redirect_params)}")
+
             registro = MateriaPrima.objects.create(
                 fecha=fecha,
                 tipo_huevo=tipo_huevo,
@@ -3016,14 +3046,11 @@ def crear_materia_prima(request):
                     f"(registro #{registro.id})."
                 ),
             )
-            success_message = 'Materia prima registrada correctamente.'
-            form_data = {
-                'fecha': fecha_default.isoformat(),
+            redirect_params = {
                 'semana': semana_seleccionada.isoformat(),
-                'tipo_huevo': TIPO_HUEVO_CHOICES[0][0],
-                'cantidad_kg': '',
-                'observaciones': '',
+                'status': 'created',
             }
+            return redirect(f"{reverse('crear_materia_prima')}?{urlencode(redirect_params)}")
 
     ultimos_registros = (
         MateriaPrima.objects
@@ -3049,6 +3076,25 @@ def crear_materia_prima(request):
         'fecha_fin_semana': fecha_fin_semana,
         'total_materia_prima_semana': total_materia_prima_semana,
     })
+
+
+@login_required
+@require_POST
+def eliminar_materia_prima(request, id):
+    if not _usuario_puede_registrar_materia_prima(request.user):
+        return HttpResponseForbidden("No tienes permisos para eliminar materia prima.")
+
+    registro = get_object_or_404(MateriaPrima, id=id)
+    semana_seleccionada = _ajustar_a_lunes(request.POST.get('semana'))
+    if not semana_seleccionada:
+        semana_seleccionada = _ajustar_a_lunes(registro.fecha.isoformat())
+
+    registro.delete()
+    redirect_params = {
+        'semana': semana_seleccionada.isoformat(),
+        'status': 'deleted',
+    }
+    return redirect(f"{reverse('crear_materia_prima')}?{urlencode(redirect_params)}")
 
 
 @login_required
