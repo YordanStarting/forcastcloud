@@ -15,9 +15,18 @@ Including another URLconf
     2. Add a URL to urlpatterns:  path('blog/', include('blog.urls'))
 """
 from django.contrib import admin
+from django.http import HttpResponse
 from django.urls import include, path
+
+def loaderio_verification(request):
+    return HttpResponse(
+        "loaderio-a822f57576aee71a53b9c9eabd7f8d2e",
+        content_type="text/plain"
+    )
 
 urlpatterns = [
     path('admin/', admin.site.urls),
     path('', include('clientes.urls')),
+    path("loaderio-a822f57576aee71a53b9c9eabd7f8d2e.txt", loaderio_verification),
 ]
+
