@@ -30,7 +30,7 @@ SECRET_KEY = os.environ.get(
 # SECURITY WARNING: don't run with debug turned on in production!
 DEBUG = False
 
-ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'YordanStarting.pythonanywhere.com', '80.241.216.166']
+ALLOWED_HOSTS = ['127.0.0.1', 'localhost', 'YordanStarting.pythonanywhere.com', 'forecastcloud.duckdns.org']
 
 
 # Application definition
