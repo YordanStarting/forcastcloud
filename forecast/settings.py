@@ -124,6 +124,7 @@ STATICFILES_DIRS = [
     BASE_DIR / "clientes" / "static",
 ]
 
+STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # Internationalization
 # https://docs.djangoproject.com/en/6.0/topics/i18n/
